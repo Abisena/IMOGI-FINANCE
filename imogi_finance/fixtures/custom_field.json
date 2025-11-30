@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Custom Field",
+    "name": "Purchase Invoice-imogi_expense_request",
     "dt": "Purchase Invoice",
     "fieldname": "imogi_expense_request",
     "fieldtype": "Link",
@@ -11,6 +12,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Purchase Invoice-imogi_request_type",
     "dt": "Purchase Invoice",
     "fieldname": "imogi_request_type",
     "fieldtype": "Select",
@@ -21,6 +23,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Purchase Invoice-imogi_pph_type",
     "dt": "Purchase Invoice",
     "fieldname": "imogi_pph_type",
     "fieldtype": "Link",
@@ -31,6 +34,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Payment Entry-imogi_expense_request",
     "dt": "Payment Entry",
     "fieldname": "imogi_expense_request",
     "fieldtype": "Link",
@@ -41,6 +45,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Asset-imogi_expense_request",
     "dt": "Asset",
     "fieldname": "imogi_expense_request",
     "fieldtype": "Link",
@@ -51,6 +56,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Journal Entry-imogi_expense_request",
     "dt": "Journal Entry",
     "fieldname": "imogi_expense_request",
     "fieldtype": "Link",
