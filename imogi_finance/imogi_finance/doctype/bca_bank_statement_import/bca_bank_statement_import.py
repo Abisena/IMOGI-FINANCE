@@ -154,7 +154,7 @@ def parse_bca_csv(file_url: str) -> tuple[bytes, list[ParsedStatementRow]]:
     with open(file_path, "rb") as handle:
         file_bytes = handle.read()
 
-    decoded = file_bytes.decode("utf-8-sig")
+    decoded = strip_csv_preamble(file_bytes.decode("utf-8-sig"))
     reader, field_map = get_csv_reader_and_headers(decoded)
     parsed_rows: list[ParsedStatementRow] = []
 
@@ -357,6 +357,25 @@ def _has_collapsed_headers(fieldnames: Iterable[str], field_map: dict[str, str])
     required_headers = [header for header in required_headers if header]
 
     return len(set(required_headers)) != len(required_headers)
+
+
+def strip_csv_preamble(decoded: str) -> str:
+    """Remove leading delimiter hints (e.g. ``sep=;``) and blank lines.
+
+    Some CSV exports from spreadsheet tools start with a ``sep=`` instruction so
+    the parser treats the file as a single-column CSV, which prevents header
+    detection. We drop that preamble and any leading empty lines before building
+    a DictReader.
+    """
+
+    cleaned: list[str] = []
+    for line in decoded.splitlines():
+        stripped = line.strip()
+        if not cleaned and (not stripped or stripped.lower().startswith("sep=")):
+            continue
+        cleaned.append(line)
+
+    return "\n".join(cleaned)
 
 
 def create_bank_transaction_from_row(
