@@ -25,6 +25,10 @@ class DuplicateTransactionError(frappe.ValidationError):
     """Raised when a matching Bank Transaction already exists."""
 
 
+class SkipRow(Exception):
+    """Internal control exception to skip non-transaction rows."""
+
+
 @dataclass
 class ParsedStatementRow:
     posting_date: str
@@ -164,6 +168,8 @@ def parse_bca_csv(file_url: str) -> tuple[bytes, list[ParsedStatementRow]]:
 
         try:
             parsed_rows.append(parse_row(raw_row, field_map))
+        except SkipRow:
+            continue
         except Exception as exc:
             error_detail = frappe.get_traceback() if frappe.conf.developer_mode else str(exc)
             raise frappe.ValidationError(_("Row {0}: {1}").format(index, error_detail)) from exc
@@ -183,13 +189,25 @@ def parse_row(row: dict, field_map: dict[str, str]) -> ParsedStatementRow:
     if not posting_date_raw:
         raise frappe.ValidationError(_("Posting Date is missing."))
 
-    posting_date = getdate(posting_date_raw)
+    try:
+        posting_date = getdate(posting_date_raw)
+    except Exception as exc:  # noqa: BLE001 - allow skipping pending markers
+        if normalize_header(posting_date_raw) in {"pend", "pending"}:
+            raise SkipRow from exc
+        raise
     description = get_value("description")
     reference_number = get_value("reference_number") or None
     debit = parse_amount(get_value("debit"))
     credit = parse_amount(get_value("credit"))
+    amount = parse_amount(get_value("amount"))
     balance = parse_amount(get_value("balance"))
     currency = get_value("currency") or "IDR"
+
+    if not debit and not credit and amount is not None:
+        if amount > 0:
+            credit = amount
+        elif amount < 0:
+            debit = abs(amount)
 
     if debit and credit:
         raise frappe.ValidationError(_("Debit and Credit cannot both be set in the same row."))
@@ -225,61 +243,68 @@ def parse_amount(value: str) -> float | None:
 def map_headers(fieldnames: Iterable[str]) -> dict[str, str]:
     normalized = {normalize_header(header): header for header in fieldnames}
 
-    header_map = {
-        "posting_date": find_header(
-            normalized,
-            (
-                "tanggal transaksi",
-                "tanggal",
-                "tgl",
-                "tgl transaksi",
-                "tanggal mutasi",
-                "posting date",
-                "transaction date",
-                "date",
-            ),
+    alias_map = {
+        "posting_date": (
+            "tanggal transaksi",
+            "transaction date",
+            "posting date",
+            "tanggal",
+            "tgl",
+            "tgl transaksi",
+            "tanggal mutasi",
+            "date",
         ),
-        "description": find_header(
-            normalized,
-            (
-                "keterangan",
-                "keterangan transaksi",
-                "uraian",
-                "deskripsi",
-                "description",
-                "transaction description",
-                "details",
-                "remarks",
-            ),
+        "description": (
+            "keterangan",
+            "keterangan transaksi",
+            "uraian",
+            "deskripsi",
+            "description",
+            "transaction description",
+            "details",
+            "remarks",
         ),
-        "reference_number": find_header(
-            normalized, ("no. referensi", "nomor referensi", "reference number", "no referensi")
+        "reference_number": ("no. referensi", "nomor referensi", "reference number", "no referensi"),
+        "debit": ("mutasi debet", "mutasi debit", "debet", "debit", "withdrawal", "db"),
+        "credit": ("mutasi kredit", "kredit", "credit", "deposit", "cr", "credit amount"),
+        "balance": (
+            "saldo akhir",
+            "saldo",
+            "balance",
+            "saldo mutasi",
+            "ending balance",
+            "closing balance",
         ),
-        "debit": find_header(
-            normalized, ("mutasi debet", "mutasi debit", "debet", "debit", "withdrawal", "db")
-        ),
-        "credit": find_header(
-            normalized, ("mutasi kredit", "kredit", "credit", "deposit", "cr", "credit amount")
-        ),
-        "balance": find_header(
-            normalized,
-            ("saldo akhir", "saldo", "balance", "saldo mutasi", "ending balance", "closing balance"),
-        ),
-        "currency": find_header(normalized, ("currency", "mata uang")),
+        "currency": ("currency", "mata uang"),
+        "amount": ("jumlah", "nominal", "amount"),
     }
 
-    required_keys = ["posting_date", "description", "debit", "credit", "balance"]
-    missing = [key for key in required_keys if not header_map.get(key)]
+    def resolve(key: str) -> str | None:
+        return find_header(normalized, alias_map[key])
 
-    if missing:
-        label_map = {
-            "posting_date": _("Posting Date"),
-            "description": _("Description"),
-            "debit": _("Debit"),
-            "credit": _("Credit"),
-            "balance": _("Balance"),
-        }
-        missing_labels = [label_map.get(key, key) for key in missing]
+    header_map = {
+        "posting_date": resolve("posting_date"),
+        "description": resolve("description"),
+        "reference_number": resolve("reference_number"),
+        "debit": resolve("debit"),
+        "credit": resolve("credit"),
+        "balance": resolve("balance"),
+        "currency": resolve("currency"),
+        "amount": resolve("amount"),
+    }
+
+    missing_labels = []
+
+    if not header_map.get("posting_date"):
+        missing_labels.append(_("Posting Date"))
+    if not header_map.get("description"):
+        missing_labels.append(_("Description"))
+    if not header_map.get("balance"):
+        missing_labels.append(_("Balance"))
+    if not (header_map.get("debit") or header_map.get("credit") or header_map.get("amount")):
+        missing_labels.append(_("Debit/Credit or Amount"))
+
+    if missing_labels:
         frappe.throw(_("Missing required columns in CSV: {0}.").format(", ".join(missing_labels)))
 
     return header_map
@@ -311,34 +336,57 @@ def detect_csv_dialect(decoded: str) -> csv.Dialect:
 
 
 def get_csv_reader_and_headers(decoded: str) -> tuple[csv.DictReader, dict[str, str]]:
-    def build_reader(delimiter: str | None = None) -> csv.DictReader:
+    def build_reader_params(delimiter: str | None = None) -> dict:
         if delimiter:
-            return csv.DictReader(io.StringIO(decoded), delimiter=delimiter)
-        return csv.DictReader(io.StringIO(decoded), dialect=detect_csv_dialect(decoded))
+            return {"delimiter": delimiter}
+        return {"dialect": detect_csv_dialect(decoded)}
 
-    candidates: list[csv.DictReader] = [build_reader()]
-    candidates.extend(build_reader(delimiter) for delimiter in (",", ";", "\t"))
+    def detect_header_row(params: dict) -> int | None:
+        probe = io.StringIO(decoded)
+        reader = csv.reader(probe, **params)
+        for index, row in enumerate(reader):
+            if index >= 15:
+                break
+            if _is_header_row(row):
+                return index
+        return None
 
     last_error: Exception | None = None
 
-    for candidate in candidates:
-        if not candidate.fieldnames:
+    for delimiter in (None, ",", ";", "\t"):
+        params = build_reader_params(delimiter)
+        header_index = detect_header_row(params)
+        if header_index is None:
+            last_error = frappe.ValidationError(
+                _("Could not locate a header row. Please ensure the file contains a 'Tanggal Transaksi' column.")
+            )
+            continue
+
+        stream = io.StringIO(decoded)
+        pre_reader = csv.reader(stream, **params)
+        for _ in range(header_index):
+            next(pre_reader, None)
+
+        fieldnames = next(pre_reader, None)
+        if not fieldnames:
             last_error = frappe.ValidationError(_("The CSV file does not contain a header row."))
             continue
 
         try:
-            field_map = map_headers(candidate.fieldnames)
+            field_map = map_headers(fieldnames)
         except Exception as exc:  # noqa: BLE001 - need to retry with alternate delimiters
             last_error = exc
             continue
 
-        if _has_collapsed_headers(candidate.fieldnames, field_map):
+        reader = csv.DictReader(stream, fieldnames=fieldnames, **params)
+
+        if _has_collapsed_headers(fieldnames, field_map):
             last_error = frappe.ValidationError(
                 _("The CSV headers could not be detected. Please ensure each column is separated correctly.")
             )
             continue
 
-        return candidate, field_map
+        return reader, field_map
 
     if last_error:
         raise last_error
@@ -353,10 +401,20 @@ def _has_collapsed_headers(fieldnames: Iterable[str], field_map: dict[str, str])
     if len(list(fieldnames)) == 1:
         return True
 
-    required_headers = [field_map.get(key) for key in ("posting_date", "description", "debit", "credit", "balance")]
-    required_headers = [header for header in required_headers if header]
+    core_headers = [field_map.get(key) for key in ("posting_date", "description", "balance")]
+    value_headers = [field_map.get(key) for key in ("debit", "credit") if field_map.get(key)]
+
+    if not value_headers and field_map.get("amount"):
+        value_headers.append(field_map.get("amount"))
+
+    required_headers = [header for header in core_headers + value_headers if header]
 
     return len(set(required_headers)) != len(required_headers)
+
+
+def _is_header_row(row: list[str]) -> bool:
+    normalized = [normalize_header(cell) for cell in row]
+    return any(header in {"tanggal transaksi", "transaction date"} for header in normalized)
 
 
 def strip_csv_preamble(decoded: str) -> str:
