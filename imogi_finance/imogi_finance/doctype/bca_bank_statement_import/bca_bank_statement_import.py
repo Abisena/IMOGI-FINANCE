@@ -190,7 +190,15 @@ def parse_row(row: dict, field_map: dict[str, str]) -> ParsedStatementRow:
         raise frappe.ValidationError(_("Posting Date is missing."))
 
     normalized_posting_date = normalize_header(posting_date_raw)
-    skip_markers = ("pend", "pending", "saldo awal", "saldo akhir")
+    skip_markers = (
+        "pend",
+        "pending",
+        "saldo awal",
+        "saldo akhir",
+        "mutasi debet",
+        "mutasi debit",
+        "mutasi kredit",
+    )
 
     if any(
         normalized_posting_date == marker or normalized_posting_date.startswith(marker)
