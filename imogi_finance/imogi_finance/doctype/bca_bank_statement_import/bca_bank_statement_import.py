@@ -84,6 +84,8 @@ class BCABankStatementImport(Document):
                 row.convert_status = "Converted"
                 row.bank_transaction = str(exc)
                 duplicates += 1
+                row.error_message = None
+                continue
             except Exception as exc:
                 row.convert_status = "Failed"
                 row.error_message = frappe.get_traceback() if frappe.conf.developer_mode else str(exc)
