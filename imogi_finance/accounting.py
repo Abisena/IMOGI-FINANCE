@@ -7,6 +7,7 @@ from frappe import _
 
 PURCHASE_INVOICE_REQUEST_TYPES = {"Expense"}
 JOURNAL_ENTRY_REQUEST_TYPES = {"Asset"}
+ALLOW_JOURNAL_ENTRY_CREATION = False
 
 
 def _get_pph_base_amount(request: frappe.model.document.Document) -> float:
@@ -90,7 +91,15 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
 @frappe.whitelist()
 def create_journal_entry_from_request(expense_request_name: str) -> str:
-    """Create a Journal Entry from an Expense Request and return its name."""
+    """Create a Journal Entry from an Expense Request and return its name.
+
+    This is disabled by default in favor of Purchase Invoice creation.
+    """
+    if not ALLOW_JOURNAL_ENTRY_CREATION:
+        frappe.throw(
+            _("Creating Journal Entry from Expense Request is disabled. Please create a Purchase Invoice.")
+        )
+
     request = frappe.get_doc("Expense Request", expense_request_name)
     _validate_request_ready_for_link(request)
     _validate_request_type(request, JOURNAL_ENTRY_REQUEST_TYPES, _("Journal Entry"))
@@ -112,13 +121,28 @@ def create_journal_entry_from_request(expense_request_name: str) -> str:
     if not payable_account:
         frappe.throw(_("Default payable account is missing for this company."))
 
+    withholding_amount = 0.0
+    withholding_account = None
+    withholding_rate = 0.0
+    if request.is_pph_applicable:
+        withholding_account, withholding_rate = frappe.db.get_value(
+            "Tax Withholding Category", request.pph_type, ["account", "rate"]
+        ) or (None, None)
+
+        if not withholding_account or withholding_rate is None:
+            frappe.throw(_("PPh account or rate is missing for the selected category."))
+
+        withholding_amount = _get_pph_base_amount(request) * (withholding_rate / 100)
+
+    payable_amount = request.amount - withholding_amount
+    if payable_amount < 0:
+        frappe.throw(_("PPh withholding exceeds the requested amount."))
+
     je = frappe.new_doc("Journal Entry")
     je.company = company
     je.posting_date = request.request_date
     je.user_remark = request.description
     je.imogi_expense_request = request.name
-
-    expense_amount = _get_pph_base_amount(request) if request.is_pph_applicable else request.amount
 
     je.append(
         "accounts",
@@ -126,37 +150,26 @@ def create_journal_entry_from_request(expense_request_name: str) -> str:
             "account": request.expense_account,
             "cost_center": request.cost_center,
             "project": request.project,
-            "debit_in_account_currency": expense_amount,
+            "debit_in_account_currency": request.amount,
         },
     )
 
-    if request.is_pph_applicable and expense_amount != request.amount:
-        withholding_account = frappe.get_cached_value(
-            "Tax Withholding Category", request.pph_type, "account"
+    if withholding_amount:
+        je.append(
+            "accounts",
+            {
+                "account": withholding_account,
+                "cost_center": request.cost_center,
+                "project": request.project,
+                "credit_in_account_currency": withholding_amount,
+            },
         )
-
-        if not withholding_account:
-            frappe.throw(_("PPh account is missing for the selected category."))
-
-        withholding_difference = request.amount - expense_amount
-        withholding_entry: dict[str, str | float | None] = {
-            "account": withholding_account,
-            "cost_center": request.cost_center,
-            "project": request.project,
-        }
-
-        if withholding_difference > 0:
-            withholding_entry["debit_in_account_currency"] = withholding_difference
-        else:
-            withholding_entry["credit_in_account_currency"] = abs(withholding_difference)
-
-        je.append("accounts", withholding_entry)
 
     je.append(
         "accounts",
         {
             "account": payable_account,
-            "credit_in_account_currency": request.amount,
+            "credit_in_account_currency": payable_amount,
             "party_type": "Supplier",
             "party": request.supplier,
         },
