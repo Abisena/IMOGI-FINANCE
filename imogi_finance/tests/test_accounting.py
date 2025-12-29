@@ -119,12 +119,15 @@ def test_journal_entry_uses_pph_base_amount(monkeypatch):
     def fake_get_value(doctype, name, fieldname, *args, **kwargs):
         if doctype == "Cost Center":
             return "Test Company"
+        return None
+
+    def fake_get_cached_value(doctype, name, fieldname, *args, **kwargs):
         if doctype == "Supplier":
             return "2100 - Creditors - _TC"
         if doctype == "Company":
             return "2100 - Creditors - _TC"
         if doctype == "Tax Withholding Category":
-            return "2240 - PPh 23 Payable - _TC"
+            return frappe._dict({"account": "2240 - PPh 23 Payable - _TC", "rate": 2})
         return None
 
     def fake_new_doc(doctype):
@@ -147,7 +150,7 @@ def test_journal_entry_uses_pph_base_amount(monkeypatch):
 
     monkeypatch.setattr(frappe, "get_doc", fake_get_doc)
     monkeypatch.setattr(frappe, "new_doc", fake_new_doc)
-    monkeypatch.setattr(frappe, "get_cached_value", fake_get_value)
+    monkeypatch.setattr(frappe, "get_cached_value", fake_get_cached_value)
     monkeypatch.setattr(frappe.db, "get_value", fake_get_value)
     created_je.insert = fake_insert
     created_je.append = fake_append
@@ -155,6 +158,6 @@ def test_journal_entry_uses_pph_base_amount(monkeypatch):
     je_name = accounting.create_journal_entry_from_request("ER-002")
 
     assert je_name == "JE-001"
-    assert created_je.accounts[0]["debit_in_account_currency"] == 700
-    assert created_je.accounts[1]["debit_in_account_currency"] == 300
-    assert created_je.accounts[2]["credit_in_account_currency"] == 1000
+    assert created_je.accounts[0]["debit_in_account_currency"] == 1000
+    assert created_je.accounts[1]["credit_in_account_currency"] == 14
+    assert created_je.accounts[2]["credit_in_account_currency"] == 986
