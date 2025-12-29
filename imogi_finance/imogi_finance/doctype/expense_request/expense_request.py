@@ -44,6 +44,9 @@ class ExpenseRequest(Document):
             )
 
     def validate_tax_fields(self):
+        if self.is_ppn_applicable and not self.ppn_template:
+            frappe.throw(_("Please select a PPN Template when PPN is applicable."))
+
         if self.is_pph_applicable and not self.pph_type:
             frappe.throw(_("Please select a PPh Type when PPh is applicable."))
 
