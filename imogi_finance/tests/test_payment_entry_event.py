@@ -11,6 +11,10 @@ if not hasattr(frappe, "db"):
     frappe.db = types.SimpleNamespace()
 if not hasattr(frappe.db, "set_value"):
     frappe.db.set_value = lambda *args, **kwargs: None
+if not hasattr(frappe, "throw"):
+    frappe.throw = lambda *args, **kwargs: None
+if not hasattr(frappe, "get_doc"):
+    frappe.get_doc = lambda *args, **kwargs: None
 
 
 from imogi_finance.events import payment_entry  # noqa: E402
@@ -40,12 +44,14 @@ def test_payment_entry_linking_requires_approved_request(monkeypatch, docstatus,
     with pytest.raises(LinkError) as excinfo:
         payment_entry.on_submit(_payment_entry_doc("ER-001"))
 
-    assert "Expense Request must be Approved before linking to Payment Entry" in str(excinfo.value)
+    assert "docstatus 1 and status Approved, Linked" in str(excinfo.value)
     assert set_value_calls == []
 
 
 def test_payment_entry_links_request_when_approved(monkeypatch):
-    request = types.SimpleNamespace(name="ER-002", docstatus=1, status="Approved")
+    request = types.SimpleNamespace(
+        name="ER-002", docstatus=1, status="Approved", linked_payment_entry=None
+    )
     captured_set_value = {}
 
     class LinkError(Exception):
@@ -70,3 +76,27 @@ def test_payment_entry_links_request_when_approved(monkeypatch):
     assert captured_set_value["doctype"] == "Expense Request"
     assert captured_set_value["name"] == "ER-002"
     assert captured_set_value["values"] == {"linked_payment_entry": doc.name, "status": "Closed"}
+
+
+def test_payment_entry_throws_if_already_linked(monkeypatch):
+    request = types.SimpleNamespace(
+        name="ER-003", docstatus=1, status="Approved", linked_payment_entry="PE-0009"
+    )
+
+    class LinkError(Exception):
+        pass
+
+    def _throw(msg=None, title=None):
+        raise LinkError(msg or title)
+
+    monkeypatch.setattr(frappe, "throw", _throw)
+    monkeypatch.setattr(frappe, "get_doc", lambda *args, **kwargs: request)
+
+    set_value_calls = []
+    monkeypatch.setattr(frappe.db, "set_value", lambda *args, **kwargs: set_value_calls.append((args, kwargs)))
+
+    with pytest.raises(LinkError) as excinfo:
+        payment_entry.on_submit(_payment_entry_doc("ER-003"))
+
+    assert "Expense Request already linked to Payment Entry PE-0009" in str(excinfo.value)
+    assert set_value_calls == []
