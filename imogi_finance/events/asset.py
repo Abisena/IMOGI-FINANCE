@@ -14,6 +14,12 @@ def on_submit(doc, method=None):
 
     request = get_approved_expense_request(request, _("Asset"))
 
+    if request.linked_asset:
+        frappe.throw(_("Expense Request is already linked to an Asset."))
+
+    if request.request_type != "Asset":
+        frappe.throw(_("Expense Request must have request type Asset to link Asset."))
+
     frappe.db.set_value(
         "Expense Request",
         request.name,
