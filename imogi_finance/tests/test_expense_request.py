@@ -27,6 +27,7 @@ def _reset_frappe(monkeypatch):
     monkeypatch.setattr(frappe, "throw", _throw, raising=False)
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user=None), raising=False)
     monkeypatch.setattr(frappe, "get_roles", lambda: [], raising=False)
+    monkeypatch.setattr(frappe, "conf", types.SimpleNamespace(), raising=False)
 
 frappe_model = types.ModuleType("frappe.model")
 frappe_model_document = types.ModuleType("frappe.model.document")
@@ -198,3 +199,32 @@ def test_before_workflow_action_blocks_generic_role_without_route(monkeypatch):
         request.before_workflow_action("Approve")
 
     assert "user 'owner@example.com'" in str(excinfo.value)
+
+
+def test_close_requires_any_routed_user_or_role(monkeypatch):
+    request = ExpenseRequest(status="Linked", level_1_role="Expense Approver", level_2_user="closer@example.com")
+
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="viewer@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Viewer"])
+
+    with pytest.raises(NotAllowed):
+        request.before_workflow_action("Close")
+
+
+def test_close_allows_routed_user_or_role(monkeypatch):
+    role_request = ExpenseRequest(status="Linked", level_3_role="Finance Manager")
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="manager@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Finance Manager"])
+    role_request.before_workflow_action("Close")
+
+    user_request = ExpenseRequest(status="Linked", level_1_user="closer@example.com")
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="closer@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Viewer"])
+    user_request.before_workflow_action("Close")
+
+
+def test_close_allows_configuration_override(monkeypatch):
+    request = ExpenseRequest(status="Linked")
+    monkeypatch.setattr(frappe, "conf", types.SimpleNamespace(imogi_finance_allow_unrestricted_close=True))
+
+    request.before_workflow_action("Close")
