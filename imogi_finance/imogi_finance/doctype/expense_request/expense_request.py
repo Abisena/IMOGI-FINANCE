@@ -53,7 +53,7 @@ class ExpenseRequest(Document):
         self.apply_route(route)
         self.status = "Pending Level 1"
 
-    def before_workflow_action(self, action):
+    def before_workflow_action(self, action, **kwargs):
         """Gate workflow transitions by the resolved approver route."""
         if self.status not in {"Pending Level 1", "Pending Level 2", "Pending Level 3"}:
             return
@@ -74,6 +74,7 @@ class ExpenseRequest(Document):
         user_allowed = not expected_user or expected_user == frappe.session.user
 
         if role_allowed and user_allowed:
+            self.validate_not_skipping_levels(action, kwargs.get("next_state"))
             return
 
         requirements = []
@@ -88,6 +89,26 @@ class ExpenseRequest(Document):
             ),
             title=_("Not Allowed"),
         )
+
+    def validate_not_skipping_levels(self, action: str, next_state: str | None):
+        """Ensure approval follows each configured level before reaching Approved."""
+        if action != "Approve" or not next_state:
+            return
+
+        current_level = self.get_current_level_key()
+        if not current_level or next_state != "Approved":
+            return
+
+        level_2_role = self.get("level_2_role")
+        level_2_user = self.get("level_2_user")
+        level_3_role = self.get("level_3_role")
+        level_3_user = self.get("level_3_user")
+
+        if current_level == "1" and (level_2_role or level_2_user or level_3_role or level_3_user):
+            frappe.throw(_("Cannot approve directly when further levels are configured."))
+
+        if current_level == "2" and (level_3_role or level_3_user):
+            frappe.throw(_("Cannot approve directly when further levels are configured."))
 
     def apply_route(self, route: dict):
         """Store approval route on the document for audit and workflow guards."""
