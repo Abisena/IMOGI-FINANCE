@@ -142,7 +142,13 @@ class ExpenseRequest(Document):
             self.validate_reopen_permission()
             return
 
-        if action == "Close" and self.status in {"Linked", "Closed"}:
+        if action == "Close":
+            if self.status not in {"Linked", "Closed"}:
+                frappe.throw(
+                    _("Close action is only allowed when the request is Linked or already Closed."),
+                    title=_("Not Allowed"),
+                )
+
             self.validate_close_permission()
             return
 

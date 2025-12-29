@@ -316,6 +316,17 @@ def test_close_requires_any_routed_user_or_role(monkeypatch):
         request.before_workflow_action("Close")
 
 
+def test_close_blocks_when_not_linked(monkeypatch):
+    request = ExpenseRequest(status="Approved", items=[_item()], cost_center="CC", request_type="Expense")
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="approver@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Expense Approver"])
+
+    with pytest.raises(NotAllowed) as excinfo:
+        request.before_workflow_action("Close")
+
+    assert "Close action is only allowed when the request is Linked or already Closed." in str(excinfo.value)
+
+
 def test_close_allows_routed_user_or_role(monkeypatch):
     role_request = ExpenseRequest(
         status="Linked",
