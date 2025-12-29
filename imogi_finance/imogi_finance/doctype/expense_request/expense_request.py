@@ -24,8 +24,24 @@ class ExpenseRequest(Document):
             frappe.throw(_("Amount must be greater than zero."))
 
     def validate_asset_details(self):
-        if self.request_type == "Asset" and not self.asset_category:
-            frappe.throw(_("Asset Category is required for asset requests."))
+        if self.request_type != "Asset":
+            return
+
+        missing_fields = []
+
+        if not self.asset_category:
+            missing_fields.append(_("Asset Category"))
+        if not self.asset_name:
+            missing_fields.append(_("Asset Name"))
+        if not self.asset_description:
+            missing_fields.append(_("Asset Description"))
+
+        if missing_fields:
+            frappe.throw(
+                _("Asset requests require the following fields: {0}.").format(
+                    _(", ").join(missing_fields)
+                )
+            )
 
     def validate_tax_fields(self):
         if self.is_pph_applicable and not self.pph_type:
