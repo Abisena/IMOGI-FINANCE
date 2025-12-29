@@ -200,6 +200,7 @@
       "fieldname": "ppn_template",
       "fieldtype": "Link",
       "label": "PPN Template",
+      "description": "Required when Apply PPN is checked.",
       "options": "Purchase Taxes and Charges Template"
     },
     {

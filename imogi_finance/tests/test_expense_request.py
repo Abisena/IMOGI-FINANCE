@@ -83,6 +83,15 @@ def test_before_workflow_action_requires_exact_user_when_only_user(monkeypatch):
     assert "user 'owner@example.com'" in str(excinfo.value)
 
 
+def test_validate_requires_ppn_template_when_applicable():
+    request = ExpenseRequest(is_ppn_applicable=1, amount=1, request_type="Expense", ppn_template=None)
+
+    with pytest.raises(NotAllowed) as excinfo:
+        request.validate()
+
+    assert "PPN Template" in str(excinfo.value)
+
+
 def test_before_workflow_action_requires_both_user_and_role(monkeypatch):
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="owner@example.com"))
     monkeypatch.setattr(frappe, "get_roles", lambda: ["Expense Approver"])
