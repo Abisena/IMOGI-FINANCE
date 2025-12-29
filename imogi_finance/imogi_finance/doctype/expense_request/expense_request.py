@@ -69,6 +69,10 @@ class ExpenseRequest(Document):
         document so workflow maintainers don't need to manage static roles that
         could conflict with routed approvers.
         """
+        if action == "Close" and self.status in {"Linked", "Closed"}:
+            self.validate_close_permission()
+            return
+
         if self.status not in {"Pending Level 1", "Pending Level 2", "Pending Level 3"}:
             return
 
@@ -100,6 +104,58 @@ class ExpenseRequest(Document):
         frappe.throw(
             _("You must be {requirements} to perform this action for the current approval level.").format(
                 requirements=_(" and ").join(requirements)
+            ),
+            title=_("Not Allowed"),
+        )
+
+    def validate_close_permission(self):
+        """Validate that the user may close linked expense requests.
+
+        Closing is allowed when:
+        - The site configuration flag ``imogi_finance_allow_unrestricted_close`` is set.
+        - The user matches any routed approver user.
+        - The user has any routed approver role.
+        """
+        if getattr(getattr(frappe, "conf", None), "imogi_finance_allow_unrestricted_close", False):
+            return
+
+        allowed_roles = [
+            role
+            for role in (
+                getattr(self, "level_1_role", None),
+                getattr(self, "level_2_role", None),
+                getattr(self, "level_3_role", None),
+            )
+            if role
+        ]
+        allowed_users = [
+            user
+            for user in (
+                getattr(self, "level_1_user", None),
+                getattr(self, "level_2_user", None),
+                getattr(self, "level_3_user", None),
+            )
+            if user
+        ]
+
+        if not allowed_roles and not allowed_users:
+            return
+
+        user_allowed = getattr(getattr(frappe, "session", None), "user", None) in allowed_users
+        role_allowed = bool(set(frappe.get_roles()) & set(allowed_roles))
+
+        if user_allowed or role_allowed:
+            return
+
+        requirements = []
+        if allowed_users:
+            requirements.append(_("one of the users ({0})").format(_(", ").join(allowed_users)))
+        if allowed_roles:
+            requirements.append(_("one of the roles ({0})").format(_(", ").join(allowed_roles)))
+
+        frappe.throw(
+            _("You do not have permission to close this request. Required: {requirements}.").format(
+                requirements=_(" or ").join(requirements)
             ),
             title=_("Not Allowed"),
         )
