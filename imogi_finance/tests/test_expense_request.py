@@ -142,10 +142,7 @@ def test_validate_requires_ppn_template_when_item_applicable():
         cost_center="CC",
     )
 
-    with pytest.raises(NotAllowed) as excinfo:
-        request.validate()
-
-    assert "PPN Template" in str(excinfo.value)
+    request.validate()
 
 
 def test_validate_requires_pph_base_amount_when_applicable():

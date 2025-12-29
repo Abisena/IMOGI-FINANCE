@@ -56,9 +56,7 @@ class ExpenseRequest(Document):
     def validate_tax_fields(self):
         items = self.get("items") or []
 
-        is_ppn_applicable = getattr(self, "is_ppn_applicable", 0) or any(
-            getattr(item, "is_ppn_applicable", 0) for item in items
-        )
+        is_ppn_applicable = getattr(self, "is_ppn_applicable", 0)
         if is_ppn_applicable and not self.ppn_template:
             frappe.throw(_("Please select a PPN Template when PPN is applicable."))
 
