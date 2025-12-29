@@ -59,6 +59,7 @@
       "allowed": "Level 1 User",
       "state": "Pending Level 1",
       "next_state": "Approved",
+      "condition": "not doc.level_2_role and not doc.level_2_user and not doc.level_3_role and not doc.level_3_user",
       "doc_status": 1
     },
     {
@@ -66,6 +67,7 @@
       "allowed": "Level 2 User",
       "state": "Pending Level 2",
       "next_state": "Approved",
+      "condition": "not doc.level_3_role and not doc.level_3_user",
       "doc_status": 1
     },
     {

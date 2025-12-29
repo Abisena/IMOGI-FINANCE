@@ -109,3 +109,37 @@ def test_before_workflow_action_requires_both_user_and_role(monkeypatch):
     message = str(excinfo.value)
     assert "user 'owner@example.com'" in message
     assert "role 'Expense Approver'" in message
+
+
+def test_before_workflow_action_blocks_skipping_level_two(monkeypatch):
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="approver@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 1 User"])
+
+    request = _make_request(role="Level 1 User", user="approver@example.com")
+    request.level_2_user = "second@example.com"
+
+    with pytest.raises(NotAllowed):
+        request.before_workflow_action("Approve", next_state="Approved")
+
+
+def test_before_workflow_action_blocks_skipping_level_three(monkeypatch):
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="level2@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 2 User"])
+
+    request = ExpenseRequest()
+    request.status = "Pending Level 2"
+    request.level_2_role = "Level 2 User"
+    request.level_2_user = "level2@example.com"
+    request.level_3_user = "level3@example.com"
+
+    with pytest.raises(NotAllowed):
+        request.before_workflow_action("Approve", next_state="Approved")
+
+
+def test_before_workflow_action_allows_final_approval_when_no_next_level(monkeypatch):
+    monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="approver@example.com"))
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 1 User"])
+
+    request = _make_request(role="Level 1 User", user="approver@example.com")
+
+    request.before_workflow_action("Approve", next_state="Approved")
