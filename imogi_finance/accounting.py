@@ -146,9 +146,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     total_amount, expense_accounts = summarize_request_items(request_items)
     _sync_request_amounts(request, total_amount, expense_accounts)
 
-    ppn_items = [item for item in request_items if getattr(item, "is_ppn_applicable", 0)]
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
-    is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0) or ppn_items)
+    is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
     is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
 
     pi = frappe.new_doc("Purchase Invoice")

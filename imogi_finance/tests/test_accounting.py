@@ -450,13 +450,12 @@ def test_create_purchase_invoice_allows_mixed_expense_accounts(monkeypatch):
     ]
 
 
-def test_create_purchase_invoice_sets_ppn_when_any_item_applies(monkeypatch):
+def test_create_purchase_invoice_sets_ppn_when_doc_flagged(monkeypatch):
     request = _make_expense_request(
         name="ER-010",
-        is_ppn_applicable=0,
+        is_ppn_applicable=1,
         ppn_template="PPN-TEMPLATE",
     )
-    request.items[0].is_ppn_applicable = 1
 
     created_pi = _doc_with_defaults(frappe._dict(), linked_purchase_invoice=None, docstatus=0)
 
@@ -489,6 +488,41 @@ def test_create_purchase_invoice_sets_ppn_when_any_item_applies(monkeypatch):
     assert pi_name == "PI-010"
     assert created_pi.taxes_and_charges == "PPN-TEMPLATE"
     assert getattr(created_pi, "set_taxes_called", False) is True
+
+
+def test_create_purchase_invoice_ignores_item_ppn_flags(monkeypatch):
+    request = _make_expense_request(
+        name="ER-011",
+        is_ppn_applicable=0,
+        ppn_template="PPN-TEMPLATE",
+    )
+    request.items[0].is_ppn_applicable = 1
+
+    created_pi = _doc_with_defaults(frappe._dict(), linked_purchase_invoice=None, docstatus=0)
+
+    def fake_get_doc(doctype, name):
+        assert doctype == "Expense Request"
+        return request
+
+    def fake_get_value(doctype, name, fieldname, *args, **kwargs):
+        if doctype == "Cost Center":
+            return "Test Company"
+        return None
+
+    request.db_set = lambda values: setattr(created_pi, "db_set_called_with", values)
+    monkeypatch.setattr(frappe, "get_doc", fake_get_doc)
+    monkeypatch.setattr(frappe, "new_doc", lambda doctype: created_pi)
+    monkeypatch.setattr(frappe.db, "get_value", fake_get_value)
+
+    created_pi.insert = lambda ignore_permissions=False: setattr(created_pi, "name", "PI-011")
+    created_pi.append = lambda *args, **kwargs: None
+    created_pi.set_taxes = lambda: setattr(created_pi, "set_taxes_called", True)
+
+    pi_name = accounting.create_purchase_invoice_from_request("ER-011")
+
+    assert pi_name == "PI-011"
+    assert getattr(created_pi, "taxes_and_charges", None) is None
+    assert getattr(created_pi, "set_taxes_called", False) is False
 
 
 def test_update_links_clears_pending_for_submitted_invoice():
