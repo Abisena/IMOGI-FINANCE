@@ -43,7 +43,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"Bank Transaction": "public/js/bank_transaction.js"}
+doctype_js = {
+    "Bank Transaction": "public/js/bank_transaction.js",
+    "Customer Registration": "public/js/customer_registration.js",
+}
 doctype_list_js = {
     "BCA Bank Statement Import": "imogi_finance/doctype/bca_bank_statement_import/bca_bank_statement_import_list.js",
 }
@@ -153,6 +156,17 @@ doc_events = {
         "on_cancel": "imogi_finance.events.asset.on_cancel",
     },
     "Bank Transaction": {"before_cancel": "imogi_finance.events.bank_transaction.before_cancel"},
+    "Customer Registration": {
+        "on_submit": "imogi_finance.events.garage.create_inspection_on_registration_submit",
+    },
+    "Garage Service Order": {
+        "before_insert": "imogi_finance.events.garage.link_inspection_to_repair_order",
+        "validate": "imogi_finance.events.garage.link_inspection_to_repair_order",
+    },
+    "Repair Orders": {
+        "before_insert": "imogi_finance.events.garage.link_inspection_to_repair_order",
+        "validate": "imogi_finance.events.garage.link_inspection_to_repair_order",
+    },
 }
 
 # Scheduled Tasks
