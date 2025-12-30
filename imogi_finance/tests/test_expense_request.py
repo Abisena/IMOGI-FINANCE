@@ -905,6 +905,34 @@ def test_validate_pending_route_freshness_requires_refresh(monkeypatch):
     with pytest.raises(NotAllowed):
         request.validate_pending_route_freshness()
 
+def test_validate_pending_route_freshness_records_meta_when_missing(monkeypatch):
+    request = ExpenseRequest(
+        docstatus=1,
+        status="Pending Level 1",
+        request_type="Expense",
+        expense_account="5000",
+        amount=150,
+        cost_center="CC",
+        creation="2024-01-01 00:00:00",
+    )
+
+    active_meta = {"name": "EAS-NEW", "modified": "2024-02-01 00:00:00"}
+    monkeypatch.setattr(
+        "imogi_finance.imogi_finance.doctype.expense_request.expense_request.get_active_setting_meta",
+        lambda *_args, **_kwargs: active_meta,
+    )
+
+    with pytest.raises(NotAllowed):
+        request.validate_pending_route_freshness()
+
+    assert request.approval_setting == "EAS-NEW"
+    assert request.approval_setting_last_modified == "2024-02-01 00:00:00"
+    assert request._approval_meta_recorded_during_guard is True
+
+    # After refreshing the route, metadata is preserved and guard allows processing
+    request.apply_route({"level_1": {}}, setting_meta=active_meta)
+    request.validate_pending_route_freshness()
+
 def test_validate_allows_mixed_expense_accounts():
     request = ExpenseRequest(
         items=[_item(expense_account="5000", amount=125), _item(expense_account="6000", amount=175)],

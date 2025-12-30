@@ -470,6 +470,7 @@ class ExpenseRequest(Document):
         self.level_2_user = route.get("level_2", {}).get("user")
         self.level_3_role = route.get("level_3", {}).get("role")
         self.level_3_user = route.get("level_3", {}).get("user")
+        self._approval_meta_recorded_during_guard = False
         self._record_route_setting_meta(setting_meta)
 
     def validate_pending_route_freshness(self):
@@ -480,9 +481,6 @@ class ExpenseRequest(Document):
         if self.status not in {"Pending Level 1", "Pending Level 2", "Pending Level 3"}:
             return
 
-        if not getattr(self, "approval_setting", None) and not getattr(self, "approval_setting_last_modified", None):
-            return
-
         try:
             current_meta = get_active_setting_meta(self.cost_center)
         except Exception:
@@ -490,8 +488,40 @@ class ExpenseRequest(Document):
 
         stored_name = getattr(self, "approval_setting", None)
         stored_modified = getattr(self, "approval_setting_last_modified", None)
+        metadata_missing = not stored_name and not stored_modified
+        guard_injected_meta = getattr(self, "_approval_meta_recorded_during_guard", False)
+
         current_name = current_meta.get("name")
         current_modified = current_meta.get("modified")
+
+        document_dt = self._parse_datetime(
+            getattr(self, "modified", None) or getattr(self, "creation", None)
+        )
+        current_dt = self._parse_datetime(current_modified)
+
+        if (metadata_missing or guard_injected_meta) and document_dt and current_dt and current_dt > document_dt:
+            self._record_route_setting_meta(current_meta)
+            self._approval_meta_recorded_during_guard = True
+            self._add_stale_route_comment(
+                current_meta,
+                _("Expense Approval Setting {0} was updated after this request was submitted.").format(
+                    current_name or _("(unknown)")
+                ),
+            )
+            frappe.throw(
+                _(
+                    "Approval configuration changed after submission. Please refresh the route (reopen or toggle a key field) before approving."
+                ),
+                title=_("Route Refresh Required"),
+            )
+
+        if metadata_missing:
+            self._record_route_setting_meta(current_meta)
+            self._approval_meta_recorded_during_guard = True
+            return
+
+        stored_name = getattr(self, "approval_setting", None)
+        stored_modified = getattr(self, "approval_setting_last_modified", None)
 
         if stored_name and current_name and stored_name != current_name:
             self._add_stale_route_comment(
