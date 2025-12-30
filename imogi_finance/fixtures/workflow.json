@@ -14,8 +14,7 @@
       { "action": "Submit", "allowed": "All" },
       { "action": "Approve", "allowed": "Expense Approver" },
       { "action": "Reject", "allowed": "Expense Approver" },
-      { "action": "Close", "allowed": "Expense Approver" },
-      { "action": "Reopen", "allowed": "System Manager" }
+      { "action": "Close", "allowed": "Expense Approver" }
     ],
 
     "states": [
@@ -144,20 +143,6 @@
         "state": "Linked",
         "next_state": "Closed",
         "allowed": "Expense Approver"
-      },
-      {
-        "doctype": "Workflow Transition",
-        "action": "Reopen",
-        "state": "Rejected",
-        "next_state": "Draft",
-        "allowed": "System Manager"
-      },
-      {
-        "doctype": "Workflow Transition",
-        "action": "Reopen",
-        "state": "Closed",
-        "next_state": "Pending Level 1",
-        "allowed": "System Manager"
       }
     ]
   }
