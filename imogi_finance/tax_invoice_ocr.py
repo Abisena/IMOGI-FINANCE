@@ -9,7 +9,8 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.exceptions import ValidationError
-from frappe.utils import cint, flt, format_value, get_site_path
+from frappe.utils import cint, flt, get_site_path
+from frappe.utils.formatters import format_value
 
 SETTINGS_DOCTYPE = "Tax Invoice OCR Settings"
 DEFAULT_SETTINGS = {
