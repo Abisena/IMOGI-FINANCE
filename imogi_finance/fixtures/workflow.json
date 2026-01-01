@@ -142,5 +142,103 @@
         "allowed": "Expense Approver"
       }
     ]
+  },
+  {
+    "doctype": "Workflow",
+    "name": "Administrative Payment Voucher Workflow",
+    "workflow_name": "Administrative Payment Voucher Workflow",
+    "document_type": "Administrative Payment Voucher",
+    "is_active": 1,
+    "module": "Imogi Finance",
+    "override_status": 0,
+    "workflow_state_field": "workflow_state",
+    "docstatus": 0,
+    "actions": [
+      { "action": "Submit for Approval", "allowed": "All" },
+      { "action": "Approve", "allowed": "Accounts Manager" },
+      { "action": "Reject", "allowed": "Accounts Manager" },
+      { "action": "Post", "allowed": "Accounts Manager" },
+      { "action": "Cancel", "allowed": "Accounts Manager" }
+    ],
+    "states": [
+      {
+        "doctype": "Workflow Document State",
+        "state": "Draft",
+        "doc_status": "0",
+        "allow_edit": "Owner"
+      },
+      {
+        "doctype": "Workflow Document State",
+        "state": "Pending Approval",
+        "doc_status": "0",
+        "allow_edit": "Owner"
+      },
+      {
+        "doctype": "Workflow Document State",
+        "state": "Approved",
+        "doc_status": "0",
+        "allow_edit": "System Manager"
+      },
+      {
+        "doctype": "Workflow Document State",
+        "state": "Posted",
+        "doc_status": "1",
+        "allow_edit": "System Manager"
+      },
+      {
+        "doctype": "Workflow Document State",
+        "state": "Rejected",
+        "doc_status": "0",
+        "allow_edit": "System Manager"
+      },
+      {
+        "doctype": "Workflow Document State",
+        "state": "Cancelled",
+        "doc_status": "2",
+        "allow_edit": "System Manager"
+      }
+    ],
+    "transitions": [
+      {
+        "doctype": "Workflow Transition",
+        "action": "Submit for Approval",
+        "state": "Draft",
+        "next_state": "Pending Approval",
+        "allowed": "All",
+        "allow_self_approval": 0
+      },
+      {
+        "doctype": "Workflow Transition",
+        "action": "Approve",
+        "state": "Pending Approval",
+        "next_state": "Approved",
+        "allowed": "Accounts Manager",
+        "allow_self_approval": 0
+      },
+      {
+        "doctype": "Workflow Transition",
+        "action": "Reject",
+        "state": "Pending Approval",
+        "next_state": "Rejected",
+        "allowed": "Accounts Manager",
+        "allow_self_approval": 0
+      },
+      {
+        "doctype": "Workflow Transition",
+        "action": "Post",
+        "state": "Approved",
+        "next_state": "Posted",
+        "allowed": "Accounts Manager",
+        "allow_self_approval": 0
+      },
+      {
+        "doctype": "Workflow Transition",
+        "action": "Cancel",
+        "state": "Posted",
+        "next_state": "Cancelled",
+        "allowed": "Accounts Manager",
+        "allow_self_approval": 0
+      }
+    ]
   }
 ]

@@ -11,6 +11,7 @@
     "naming_series",
     "company",
     "posting_date",
+    "workflow_state",
     "status",
     "direction",
     "amount",
@@ -52,16 +53,25 @@
     },
     {
       "default": "Today",
-      "fieldname": "posting_date",
-      "fieldtype": "Date",
-      "label": "Posting Date",
-      "reqd": 1
-    },
-    {
-      "default": "Draft",
-      "fieldname": "status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
+    "fieldname": "posting_date",
+    "fieldtype": "Date",
+    "label": "Posting Date",
+    "reqd": 1
+  },
+  {
+    "default": "Draft",
+    "fieldname": "workflow_state",
+    "fieldtype": "Select",
+    "hidden": 1,
+    "label": "Workflow State",
+    "options": "Draft\nPending Approval\nApproved\nPosted\nRejected\nCancelled",
+    "read_only": 1
+  },
+  {
+    "default": "Draft",
+    "fieldname": "status",
+    "fieldtype": "Select",
+    "in_list_view": 1,
       "label": "Status",
       "options": "Draft\nPending Approval\nApproved\nPosted\nRejected\nCancelled",
       "read_only": 1
@@ -246,6 +256,7 @@
   "show_name_in_global_search": 1,
   "sort_field": "modified",
   "sort_order": "DESC",
+  "workflow_state_field": "workflow_state",
   "states": [
     {
       "color": "Red",

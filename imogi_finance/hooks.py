@@ -50,6 +50,7 @@ doctype_js = {
 }
 doctype_list_js = {
     "BCA Bank Statement Import": "imogi_finance/doctype/bca_bank_statement_import/bca_bank_statement_import_list.js",
+    "Administrative Payment Voucher": "imogi_finance/doctype/administrative_payment_voucher/administrative_payment_voucher_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -348,7 +349,7 @@ fixtures = [
         ]]],
     },
     {"dt": "Workspace", "filters": [["name", "=", "IMOGI FINANCE"]]},
-    {"dt": "Workflow", "filters": [["name", "=", "Expense Request Workflow"]]},
+    {"dt": "Workflow", "filters": [["name", "in", ["Expense Request Workflow", "Administrative Payment Voucher Workflow"]]]},
     {
         "dt": "Role",
         "filters": [
