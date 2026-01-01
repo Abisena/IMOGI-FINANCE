@@ -68,6 +68,19 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Payment Entry-imogi_administrative_payment_voucher",
+    "dt": "Payment Entry",
+    "fieldname": "imogi_administrative_payment_voucher",
+    "fieldtype": "Link",
+    "insert_after": "customer_receipt",
+    "label": "Administrative Payment Voucher",
+    "options": "Administrative Payment Voucher",
+    "allow_on_submit": 1,
+    "read_only": 1,
+    "description": "Administrative Payment Voucher source document"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Purchase Invoice-ti_tax_invoice_section",
     "dt": "Purchase Invoice",
     "fieldname": "ti_tax_invoice_section",
