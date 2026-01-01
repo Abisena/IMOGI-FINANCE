@@ -10,6 +10,8 @@
   "field_order": [
     "design_name",
     "is_active",
+    "logo_mode",
+    "custom_logo",
     "show_detail_table",
     "compact_layout",
     "custom_wording_title",
@@ -46,6 +48,19 @@
       "fieldname": "is_active",
       "fieldtype": "Check",
       "label": "Is Active"
+    },
+    {
+      "default": "Company Default",
+      "fieldname": "logo_mode",
+      "fieldtype": "Select",
+      "label": "Logo Source",
+      "options": "Company Default\nCustom"
+    },
+    {
+      "depends_on": "eval:doc.logo_mode==\"Custom\"",
+      "fieldname": "custom_logo",
+      "fieldtype": "Attach Image",
+      "label": "Custom Logo"
     },
     {
       "default": "1",

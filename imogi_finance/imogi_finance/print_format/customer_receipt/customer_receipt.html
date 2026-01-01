@@ -9,7 +9,9 @@
   "stamp_height_mm": 50,
   "digital_stamp_opacity_pct": 100,
   "digital_stamp_scale_pct": 100,
-  "show_qr": 0
+  "show_qr": 0,
+  "custom_logo": None,
+  "logo_mode": "Company Default"
 }) %}
 {% set template = frappe.get_doc("Digital Stamp Template", doc.digital_stamp_template) if doc.digital_stamp_template else None %}
 {% set stamp_image = doc.digital_stamp_image or (template.stamp_image if template else None) or design.digital_stamp_image %}
@@ -19,11 +21,16 @@
 {% if design.stamp_position == "Custom Absolute" %}
   {% set stamp_style = stamp_style + "position:absolute;top:%smm;left:%smm;" % (design.stamp_custom_top_mm or 0, design.stamp_custom_left_mm or 0) %}
 {% endif %}
+{% set company_logo = frappe.db.get_value("Company", doc.company, "company_logo") if doc.company else None %}
+{% set logo_mode = design.logo_mode or "Company Default" %}
+{% set receipt_logo = design.custom_logo if logo_mode == "Custom" and design.custom_logo else company_logo %}
 
 <style>
   .receipt-container { position: relative; font-size: 10pt; }
   .receipt-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
   .receipt-title { font-size: 16pt; font-weight: bold; letter-spacing: 1px; }
+  .receipt-brand { display: flex; align-items: flex-start; gap: 10px; }
+  .receipt-logo { max-height: 60px; max-width: 120px; object-fit: contain; }
   .receipt-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .receipt-table th, .receipt-table td { border: 1px solid #ccc; padding: 6px; }
   .stamp-box { border: 1px dashed #777; text-align: center; font-size: 9pt; color: #555; position: absolute; }
@@ -41,12 +48,17 @@
     <div class="stamp-watermark">MATERAI DIGITAL BELUM TERBIT</div>
   {% endif %}
   <div class="receipt-header">
-    <div>
-      <div class="receipt-title">{{ design.custom_wording_title or "KUITANSI" }}</div>
-      <div><strong>No:</strong> {{ doc.name }}</div>
-      <div><strong>Tanggal:</strong> {{ frappe.utils.format_date(doc.posting_date) }}</div>
-      <div><strong>Pelanggan:</strong> {{ doc.customer }}</div>
-      {% if doc.customer_reference_no %}<div><strong>Customer Ref:</strong> {{ doc.customer_reference_no }}</div>{% endif %}
+    <div class="receipt-brand">
+      {% if receipt_logo %}
+        <div><img class="receipt-logo" src="{{ receipt_logo }}"></div>
+      {% endif %}
+      <div>
+        <div class="receipt-title">{{ design.custom_wording_title or "KUITANSI" }}</div>
+        <div><strong>No:</strong> {{ doc.name }}</div>
+        <div><strong>Tanggal:</strong> {{ frappe.utils.format_date(doc.posting_date) }}</div>
+        <div><strong>Pelanggan:</strong> {{ doc.customer }}</div>
+        {% if doc.customer_reference_no %}<div><strong>Customer Ref:</strong> {{ doc.customer_reference_no }}</div>{% endif %}
+      </div>
     </div>
     <div style="text-align:right">
       {% if doc.company %}<div><strong>{{ doc.company }}</strong></div>{% endif %}
