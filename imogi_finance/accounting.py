@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings
@@ -169,8 +170,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     settings = get_settings()
     if (
-        settings.get("enable_tax_invoice_ocr")
-        and settings.get("require_verification_before_create_pi_from_expense_request")
+        cint(settings.get("enable_tax_invoice_ocr"))
+        and cint(settings.get("require_verification_before_create_pi_from_expense_request"))
         and getattr(request, "ti_verification_status", "") != "Verified"
     ):
         frappe.throw(
