@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings
 
 PURCHASE_INVOICE_REQUEST_TYPES = {"Expense", "Asset"}
@@ -156,6 +157,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     if not company:
         frappe.throw(_("Unable to resolve company from the selected Cost Center."))
 
+    branch = resolve_branch(
+        company=company, cost_center=request.cost_center, explicit_branch=getattr(request, "branch", None)
+    )
+
     request_items = getattr(request, "items", []) or []
     if not request_items:
         frappe.throw(_("Expense Request must have at least one item to create a Purchase Invoice."))
@@ -233,6 +238,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.ti_fp_ppn = getattr(request, "ti_fp_ppn", None)
     pi.ti_fp_ppn_type = getattr(request, "ti_fp_ppn_type", None)
     pi.ti_verification_status = getattr(request, "ti_verification_status", None)
+    pi.ti_verification_notes = getattr(request, "ti_verification_notes", None)
+    pi.ti_duplicate_flag = getattr(request, "ti_duplicate_flag", None)
+    pi.ti_npwp_match = getattr(request, "ti_npwp_match", None)
+    apply_branch(pi, branch)
 
     pi.insert(ignore_permissions=True)
 
