@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from imogi_finance.accounting import PURCHASE_INVOICE_ALLOWED_STATUSES, PURCHASE_INVOICE_REQUEST_TYPES
 from imogi_finance.events.utils import (
@@ -11,7 +12,9 @@ from imogi_finance.tax_invoice_ocr import get_settings
 
 def validate_before_submit(doc, method=None):
     settings = get_settings()
-    require_verified = settings.get("require_verification_before_submit_pi")
+    require_verified = cint(settings.get("enable_tax_invoice_ocr")) and cint(
+        settings.get("require_verification_before_submit_pi")
+    )
     if require_verified and getattr(doc, "ti_verification_status", "") != "Verified":
         frappe.throw(
             _("Tax Invoice must be verified before submitting this Purchase Invoice."),
