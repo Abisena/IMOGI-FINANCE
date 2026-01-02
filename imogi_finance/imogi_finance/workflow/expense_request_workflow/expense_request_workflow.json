@@ -59,22 +59,22 @@
     {
       "state": "Approved",
       "doc_status": 1,
-      "allow_edit": ""
+      "allow_edit": "System Manager"
     },
     {
       "state": "Rejected",
       "doc_status": 1,
-      "allow_edit": ""
+      "allow_edit": "System Manager"
     },
     {
       "state": "Linked",
       "doc_status": 1,
-      "allow_edit": ""
+      "allow_edit": "System Manager"
     },
     {
       "state": "Closed",
       "doc_status": 1,
-      "allow_edit": ""
+      "allow_edit": "System Manager"
     }
   ],
   "transitions": [

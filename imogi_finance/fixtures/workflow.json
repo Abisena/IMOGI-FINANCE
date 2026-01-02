@@ -66,25 +66,25 @@
         "doctype": "Workflow Document State",
         "state": "Approved",
         "doc_status": "1",
-        "allow_edit": ""
+        "allow_edit": "System Manager"
       },
       {
         "doctype": "Workflow Document State",
         "state": "Rejected",
         "doc_status": "1",
-        "allow_edit": ""
+        "allow_edit": "System Manager"
       },
       {
         "doctype": "Workflow Document State",
         "state": "Linked",
         "doc_status": "1",
-        "allow_edit": ""
+        "allow_edit": "System Manager"
       },
       {
         "doctype": "Workflow Document State",
         "state": "Closed",
         "doc_status": "1",
-        "allow_edit": ""
+        "allow_edit": "System Manager"
       }
     ],
     "transitions": [
