@@ -36,11 +36,18 @@ def _entry_filters(dims: Dimensions, entry_types: list[str]):
     return filters
 
 
-def get_reserved_total(dims: Dimensions) -> float:
+def get_reserved_total(dims: Dimensions, from_date: date | None = None, to_date: date | None = None) -> float:
     try:
         rows = frappe.get_all(
             "Budget Control Entry",
-            filters=_entry_filters(dims, ["RESERVATION", "RELEASE", "CONSUMPTION"]),
+            filters={
+                **_entry_filters(dims, ["RESERVATION", "RELEASE", "CONSUMPTION"]),
+                **(
+                    {"posting_date": ["between", [from_date, to_date]]}
+                    if from_date and to_date
+                    else {}
+                ),
+            },
             fields=["entry_type", "direction", "amount"],
         )
     except Exception:
@@ -62,10 +69,10 @@ def get_reserved_total(dims: Dimensions) -> float:
     return total
 
 
-def get_availability(dims: Dimensions) -> dict:
+def get_availability(dims: Dimensions, from_date: date | None = None, to_date: date | None = None) -> dict:
     allocated = native_budget.get_allocated_from_erpnext_budget(dims)
-    actual = native_budget.get_actual_spent(dims)
-    reserved = get_reserved_total(dims)
+    actual = native_budget.get_actual_spent(dims, from_date=from_date, to_date=to_date)
+    reserved = get_reserved_total(dims, from_date=from_date, to_date=to_date)
     available = allocated - actual - reserved
 
     return {
@@ -76,12 +83,12 @@ def get_availability(dims: Dimensions) -> dict:
     }
 
 
-def check_budget_available(dims: Dimensions, amount: float) -> dict:
+def check_budget_available(dims: Dimensions, amount: float, from_date: date | None = None, to_date: date | None = None) -> dict:
     settings = get_settings()
     if not settings.get("enable_budget_lock"):
         return {"ok": True, "message": _("Budget lock disabled in settings."), "available": None}
 
-    snapshot = get_availability(dims)
+    snapshot = get_availability(dims, from_date=from_date, to_date=to_date)
     ok = snapshot["available"] >= float(amount or 0)
     message = (
         _("Available budget is {available}, requested {amount}.").format(

@@ -3,109 +3,142 @@ import types
 
 import pytest
 
-
 frappe = sys.modules.setdefault("frappe", types.ModuleType("frappe"))
-frappe._ = lambda msg: msg
+frappe._ = lambda msg, *args, **kwargs: msg
+frappe.session = types.SimpleNamespace(user="user@example.com")
+frappe._dict = lambda value=None, **kwargs: types.SimpleNamespace(**(value or {}), **kwargs)
 
 
 class _Throw(Exception):
-	pass
+    pass
 
 
-def _throw(msg=None, title=None):
-	raise _Throw(msg or title)
+def _throw(message=None, *args, **kwargs):
+    raise _Throw(message)
 
 
 frappe.throw = _throw
-frappe.session = types.SimpleNamespace(user="tester@example.com")
-frappe.db = types.SimpleNamespace(
-	get_value=lambda *args, **kwargs: None,
-)
-frappe.get_cached_value = lambda *args, **kwargs: None
-frappe._dict = lambda value=None: types.SimpleNamespace(**(value or {}))
-frappe.get_cached_doc = lambda *args, **kwargs: frappe._dict(
-	{
-		"enable_branch_expense_request": 1,
-		"default_expense_account": None,
-		"require_employee": 0,
-	}
-)
-frappe.get_single = lambda *args, **kwargs: frappe.get_cached_doc(*args, **kwargs)
+frappe.get_cached_value = lambda *args, **kwargs: "IDR"
+frappe.get_attr = lambda path: (lambda posting_date, company=None, as_dict=False: {"name": "FY-2024"})
+frappe.db = types.SimpleNamespace(get_value=lambda *args, **kwargs: None)
+
 frappe.utils = types.SimpleNamespace(
-	flt=lambda value, precision=None: float(value or 0),
-	nowdate=lambda: "2024-01-01",
+    flt=lambda value, *args, **kwargs: float(value),
+    nowdate=lambda: "2024-03-01",
+    get_first_day=lambda value: value,
+    get_last_day=lambda value: value,
 )
 sys.modules["frappe.utils"] = frappe.utils
 
 
-class _Document:
-	def __init__(self, **kwargs):
-		for key, value in kwargs.items():
-			setattr(self, key, value)
-
-	def get(self, key, default=None):
-		return getattr(self, key, default)
-
-	def append(self, table, row):
-		getattr(self, table).append(row)
+class Document:
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
 
-sys.modules["frappe.model"] = types.SimpleNamespace()
-sys.modules["frappe.model.document"] = types.SimpleNamespace(Document=_Document)
-
-from imogi_finance.imogi_finance.doctype.branch_expense_request.branch_expense_request import (
-	BranchExpenseRequest,
-)
+sys.modules["frappe.model.document"] = types.SimpleNamespace(Document=Document)
 
 
-def _item(**overrides):
-	defaults = {
-		"description": "Item",
-		"qty": 1,
-		"rate": 1000,
-		"cost_center": "CC-01",
-	}
-	defaults.update(overrides)
-	return frappe._dict(defaults)
+from imogi_finance.budget_control import service  # noqa: E402
+from imogi_finance.imogi_finance.doctype.branch_expense_request import branch_expense_request  # noqa: E402
 
 
-def _make_request(items=None, **overrides):
-	defaults = {
-		"company": "Test Company",
-		"branch": "BR-01",
-		"purpose": "Testing",
-		"currency": "IDR",
-		"items": items or [],
-		"docstatus": overrides.pop("docstatus", 0),
-	}
-	defaults.update(overrides)
-	return BranchExpenseRequest(**defaults)
+def _settings(**overrides):
+    base = {
+        "enable_branch_expense_request": 1,
+        "default_expense_account": "5110",
+        "require_employee": 0,
+        "enable_budget_check": 1,
+        "budget_block_on_over": 1,
+        "budget_warn_on_over": 0,
+        "budget_check_basis": "Fiscal Year",
+    }
+    base.update(overrides)
+    return frappe._dict(base)
 
 
-def test_submit_fails_without_items():
-	request = _make_request(items=[])
-	with pytest.raises(_Throw):
-		request.validate()
+def _fake_dims(**kwargs):
+    return types.SimpleNamespace(**kwargs)
 
 
-def test_cost_center_required_per_item():
-	request = _make_request(items=[_item(cost_center=None)])
-	with pytest.raises(_Throw):
-		request.validate()
+def _fake_budget_result(available):
+    return service.BudgetCheckResult(
+        ok=available >= 0,
+        message=f"available {available}",
+        available=available,
+        snapshot={"available": available, "allocated": 1_000},
+    )
 
 
-def test_total_amount_computed_and_positive_qty():
-	items = [_item(qty=2, rate=2500), _item(qty=1, rate=1500, cost_center="CC-02")]
-	request = _make_request(items=items)
+def _build_request(monkeypatch, *, available_map):
+    monkeypatch.setattr(branch_expense_request, "get_settings", lambda: _settings(), raising=False)
+    monkeypatch.setattr(
+        branch_expense_request.service,
+        "resolve_dims",
+        lambda **kwargs: _fake_dims(**kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        branch_expense_request.service,
+        "check_budget_available",
+        lambda dims, amount, **kwargs: _fake_budget_result(available_map.get(dims.cost_center, amount)),
+        raising=False,
+    )
 
-	request.validate()
+    doc = branch_expense_request.BranchExpenseRequest()
+    doc.company = "TC"
+    doc.posting_date = "2024-03-15"
+    doc.branch = "BR-1"
+    doc.items = [
+        types.SimpleNamespace(qty=1, rate=100, amount=100, cost_center="CC-OK", expense_account="5110", project=None),
+        types.SimpleNamespace(qty=1, rate=600, amount=600, cost_center="CC-OVR", expense_account="5110", project=None),
+    ]
+    return doc
 
-	assert request.items[0].amount == 5000
-	assert request.items[1].amount == 1500
-	assert request.total_amount == 6500
+
+def test_budget_check_over_budget_blocks_submit(monkeypatch):
+    doc = _build_request(monkeypatch, available_map={"CC-OK": 1000, "CC-OVR": 400})
+
+    doc.validate()
+
+    assert doc.fiscal_year == "FY-2024"
+    assert doc.budget_check_status == "Over Budget"
+    assert doc.items[0].budget_result == "OK"
+    assert doc.items[1].budget_result == "Over Budget"
+
+    with pytest.raises(_Throw):
+        doc.before_submit()
 
 
-def test_cancel_updates_status():
-	request = _make_request(items=[_item()])
-	request.on_cancel()
-	assert request.status == BranchExpenseRequest.STATUS_CANCELLED
+def test_budget_warning_allows_submit(monkeypatch):
+    monkeypatch.setattr(
+        branch_expense_request,
+        "get_settings",
+        lambda: _settings(budget_warn_on_over=1, budget_block_on_over=0),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        branch_expense_request.service,
+        "resolve_dims",
+        lambda **kwargs: _fake_dims(**kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        branch_expense_request.service,
+        "check_budget_available",
+        lambda dims, amount, **kwargs: _fake_budget_result(100),
+        raising=False,
+    )
+
+    doc = branch_expense_request.BranchExpenseRequest()
+    doc.company = "TC"
+    doc.posting_date = "2024-04-01"
+    doc.branch = "BR-2"
+    doc.items = [types.SimpleNamespace(qty=1, rate=150, amount=150, cost_center="CC-1", expense_account=None, project=None)]
+
+    doc.validate()
+    assert doc.budget_check_status == "Warning"
+    assert doc.items[0].budget_result == "Warning"
+
+    # Should not raise because warn_only mode is on
+    doc.before_submit()

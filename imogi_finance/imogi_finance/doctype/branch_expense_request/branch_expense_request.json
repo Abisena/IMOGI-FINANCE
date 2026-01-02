@@ -17,10 +17,13 @@
     "employee",
     "purpose",
     "currency",
+    "fiscal_year",
     "items_section",
     "items",
     "column_break_totals",
     "total_amount",
+    "budget_check_status",
+    "budget_check_message",
     "status",
     "workflow_state",
     "attachments"
@@ -89,6 +92,13 @@
       "options": "Currency"
     },
     {
+      "fieldname": "fiscal_year",
+      "fieldtype": "Link",
+      "label": "Fiscal Year",
+      "options": "Fiscal Year",
+      "reqd": 1
+    },
+    {
       "collapsible": 0,
       "fieldname": "items_section",
       "fieldtype": "Section Break",
@@ -112,6 +122,21 @@
       "fieldtype": "Currency",
       "in_list_view": 1,
       "label": "Total Amount",
+      "read_only": 1
+    },
+    {
+      "default": "Not Checked",
+      "fieldname": "budget_check_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Budget Check Status",
+      "options": "Not Checked\nOK\nWarning\nOver Budget",
+      "read_only": 1
+    },
+    {
+      "fieldname": "budget_check_message",
+      "fieldtype": "Small Text",
+      "label": "Budget Check Message",
       "read_only": 1
     },
     {

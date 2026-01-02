@@ -1,14 +1,35 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Iterable
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, nowdate
+from frappe.utils import flt, get_first_day, get_last_day, nowdate
 
 from imogi_finance.branching import apply_branch
+from imogi_finance.budget_control import ledger, service
 from ..branch_expense_request_settings.branch_expense_request_settings import get_settings
+
+
+def resolve_fiscal_year(posting_date, company: str | None):
+	for path in ("erpnext.accounts.utils.get_fiscal_year", "frappe.utils.get_fiscal_year"):
+		try:
+			getter = frappe.get_attr(path)
+		except Exception:
+			continue
+
+		try:
+			fiscal = getter(posting_date, company=company, as_dict=True)
+		except TypeError:
+			fiscal = getter(posting_date, company=company)
+
+		if isinstance(fiscal, dict):
+			return fiscal
+		if isinstance(fiscal, (list, tuple)) and fiscal:
+			return {"name": fiscal[0]}
+	return None
 
 
 class BranchExpenseRequest(Document):
@@ -24,16 +45,21 @@ class BranchExpenseRequest(Document):
 		self._set_requester()
 		self._set_defaults_from_company()
 		self._apply_employee_branch()
+		self._set_fiscal_year()
 		self._validate_employee_requirement(settings)
 		self._validate_items(settings)
 		self._update_totals()
+		self._run_budget_checks(settings)
 		self._sync_status_field()
 
 	def before_submit(self):
-		self._validate_items(get_settings())
+		settings = get_settings()
+		self._validate_items(settings)
 		self._update_totals()
+		self._set_fiscal_year()
 		if not getattr(self, "branch", None):
 			frappe.throw(_("Branch is required before submission."))
+		self._run_budget_checks(settings, for_submit=True)
 
 		if not getattr(self, "workflow_state", None):
 			self.workflow_state = self.STATUS_PENDING
@@ -75,6 +101,16 @@ class BranchExpenseRequest(Document):
 		if employee_branch:
 			apply_branch(self, employee_branch)
 
+	def _set_fiscal_year(self):
+		if getattr(self, "fiscal_year", None) or not getattr(self, "posting_date", None):
+			return
+
+		fiscal = resolve_fiscal_year(self.posting_date, getattr(self, "company", None))
+		if not fiscal:
+			return
+
+		self.fiscal_year = fiscal.get("name") or fiscal.get("fiscal_year")
+
 	def _validate_employee_requirement(self, settings):
 		if getattr(settings, "require_employee", 0) and not getattr(self, "employee", None):
 			frappe.throw(_("Employee is required for Branch Expense Request."))
@@ -100,6 +136,89 @@ class BranchExpenseRequest(Document):
 	def _update_totals(self):
 		items: Iterable[object] = self.get("items") or []
 		self.total_amount = sum(flt(getattr(item, "amount", 0)) for item in items)
+
+	def _get_budget_window(self, settings) -> tuple[date | None, date | None]:
+		basis = (getattr(settings, "budget_check_basis", None) or "Fiscal Year").lower()
+		if basis.startswith("fiscal period") and getattr(self, "posting_date", None):
+			return get_first_day(self.posting_date), get_last_day(self.posting_date)
+		return None, None
+
+	def _reset_budget_flags(self, status: str = "Not Checked"):
+		self.budget_check_status = status
+		self.budget_check_message = None
+		for item in self.get("items") or []:
+			item.budget_result = None
+			item.budget_available = None
+			item.budget_consumed = None
+			item.budget_message = None
+
+	def _check_item_budget(self, item, settings) -> str:
+		account = getattr(item, "expense_account", None) or getattr(settings, "default_expense_account", None)
+		amount = flt(getattr(item, "amount", 0))
+		dims = service.resolve_dims(
+			company=getattr(self, "company", None),
+			fiscal_year=getattr(self, "fiscal_year", None),
+			cost_center=getattr(item, "cost_center", None),
+			account=account,
+			project=getattr(item, "project", None),
+			branch=getattr(self, "branch", None),
+		)
+		from_date, to_date = self._get_budget_window(settings)
+
+		result = service.check_budget_available(dims, amount, from_date=from_date, to_date=to_date)
+		snapshot = result.snapshot or {}
+		message = result.message or snapshot.get("message")
+		available = result.available if result.available is not None else snapshot.get("available")
+		if available is None:
+			availability = ledger.get_availability(dims, from_date=from_date, to_date=to_date)
+			snapshot.update(availability)
+			available = availability.get("available")
+
+		allocated = snapshot.get("allocated")
+		consumed = None
+		if allocated is not None and available is not None:
+			consumed = flt(allocated) - flt(available)
+
+		ok = bool(result.ok) if available is None else available >= amount
+		status = "OK" if ok else ("Warning" if getattr(settings, "budget_warn_on_over", 0) else "Over Budget")
+
+		if not message and available is not None:
+			message = _("Available budget is {0}, requested {1}.").format(available, amount)
+
+		item.budget_result = status
+		item.budget_available = available
+		item.budget_consumed = consumed
+		item.budget_message = message
+
+		return status
+
+	def _run_budget_checks(self, settings, *, for_submit: bool = False):
+		self._reset_budget_flags()
+		if not getattr(settings, "enable_budget_check", 0):
+			return
+
+		if not getattr(self, "fiscal_year", None):
+			frappe.throw(_("Fiscal Year is required for budget checking."))
+
+		summary_status = "OK"
+		messages = set()
+		for item in self.get("items") or []:
+			status = self._check_item_budget(item, settings)
+			if status == "Over Budget":
+				summary_status = "Over Budget"
+			elif status == "Warning" and summary_status != "Over Budget":
+				summary_status = "Warning"
+			if getattr(item, "budget_message", None):
+				messages.add(item.budget_message)
+
+		self.budget_check_status = summary_status
+		if messages:
+			self.budget_check_message = "\n".join(sorted(messages))
+
+		over_budget = summary_status == "Over Budget"
+		block_overrun = getattr(settings, "budget_block_on_over", 0) and not getattr(settings, "budget_warn_on_over", 0)
+		if for_submit and over_budget and block_overrun:
+			frappe.throw(_("Budget check failed. Please resolve over budget items before submission."))
 
 	def _sync_status_field(self):
 		if getattr(self, "docstatus", 0) == 2:
