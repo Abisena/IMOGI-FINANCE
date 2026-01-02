@@ -432,6 +432,10 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     confidence_values: list[float] = []
     for entry in responses:
         full_text = (entry.get("fullTextAnnotation") or {}).get("text")
+        if not full_text:
+            text_annotations = entry.get("textAnnotations") or []
+            if text_annotations:
+                full_text = text_annotations[0].get("description")
         if full_text:
             texts.append(full_text)
 
