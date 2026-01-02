@@ -693,7 +693,8 @@ class ExpenseRequest(Document):
         if workflow_state not in valid_states:
             return
 
-        if self.status == workflow_state:
+        current_status = getattr(self, "status", None)
+        if current_status == workflow_state:
             return
 
         self.status = workflow_state
