@@ -8,7 +8,11 @@ from imogi_finance.events.utils import (
     get_approved_expense_request,
     get_cancel_updates,
 )
-from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
+from imogi_finance.tax_invoice_ocr import (
+    get_settings,
+    sync_tax_invoice_upload,
+    validate_tax_invoice_upload_link,
+)
 from imogi_finance.budget_control.workflow import (
     consume_budget_for_purchase_invoice,
     reverse_consumption_for_purchase_invoice,
@@ -18,6 +22,7 @@ from imogi_finance.budget_control.workflow import (
 
 def validate_before_submit(doc, method=None):
     sync_tax_invoice_upload(doc, "Purchase Invoice")
+    validate_tax_invoice_upload_link(doc, "Purchase Invoice")
     settings = get_settings()
     require_verified = cint(settings.get("enable_tax_invoice_ocr")) and cint(
         settings.get("require_verification_before_submit_pi")
