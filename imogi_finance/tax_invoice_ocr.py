@@ -250,8 +250,8 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
         if not parsed.scheme or not parsed.netloc:
             raise ValidationError(_("Google Vision endpoint is invalid. Please update Tax Invoice OCR Settings."))
 
-        allowed_hosts = ("vision.googleapis.com", "eu-vision.googleapis.com", "us-vision.googleapis.com")
-        if not parsed.netloc.endswith(allowed_hosts):
+        allowed_hosts = {"vision.googleapis.com", "eu-vision.googleapis.com", "us-vision.googleapis.com"}
+        if parsed.netloc not in allowed_hosts:
             raise ValidationError(_("Google Vision endpoint host is not supported. Please use vision.googleapis.com or a supported regional host."))
 
         if "asyncBatchAnnotate" in (parsed.path or ""):
@@ -337,7 +337,8 @@ def _get_google_vision_headers(settings: dict[str, Any]) -> dict[str, str]:
             _(
                 "Google Vision credentials are not configured. "
                 "Provide an API Key or configure Application Default Credentials (service account). "
-                "See Google Cloud authentication guidance (e.g. gcloud auth application-default login or GOOGLE_APPLICATION_CREDENTIALS)."
+                "See Google Cloud authentication guidance (e.g. gcloud auth application-default login or GOOGLE_APPLICATION_CREDENTIALS) "
+                "and ensure google-auth is installed."
             )
         )
 
