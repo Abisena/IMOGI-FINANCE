@@ -24,6 +24,7 @@
     "section_verification",
     "require_verification_before_submit_pi",
     "require_verification_before_create_pi_from_expense_request",
+    "ppn_tolerance_percentage",
     "tolerance_idr",
     "block_duplicate_fp_no",
     "ppn_input_account",
@@ -132,6 +133,13 @@
       "fieldname": "require_verification_before_create_pi_from_expense_request",
       "fieldtype": "Check",
       "label": "Require Verification before Create PI from Expense Request"
+    },
+    {
+      "default": 0.01,
+      "fieldname": "ppn_tolerance_percentage",
+      "fieldtype": "Float",
+      "label": "PPN Tolerance (%)",
+      "description": "Accepted percentage difference between OCR PPN and computed PPN."
     },
     {
       "default": 10,

@@ -31,6 +31,7 @@ DEFAULT_SETTINGS = {
     "require_verification_before_submit_pi": 1,
     "require_verification_before_create_pi_from_expense_request": 1,
     "npwp_normalize": 1,
+    "ppn_tolerance_percentage": 0.01,
     "tolerance_idr": 10,
     "block_duplicate_fp_no": 1,
     "ppn_input_account": None,
@@ -131,6 +132,14 @@ FIELD_MAP = {
     },
 }
 
+NPWP_SUPPLIER_FIELDS = {
+    "Purchase Invoice": ("supplier_npwp", "supplier_tax_id", "tax_id"),
+    "Expense Request": ("supplier_npwp", "supplier_tax_id", "tax_id"),
+    "Branch Expense Request": ("supplier_npwp", "supplier_tax_id", "tax_id"),
+    "Sales Invoice": ("buyer_tax_id", "customer_tax_id", "tax_id"),
+    "Tax Invoice OCR Upload": ("npwp",),
+}
+
 UPLOAD_LINK_FIELDS = {
     "Purchase Invoice": "ti_tax_invoice_upload",
     "Expense Request": "ti_tax_invoice_upload",
@@ -159,7 +168,7 @@ def normalize_npwp(npwp: str | None) -> str | None:
         return npwp
     settings = get_settings()
     if cint(settings.get("npwp_normalize")):
-        return re.sub(r"[.\-\s]", "", npwp or "")
+        return re.sub(r"\D", "", npwp or "")
     return npwp
 
 
@@ -1139,6 +1148,16 @@ def _enqueue_ocr(doc: Any, doctype: str):
 
 
 def _get_party_npwp(doc: Any, doctype: str) -> str | None:
+    for fieldname in NPWP_SUPPLIER_FIELDS.get(doctype, ()):  # type: ignore[arg-type]
+        try:
+            value = getattr(doc, fieldname, None)
+        except Exception:
+            value = None
+        if value:
+            normalized = normalize_npwp(value)
+            if normalized:
+                return normalized
+
     if doctype == "Sales Invoice":
         party = getattr(doc, "customer", None) or getattr(doc, "party", None)
         party_type = "Customer"
@@ -1275,13 +1294,23 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     else:
         expected_ppn = 0
 
-    tolerance = flt(settings.get("tolerance_idr", 10))
+    def _ppn_tolerance_bounds(reported: float) -> tuple[float, float, float]:
+        tolerance_pct = flt(settings.get("ppn_tolerance_percentage", 0))
+        tolerance_idr = flt(settings.get("tolerance_idr", 0))
+        pct_allowance = abs(reported) * tolerance_pct if tolerance_pct else 0
+        allowance = max(tolerance_idr, pct_allowance)
+        return reported - allowance, reported + allowance, allowance
+
+    reported_ppn = flt(_get_value(doc, doctype, "ppn", 0))
     if expected_ppn is not None:
-        diff = abs(flt(_get_value(doc, doctype, "ppn", 0)) - expected_ppn)
-        if diff > tolerance:
+        lower, upper, allowance = _ppn_tolerance_bounds(reported_ppn)
+        if not (lower <= expected_ppn <= upper):
             notes.append(
-                _("PPN amount differs from expected by more than {0}. Difference: {1}").format(
-                    format_value(tolerance, "Currency"), format_value(diff, "Currency")
+                _("PPN mismatch: expected between {0} and {1} (tolerance {2}), computed {3}.").format(
+                    format_value(lower, "Currency"),
+                    format_value(upper, "Currency"),
+                    format_value(allowance, "Currency"),
+                    format_value(expected_ppn, "Currency"),
                 )
             )
 

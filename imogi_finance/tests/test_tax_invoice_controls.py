@@ -459,6 +459,80 @@ def test_duplicate_detection_marks_flag(monkeypatch):
     assert getattr(doc, "ti_duplicate_flag", 0) == 1
 
 
+def test_ppn_validation_accepts_percentage_tolerance(monkeypatch):
+    doc = types.SimpleNamespace(
+        name="PI-1",
+        ti_fp_no="0102030405060708",
+        company="Comp",
+        supplier=None,
+        taxes=[types.SimpleNamespace(rate=11)],
+        ti_fp_ppn_type="Standard",
+        ti_fp_dpp=1000,
+        ti_fp_ppn=108,
+    )
+
+    saved = {}
+
+    def fake_save(ignore_permissions=False):
+        saved["status"] = doc.ti_verification_status
+        saved["notes"] = getattr(doc, "ti_verification_notes", "")
+
+    doc.save = fake_save
+
+    monkeypatch.setattr(
+        tax_invoice_ocr,
+        "get_settings",
+        lambda: {
+            "block_duplicate_fp_no": 0,
+            "tolerance_idr": 0,
+            "ppn_tolerance_percentage": 0.02,
+            "npwp_normalize": 1,
+        },
+    )
+
+    result = verify_tax_invoice(doc, doctype="Purchase Invoice")
+
+    assert result["status"] == "Verified"
+    assert saved["notes"] == ""
+
+
+def test_ppn_validation_flags_outside_tolerance(monkeypatch):
+    doc = types.SimpleNamespace(
+        name="PI-1",
+        ti_fp_no="0102030405060708",
+        company="Comp",
+        supplier=None,
+        taxes=[types.SimpleNamespace(rate=11)],
+        ti_fp_ppn_type="Standard",
+        ti_fp_dpp=1000,
+        ti_fp_ppn=100,
+    )
+
+    saved = {}
+
+    def fake_save(ignore_permissions=False):
+        saved["status"] = doc.ti_verification_status
+        saved["notes"] = getattr(doc, "ti_verification_notes", "")
+
+    doc.save = fake_save
+
+    monkeypatch.setattr(
+        tax_invoice_ocr,
+        "get_settings",
+        lambda: {
+            "block_duplicate_fp_no": 0,
+            "tolerance_idr": 0,
+            "ppn_tolerance_percentage": 0.01,
+            "npwp_normalize": 1,
+        },
+    )
+
+    result = verify_tax_invoice(doc, doctype="Purchase Invoice")
+
+    assert result["status"] == "Needs Review"
+    assert "PPN mismatch" in saved["notes"]
+
+
 def test_sales_invoice_verification_uses_output_fields(monkeypatch):
     doc = types.SimpleNamespace(
         name="SI-1",
