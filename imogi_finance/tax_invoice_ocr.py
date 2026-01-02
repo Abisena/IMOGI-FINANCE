@@ -240,7 +240,7 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
                     _(
                         "Google Vision credentials are not configured. "
                         "Provide an API Key or configure Application Default Credentials (service account). "
-                        "See Google Cloud authentication guidance."
+                        "See Google Cloud authentication guidance (e.g. gcloud auth application-default login or GOOGLE_APPLICATION_CREDENTIALS)."
                     )
                 )
         if not settings.get("google_vision_endpoint"):
@@ -336,7 +336,8 @@ def _get_google_vision_headers(settings: dict[str, Any]) -> dict[str, str]:
         raise ValidationError(
             _(
                 "Google Vision credentials are not configured. "
-                "Provide an API Key or configure Application Default Credentials (service account)."
+                "Provide an API Key or configure Application Default Credentials (service account). "
+                "See Google Cloud authentication guidance (e.g. gcloud auth application-default login or GOOGLE_APPLICATION_CREDENTIALS)."
             )
         )
 
