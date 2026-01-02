@@ -265,6 +265,28 @@ def _update_doc_after_ocr(
     doc.save(ignore_permissions=True)
 
 
+def _run_ocr_job(name: str, target_doctype: str, provider: str):
+    target_doc = frappe.get_doc(target_doctype, name)
+    pdf_field = _get_fieldname(target_doctype, "tax_invoice_pdf")
+    try:
+        target_doc.db_set(_get_fieldname(target_doctype, "ocr_status"), "Processing")
+        text, raw_json, confidence = ocr_extract_text_from_pdf(
+            getattr(target_doc, pdf_field), provider
+        )
+        parsed, estimated_confidence = parse_faktur_pajak_text(text or "")
+        _update_doc_after_ocr(
+            target_doc, target_doctype, parsed, confidence or estimated_confidence, raw_json
+        )
+    except Exception as exc:
+        target_doc.db_set(
+            {
+                _get_fieldname(target_doctype, "ocr_status"): "Failed",
+                _get_fieldname(target_doctype, "notes"): getattr(exc, "message", None) or str(exc),
+            }
+        )
+        frappe.log_error(frappe.get_traceback(), "Tax Invoice OCR failed")
+
+
 def _enqueue_ocr(doc: Any, doctype: str):
     settings = get_settings()
     pdf_field = _get_fieldname(doctype, "tax_invoice_pdf")
@@ -278,34 +300,14 @@ def _enqueue_ocr(doc: Any, doctype: str):
     )
     provider = settings.get("ocr_provider", "Manual Only")
 
-    def _job(name: str, target_doctype: str):
-        target_doc = frappe.get_doc(target_doctype, name)
-        try:
-            target_doc.db_set(_get_fieldname(target_doctype, "ocr_status"), "Processing")
-            text, raw_json, confidence = ocr_extract_text_from_pdf(
-                getattr(target_doc, pdf_field), provider
-            )
-            parsed, estimated_confidence = parse_faktur_pajak_text(text or "")
-            _update_doc_after_ocr(
-                target_doc, target_doctype, parsed, confidence or estimated_confidence, raw_json
-            )
-        except Exception as exc:
-            target_doc.db_set(
-                {
-                    _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                    _get_fieldname(target_doctype, "notes"): getattr(exc, "message", None) or str(exc),
-                }
-            )
-            frappe.log_error(frappe.get_traceback(), "Tax Invoice OCR failed")
-
     frappe.enqueue(
-        _job,
+        _run_ocr_job,
         queue="long",
         job_name=f"tax-invoice-ocr-{doctype}-{doc.name}",
         timeout=300,
         now=getattr(frappe.flags, "in_test", False),
         is_async=not getattr(frappe.flags, "in_test", False),
-        **{"name": doc.name, "target_doctype": doctype},
+        **{"name": doc.name, "target_doctype": doctype, "provider": provider},
     )
 
 
