@@ -615,10 +615,20 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     if not responses:
         raise ValidationError(_("Google Vision OCR did not return any responses for file {0}.").format(local_path))
 
+    def _iter_entries(resp: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for entry in resp:
+            yield entry
+            nested_responses = entry.get("responses")
+            if isinstance(nested_responses, list):
+                for nested in nested_responses:
+                    if isinstance(nested, dict):
+                        yield nested
+
     texts: list[str] = []
     confidence_values: list[float] = []
     min_block_conf = flt(settings.get("ocr_min_confidence", 0.0)) or 0.0
-    for entry in responses:
+
+    for entry in _iter_entries(responses):
         block_texts = _iter_block_text(entry)
         # keep only header (upper 35%) and footer (lower 35%) to avoid table/border noise
         filtered_blocks = [
@@ -629,22 +639,23 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         if filtered_blocks:
             texts.extend([text for text, _ in filtered_blocks])
             confidence_values.extend([conf for _, conf in filtered_blocks])
-        else:
-            # fallback to legacy full text if filtering produced nothing
-            full_text = (entry.get("fullTextAnnotation") or {}).get("text")
-            if not full_text:
-                text_annotations = entry.get("textAnnotations") or []
-                if text_annotations:
-                    full_text = text_annotations[0].get("description")
-            if full_text:
-                texts.append(full_text)
-                pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
-                for page in pages:
-                    if "confidence" in page:
-                        try:
-                            confidence_values.append(flt(page.get("confidence")))
-                        except Exception:
-                            continue
+            continue
+
+        # fallback to legacy full text if filtering produced nothing
+        full_text = (entry.get("fullTextAnnotation") or {}).get("text")
+        if not full_text:
+            text_annotations = entry.get("textAnnotations") or []
+            if text_annotations:
+                full_text = text_annotations[0].get("description")
+        if full_text:
+            texts.append(full_text)
+            pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
+            for page in pages:
+                if "confidence" in page:
+                    try:
+                        confidence_values.append(flt(page.get("confidence")))
+                    except Exception:
+                        continue
 
     text = _strip_border_artifacts("\n".join(texts).strip())
     if not text:
