@@ -1,36 +1,55 @@
 ### Imogi Finance
 
-App for Manage Expense IMOGI
+App for managing expenses at IMOGI.
 
-### Fitur Utama
+### Key Features
 
-#### Expense Request & Persetujuan
+#### Expense Request & Approvals
 
-- **Rute persetujuan dinamis**: rute dihitung dari Expense Approval Setting per Cost Center + akun biaya + amount, disimpan di dokumen, dan wajib segar sebelum approve (deteksi perubahan konfigurasi otomatis menolak approval sampai rute direfresh). Submit hanya boleh oleh creator, approver harus sesuai user/role di rute, dan tidak boleh melompati level.
-- **Kontrol edit & status setelah submit**: perubahan amount/cost center/akun biaya saat Pending mereset status ke Pending Level 1 dengan audit comment; status Approved/Linked/Closed tidak boleh ubah field kunci. Pending edits dibatasi ke owner atau approver, dan semua penolakan/override dicatat di timeline.
-- **Reopen & Close terjaga**: reopen hanya untuk System Manager kecuali ada override, memaksa audit jika masih ada link Payment Entry/Purchase Invoice/Asset aktif. Aksi Close perlu validasi rute terbaru atau snapshot akhir; bisa override via flag darurat dengan jejak audit.
-- **Guardrails status & jejak audit**: perubahan status di luar workflow diblokir, rute approval disnapshot ketika Approved untuk validasi Close, dan komentar otomatis tercatat untuk deny workflow, edit pending, atau reopen override.
+- **Dynamic approval routes**: routes are calculated from Expense Approval Settings per Cost Center + expense account + amount, stored on the document, and must be refreshed before approval (configuration changes are detected and block approval until refreshed). Submit is restricted to the creator, approvers must match the user/role on the route, and levels cannot be skipped.
+- **Edit controls & post-submit states**: changing amount/cost center/expense account while Pending resets to Pending Level 1 with an audit comment; key fields cannot change in Approved/Linked/Closed. Pending edits are limited to the owner or approver, and all rejections/overrides are recorded in the timeline.
+- **Protected reopen & close**: reopen is reserved for System Manager unless an override flag is set; it enforces audit when active links to Payment Entry/Purchase Invoice/Asset exist. Close validates the latest route or final snapshot; an emergency override flag is available with audit trail.
+- **Status guardrails & audit trail**: off-workflow status changes are blocked, approval routes are snapshotted when Approved to validate Close, and automatic comments are posted for denied workflow actions, pending edits, or reopen overrides.
 
-#### Akuntansi & Dokumen Turunan
+#### Budget Control & Internal Charge
 
-- **Pembuatan Purchase Invoice dari Expense Request**: helper whitelisted memastikan request Approved, tipe (Expense/Asset) sesuai, tidak ada link ganda, menyalin item (termasuk PPN/PPH) dengan penandaan pending/submitted untuk mencegah invoice dobel.
-- **Link Asset & Payment Entry**: hooks pada Asset, Purchase Invoice, dan Payment Entry menjaga status request, menolak link ganda, dan memvalidasi dokumen turunan sudah submitted sebelum pembayaran. Request otomatis di-Closed setelah Payment Entry berhasil.
+- **Staged budget lock**: Budget Control Settings can lock budgets at Approved/Linked, reserving per Cost Center + Account (+Project/Branch) and releasing automatically on Reject/Reopen. Consumption occurs on Purchase Invoice submit and is reversed on cancel.
+- **Overrun handling & special role**: the `allow_budget_overrun_role` can permit overruns when reservation fails. Lock status (`Locked/Overrun Allowed/Consumed/Released`) is synchronized to the Expense Request.
+- **Integrated internal charge**: the “Allocated via Internal Charge” mode requires an Approved Internal Charge Request before approval/PI; the `create_internal_charge_from_expense_request` helper auto-creates a draft with a starter line. “Auto JE on PI Submit” posts a reclass Journal Entry across Cost Centers according to allocation.
 
-#### Customer Receipt & Validasi Pembayaran
+#### Accounting & Downstream Documents
 
-- **Dokumen Customer Receipt**: menentukan desain default dari Finance Control Settings, memvalidasi referensi Sales Invoice/Sales Order sesuai customer & company, mengunci item setelah Issued, dan menghitung status Issued/Partially Paid/Paid berdasarkan pembayaran masuk.
-- **Pembayaran terjaga**: Payment Entry hook menegakkan mode "Mandatory Strict" (harus link ke Customer Receipt saat ada open receipt), memblokir over-allocation atau referensi lain kecuali mode mixed payment, dan otomatis memperbarui/cabut catatan pembayaran di Receipt saat submit/cancel.
-- **Otomasi penerimaan**: tombol `make_payment_entry` di Receipt membuat Payment Entry dengan alokasi otomatis sesuai outstanding per referensi.
-- **Kebijakan stempel & utilitas Jinja**: Receipt menerapkan kebijakan stempel digital/physical sesuai konfigurasi (mandatory/threshold/fallback) dan menyediakan filter Jinja `terbilang_id` serta `build_verification_url` untuk template cetak.
+- **Purchase Invoice creation from Expense Request**: a whitelisted helper ensures the request is Approved, type (Expense/Asset) matches, no duplicate links exist, and copies items (including VAT/WHT) with pending/submitted markers to prevent duplicate invoices.
+- **Asset & Payment Entry linking**: hooks on Asset, Purchase Invoice, and Payment Entry maintain request status, prevent duplicate links, and verify downstream documents are submitted before payment. Requests are automatically Closed after Payment Entry succeeds.
+- **Multi-branch compliance**: branch is derived from Cost Center/Finance Control Settings when creating PI from Expense Request; PI/PE/Asset links validate branch alignment when enforcement is enabled.
 
-#### Rekonsiliasi & Impor Bank
+#### Customer Receipt & Payment Validation
 
-- **BCA Bank Statement Import**: upload CSV BCA, sistem menghitung hash untuk mencegah upload berulang, memvalidasi header/angka (deteksi kolom gabung/"sep=" preamble), menghitung saldo, dan skip baris saldo/pending. Tombol **Parse CSV BCA** mempersiapkan baris lalu **Convert to Bank Transaction** membuat Bank Transaction Unreconciled dengan pencegahan duplikasi dan pelaporan gagal/sukses. Aksi **Open Bank Reconciliation Tool** membawa rentang tanggal & akun bank yang sama.
-- **Kontrol Bank Transaction**: transaksi berstatus Unreconciled tidak bisa dibatalkan (backend guard + tombol Cancel disembunyikan di form) untuk menjaga histori rekonsiliasi.
+- **Customer Receipt document**: chooses default print layout from Finance Control Settings, validates Sales Invoice/Sales Order references by customer & company, locks items after Issued, and computes Issued/Partially Paid/Paid status based on incoming payments.
+- **Payment safeguards**: Payment Entry hook enforces “Mandatory Strict” mode (must link to a Customer Receipt when open receipts exist), blocks over-allocation or unrelated references except in mixed payment mode, and automatically updates/removes payment notes on Receipt during submit/cancel.
+- **Collection automation**: the `make_payment_entry` button on Receipt creates Payment Entry with automatic allocation per outstanding reference.
+- **Stamp policy & Jinja utilities**: Receipts apply digital/physical stamp policy per configuration (mandatory/threshold/fallback) and expose Jinja filters `terbilang_id` and `build_verification_url` for print templates.
 
-### Kontrol dan Risiko Workflow Expense Request
+#### Reconciliation & Bank Imports
 
-Lihat [Catatan Kontrol Workflow Expense Request](WORKFLOW_GUARDRAILS.md) untuk memahami dampak flag situs, perilaku rebuild rute, dan rekomendasi audit ketika melakukan reopen/close.
+- **BCA Bank Statement Import**: upload BCA CSV, the system hashes to prevent re-uploads, validates headers/numbers (detecting merged columns/“sep=” preamble), computes balances, and skips balance/pending rows. **Parse CSV BCA** prepares rows then **Convert to Bank Transaction** creates Unreconciled Bank Transactions with duplicate prevention and success/failure reporting. **Open Bank Reconciliation Tool** opens with the same date range & bank account.
+- **Bank Transaction controls**: Unreconciled transactions cannot be cancelled (backend guard + hidden Cancel button) to preserve reconciliation history.
+
+#### Transfer Application & Payment Automation
+
+- **Automatic Payment Entry creation**: helper button creates Payment Entry from Transfer Application with paid_from/paid_to defaults from settings or company accounts; can auto-submit and copy document references.
+- **Bank Transaction matching**: on Bank Transaction submit/update, the system searches Transfer Application candidates by amount (with tolerance), account number/hint/payee name, and marks confidence Strong/Medium/Weak for review. Strong matches can auto-create Payment Entry and mark the TA as Paid.
+- **Link protection**: Payment Entry hooks ensure a TA is not linked to multiple payments, update status/paid_amount/paid_date on submit, and clear links on cancel.
+
+#### Tax, OCR, & CoreTax Export
+
+- **Tax Invoice OCR**: OCR configuration (provider/size limit/threshold) for Purchase Invoice, Expense Request, and Sales Invoice; parses tax invoice text (NPWP, number/date, DPP/VAT) with NPWP normalization and duplicate flag. Verification status can be enforced as Verified before submitting PI or creating PI from Expense Request.
+- **Tax period closure**: Tax Period Closing blocks changes to tax/tax-mapping fields on ER/PI/SI when the period is Closed, except for System Manager/Tax Reviewer roles; validation uses posting date/bill date/request date.
+- **Reporting & exports**: utilities compute snapshots for input/output VAT registers, withholding tax, and PB1; prepare CoreTax export rows (CSV/XLSX) based on mappings; provide Payment Entry/Journal Entry creation for Tax Payment Batch and VAT netting (calculate debit output/credit input/payable).
+
+### Expense Request Workflow Controls & Risks
+
+See [Expense Request Workflow Guardrails](WORKFLOW_GUARDRAILS.md) to understand site flag impacts, route rebuild behavior, and audit recommendations for reopen/close actions.
 
 ### Installation
 
@@ -60,17 +79,17 @@ Pre-commit is configured to use the following tools for checking and formatting 
 
 ### Bench console checks
 
-Gunakan contoh snippet berikut di bench console untuk memastikan validasi baru bekerja (mis. status belum Approved atau sudah terhubung ke dokumen lain):
+Use the following bench console snippet to verify the validations (e.g., status not yet Approved or already linked to other documents):
 
 ```python
 request = frappe.get_doc("Expense Request", "<NAMA_REQUEST>")
-# Harus melempar error bila status belum Approved atau docstatus bukan 1
+# Should throw an error if status is not Approved or docstatus is not 1
 frappe.call("imogi_finance.accounting.create_purchase_invoice_from_request", expense_request_name=request.name)
 
-# Tandai request sudah terhubung agar memicu error duplikasi
+# Mark the request as linked to trigger duplicate error
 request.db_set("linked_purchase_invoice", "PI-TEST")
 frappe.call("imogi_finance.accounting.create_purchase_invoice_from_request", expense_request_name=request.name)
-# Untuk request tipe Asset, gunakan Purchase Invoice (Flow JE manual dihapus)
+# For Asset requests, use Purchase Invoice (manual JE flow removed)
 request.db_set({"linked_purchase_invoice": None, "request_type": "Asset"})
 frappe.call("imogi_finance.accounting.create_purchase_invoice_from_request", expense_request_name=request.name)
 ```
