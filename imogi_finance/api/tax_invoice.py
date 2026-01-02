@@ -3,7 +3,12 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from imogi_finance.tax_invoice_ocr import get_tax_invoice_ocr_monitoring, run_ocr, verify_tax_invoice
+from imogi_finance.tax_invoice_ocr import (
+    get_tax_invoice_ocr_monitoring,
+    run_ocr,
+    sync_tax_invoice_upload,
+    verify_tax_invoice,
+)
 
 
 @frappe.whitelist()
@@ -24,6 +29,11 @@ def run_ocr_for_branch_expense_request(ber_name: str):
 @frappe.whitelist()
 def run_ocr_for_sales_invoice(si_name: str):
     return run_ocr(si_name, "Sales Invoice")
+
+
+@frappe.whitelist()
+def run_ocr_for_upload(upload_name: str):
+    return run_ocr(upload_name, "Tax Invoice OCR Upload")
 
 
 @frappe.whitelist()
@@ -55,6 +65,20 @@ def verify_sales_invoice_tax_invoice(si_name: str, force: bool = False):
 
 
 @frappe.whitelist()
+def verify_tax_invoice_upload(upload_name: str, force: bool = False):
+    doc = frappe.get_doc("Tax Invoice OCR Upload", upload_name)
+    frappe.only_for(("Accounts Manager", "Accounts User", "System Manager", "Tax Reviewer"))
+    return verify_tax_invoice(doc, doctype="Tax Invoice OCR Upload", force=bool(force))
+
+
+@frappe.whitelist()
 def monitor_tax_invoice_ocr(docname: str, doctype: str):
-    frappe.only_for(("Accounts Manager", "Accounts User", "System Manager"))
+    frappe.only_for(("Accounts Manager", "Accounts User", "System Manager", "Tax Reviewer"))
     return get_tax_invoice_ocr_monitoring(docname, doctype)
+
+
+@frappe.whitelist()
+def apply_tax_invoice_upload(target_doctype: str, target_name: str, upload_name: str | None = None):
+    frappe.only_for(("Accounts Manager", "Accounts User", "System Manager"))
+    doc = frappe.get_doc(target_doctype, target_name)
+    return sync_tax_invoice_upload(doc, target_doctype, upload_name)

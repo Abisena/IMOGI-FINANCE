@@ -90,49 +90,14 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Purchase Invoice-ti_tax_invoice_pdf",
+    "name": "Purchase Invoice-ti_tax_invoice_upload",
     "dt": "Purchase Invoice",
-    "fieldname": "ti_tax_invoice_pdf",
-    "fieldtype": "Attach",
+    "fieldname": "ti_tax_invoice_upload",
+    "fieldtype": "Link",
     "insert_after": "ti_tax_invoice_section",
-    "label": "Faktur Pajak PDF"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Purchase Invoice-ti_ocr_status",
-    "dt": "Purchase Invoice",
-    "fieldname": "ti_ocr_status",
-    "fieldtype": "Select",
-    "insert_after": "ti_tax_invoice_pdf",
-    "label": "OCR Status",
-    "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-    "default": "Not Started",
-    "allow_on_submit": 1,
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Purchase Invoice-ti_ocr_confidence",
-    "dt": "Purchase Invoice",
-    "fieldname": "ti_ocr_confidence",
-    "fieldtype": "Float",
-    "insert_after": "ti_ocr_status",
-    "label": "OCR Confidence",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Purchase Invoice-ti_ocr_raw_json",
-    "dt": "Purchase Invoice",
-    "fieldname": "ti_ocr_raw_json",
-    "fieldtype": "Code",
-    "insert_after": "ti_ocr_confidence",
-    "label": "OCR Raw JSON",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "label": "Tax Invoice OCR Upload",
+    "options": "Tax Invoice OCR Upload",
+    "allow_on_submit": 1
   },
   {
     "doctype": "Custom Field",
@@ -140,7 +105,7 @@
     "dt": "Purchase Invoice",
     "fieldname": "ti_tax_invoice_data_section",
     "fieldtype": "Section Break",
-    "insert_after": "ti_ocr_raw_json",
+    "insert_after": "ti_tax_invoice_upload",
     "label": "Tax Invoice Data"
   },
   {
@@ -262,49 +227,14 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Expense Request-ti_tax_invoice_pdf",
+    "name": "Expense Request-ti_tax_invoice_upload",
     "dt": "Expense Request",
-    "fieldname": "ti_tax_invoice_pdf",
-    "fieldtype": "Attach",
+    "fieldname": "ti_tax_invoice_upload",
+    "fieldtype": "Link",
     "insert_after": "ti_tax_invoice_section",
-    "label": "Faktur Pajak PDF"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-ti_ocr_status",
-    "dt": "Expense Request",
-    "fieldname": "ti_ocr_status",
-    "fieldtype": "Select",
-    "insert_after": "ti_tax_invoice_pdf",
-    "label": "OCR Status",
-    "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-    "default": "Not Started",
-    "allow_on_submit": 1,
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-ti_ocr_confidence",
-    "dt": "Expense Request",
-    "fieldname": "ti_ocr_confidence",
-    "fieldtype": "Float",
-    "insert_after": "ti_ocr_status",
-    "label": "OCR Confidence",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-ti_ocr_raw_json",
-    "dt": "Expense Request",
-    "fieldname": "ti_ocr_raw_json",
-    "fieldtype": "Code",
-    "insert_after": "ti_ocr_confidence",
-    "label": "OCR Raw JSON",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "label": "Tax Invoice OCR Upload",
+    "options": "Tax Invoice OCR Upload",
+    "allow_on_submit": 1
   },
   {
     "doctype": "Custom Field",
@@ -312,7 +242,7 @@
     "dt": "Expense Request",
     "fieldname": "ti_tax_invoice_data_section",
     "fieldtype": "Section Break",
-    "insert_after": "ti_ocr_raw_json",
+    "insert_after": "ti_tax_invoice_upload",
     "label": "Tax Invoice Data"
   },
   {
@@ -434,49 +364,14 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Branch Expense Request-ti_tax_invoice_pdf",
+    "name": "Branch Expense Request-ti_tax_invoice_upload",
     "dt": "Branch Expense Request",
-    "fieldname": "ti_tax_invoice_pdf",
-    "fieldtype": "Attach",
+    "fieldname": "ti_tax_invoice_upload",
+    "fieldtype": "Link",
     "insert_after": "ti_tax_invoice_section",
-    "label": "Faktur Pajak PDF"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Branch Expense Request-ti_ocr_status",
-    "dt": "Branch Expense Request",
-    "fieldname": "ti_ocr_status",
-    "fieldtype": "Select",
-    "insert_after": "ti_tax_invoice_pdf",
-    "label": "OCR Status",
-    "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-    "default": "Not Started",
-    "allow_on_submit": 1,
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Branch Expense Request-ti_ocr_confidence",
-    "dt": "Branch Expense Request",
-    "fieldname": "ti_ocr_confidence",
-    "fieldtype": "Float",
-    "insert_after": "ti_ocr_status",
-    "label": "OCR Confidence",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Branch Expense Request-ti_ocr_raw_json",
-    "dt": "Branch Expense Request",
-    "fieldname": "ti_ocr_raw_json",
-    "fieldtype": "Code",
-    "insert_after": "ti_ocr_confidence",
-    "label": "OCR Raw JSON",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "label": "Tax Invoice OCR Upload",
+    "options": "Tax Invoice OCR Upload",
+    "allow_on_submit": 1
   },
   {
     "doctype": "Custom Field",
@@ -484,7 +379,7 @@
     "dt": "Branch Expense Request",
     "fieldname": "ti_tax_invoice_data_section",
     "fieldtype": "Section Break",
-    "insert_after": "ti_ocr_raw_json",
+    "insert_after": "ti_tax_invoice_upload",
     "label": "Tax Invoice Data"
   },
   {
@@ -606,49 +501,14 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Sales Invoice-out_fp_pdf",
+    "name": "Sales Invoice-out_fp_tax_invoice_upload",
     "dt": "Sales Invoice",
-    "fieldname": "out_fp_pdf",
-    "fieldtype": "Attach",
+    "fieldname": "out_fp_tax_invoice_upload",
+    "fieldtype": "Link",
     "insert_after": "out_fp_section",
-    "label": "Faktur Pajak PDF"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Sales Invoice-out_fp_ocr_status",
-    "dt": "Sales Invoice",
-    "fieldname": "out_fp_ocr_status",
-    "fieldtype": "Select",
-    "insert_after": "out_fp_pdf",
-    "label": "OCR Status",
-    "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-    "default": "Not Started",
-    "allow_on_submit": 1,
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Sales Invoice-out_fp_ocr_confidence",
-    "dt": "Sales Invoice",
-    "fieldname": "out_fp_ocr_confidence",
-    "fieldtype": "Float",
-    "insert_after": "out_fp_ocr_status",
-    "label": "OCR Confidence",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Sales Invoice-out_fp_ocr_raw_json",
-    "dt": "Sales Invoice",
-    "fieldname": "out_fp_ocr_raw_json",
-    "fieldtype": "Code",
-    "insert_after": "out_fp_ocr_confidence",
-    "label": "OCR Raw JSON",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "label": "Tax Invoice OCR Upload",
+    "options": "Tax Invoice OCR Upload",
+    "allow_on_submit": 1
   },
   {
     "doctype": "Custom Field",
@@ -656,7 +516,7 @@
     "dt": "Sales Invoice",
     "fieldname": "out_fp_data_section",
     "fieldtype": "Section Break",
-    "insert_after": "out_fp_ocr_raw_json",
+    "insert_after": "out_fp_tax_invoice_upload",
     "label": "Tax Invoice Data"
   },
   {

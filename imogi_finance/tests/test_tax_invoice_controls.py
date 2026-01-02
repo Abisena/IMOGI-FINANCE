@@ -343,12 +343,20 @@ def test_monitor_doctype_refresh_status_updates_fields(monkeypatch):
             "doc": {
                 "ocr_status": "Processing",
                 "verification_status": "Needs Review",
+                "verification_notes": "Queueing",
                 "ocr_confidence": 0.55,
-                "notes": "Queueing",
                 "fp_no": "010203",
+                "fp_date": "2024-01-01",
                 "npwp": "123",
+                "dpp": 100,
+                "ppn": 11,
+                "ppnbm": 0,
+                "ppn_type": "Standard",
+                "duplicate_flag": 0,
+                "npwp_match": 1,
                 "tax_invoice_pdf": "/files/ti.pdf",
                 "ocr_raw_json_present": True,
+                "ocr_raw_json": '{"foo": "bar"}',
             },
             "job": {
                 "queue": "long",
@@ -370,6 +378,45 @@ def test_monitor_doctype_refresh_status_updates_fields(monkeypatch):
     assert monitor.ocr_confidence == 0.55
     assert monitor.job_kwargs.strip().startswith("{")
     assert result["job"]["status"] == "started"
+    assert monitor.verification_notes == "Queueing"
+
+
+def test_sync_tax_invoice_upload_updates_target(monkeypatch):
+    upload = types.SimpleNamespace(
+        name="TI-UP-1",
+        fp_no="010203",
+        fp_date="2024-01-02",
+        npwp="123",
+        dpp=100.0,
+        ppn=11.0,
+        ppnbm=0,
+        ppn_type="Standard",
+        verification_status="Verified",
+        verification_notes="All good",
+        duplicate_flag=0,
+        npwp_match=1,
+        ocr_status="Done",
+        ocr_confidence=0.9,
+        ocr_raw_json="{}",
+        tax_invoice_pdf="/files/ti.pdf",
+    )
+
+    target = types.SimpleNamespace(ti_tax_invoice_upload="TI-UP-1")
+
+    def fake_get_doc(doctype, name):
+        assert name == "TI-UP-1"
+        return upload if doctype == "Tax Invoice OCR Upload" else target
+
+    monkeypatch.setattr(frappe, "get_doc", fake_get_doc)
+
+    result = tax_invoice_ocr.sync_tax_invoice_upload(target, "Purchase Invoice", save=False)
+
+    assert target.ti_fp_no == "010203"
+    assert target.ti_fp_npwp == "123"
+    assert target.ti_fp_dpp == 100.0
+    assert target.ti_fp_ppn == 11.0
+    assert target.ti_verification_status == "Verified"
+    assert result["upload"] == "TI-UP-1"
 
 
 def test_duplicate_detection_marks_flag(monkeypatch):
