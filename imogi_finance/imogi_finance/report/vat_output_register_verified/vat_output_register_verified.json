@@ -12,11 +12,11 @@
   "modified": "2024-01-01 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Imogi Finance",
-  "name": "VAT Output Register (Verified)",
+  "name": "VAT Output Register Verified",
   "owner": "Administrator",
   "prepared_report": 0,
   "ref_doctype": "Sales Invoice",
-  "report_name": "VAT Output Register (Verified)",
+  "report_name": "VAT Output Register Verified",
   "report_type": "Script Report",
   "roles": [
     {
