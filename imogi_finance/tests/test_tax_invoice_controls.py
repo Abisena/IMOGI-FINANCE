@@ -547,25 +547,11 @@ def test_validate_tax_invoice_upload_link_blocks_reuse(monkeypatch):
 def test_validate_tax_invoice_upload_link_requires_verified(monkeypatch):
     doc = types.SimpleNamespace(name="PI-2", ti_tax_invoice_upload="UPL-2", ti_fp_no="0202")
 
-    monkeypatch.setattr(
-        tax_invoice_ocr, "get_settings", lambda: {"enable_tax_invoice_ocr": 1, "ocr_provider": "Google Vision"}
-    )
     monkeypatch.setattr(frappe.db, "get_value", lambda *args, **kwargs: "Needs Review")
     monkeypatch.setattr(frappe, "get_all", lambda *args, **kwargs: [])
 
     with pytest.raises(tax_invoice_ocr.ValidationError):
         validate_tax_invoice_upload_link(doc, "Purchase Invoice")
-
-
-def test_validate_tax_invoice_upload_link_skips_manual_only(monkeypatch):
-    doc = types.SimpleNamespace(name="PI-3", ti_tax_invoice_upload="UPL-3", ti_fp_no="0303")
-
-    monkeypatch.setattr(
-        tax_invoice_ocr, "get_settings", lambda: {"enable_tax_invoice_ocr": 1, "ocr_provider": "Manual Only"}
-    )
-    monkeypatch.setattr(frappe, "get_all", lambda *args, **kwargs: [])
-
-    validate_tax_invoice_upload_link(doc, "Purchase Invoice")
 
 
 def test_get_tax_invoice_upload_context_reports_used_uploads(monkeypatch):
@@ -577,12 +563,42 @@ def test_get_tax_invoice_upload_context_reports_used_uploads(monkeypatch):
         "get_linked_tax_invoice_uploads",
         lambda exclude_doctype=None, exclude_name=None: {"UP-1", "UP-2"},
     )
+    monkeypatch.setattr(
+        frappe,
+        "get_all",
+        lambda doctype, **kwargs: [
+            {
+                "name": "UP-3",
+                "fp_no": "0303",
+                "fp_date": "2024-04-01",
+                "npwp": "123",
+                "dpp": 1000,
+                "ppn": 110,
+                "ppnbm": 0,
+                "ppn_type": "Standard",
+            }
+        ]
+        if doctype == "Tax Invoice OCR Upload"
+        else [],
+    )
 
     context = get_tax_invoice_upload_context("Purchase Invoice", "PI-CTX-1")
 
     assert context["enable_tax_invoice_ocr"] == 1
     assert context["ocr_provider"] == "Google Vision"
     assert set(context["used_uploads"]) == {"UP-1", "UP-2"}
+    assert context["verified_uploads"] == [
+        {
+            "name": "UP-3",
+            "fp_no": "0303",
+            "fp_date": "2024-04-01",
+            "npwp": "123",
+            "dpp": 1000,
+            "ppn": 110,
+            "ppnbm": 0,
+            "ppn_type": "Standard",
+        }
+    ]
 
 
 def test_manual_mode_requires_upload_when_numbers_filled(monkeypatch):
@@ -602,6 +618,7 @@ def test_manual_mode_allows_with_upload(monkeypatch):
     monkeypatch.setattr(
         tax_invoice_ocr, "get_settings", lambda: {"enable_tax_invoice_ocr": 1, "ocr_provider": "Manual Only"}
     )
+    monkeypatch.setattr(frappe.db, "get_value", lambda *args, **kwargs: "Verified")
     monkeypatch.setattr(frappe, "get_all", lambda *args, **kwargs: [])
 
     validate_tax_invoice_upload_link(doc, "Purchase Invoice")
