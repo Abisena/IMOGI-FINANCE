@@ -237,6 +237,21 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
             raise ValidationError(_("Google Vision endpoint is not configured. Please update Tax Invoice OCR Settings."))
 
         parsed = urlparse(settings.get("google_vision_endpoint"))
+        if not parsed.scheme or not parsed.netloc:
+            raise ValidationError(_("Google Vision endpoint is invalid. Please update Tax Invoice OCR Settings."))
+
+        allowed_hosts = ("vision.googleapis.com", "eu-vision.googleapis.com", "us-vision.googleapis.com")
+        if not parsed.netloc.endswith(allowed_hosts):
+            raise ValidationError(_("Google Vision endpoint host is not supported. Please use vision.googleapis.com or a supported regional host."))
+
+        if "asyncBatchAnnotate" in (parsed.path or ""):
+            raise ValidationError(
+                _(
+                    "Google Vision asyncBatchAnnotate is not supported with the current OCR flow. "
+                    "Use files:annotate (synchronous) or implement a GCS-based async flow with service-account auth."
+                )
+            )
+
         is_regional = parsed.netloc.startswith(("eu-vision.googleapis.com", "us-vision.googleapis.com"))
         if is_regional:
             if not settings.get("google_vision_project_id"):
