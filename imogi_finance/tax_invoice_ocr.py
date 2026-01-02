@@ -1233,6 +1233,10 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     notes: list[str] = []
 
     fp_no = _get_value(doc, doctype, "fp_no")
+    if fp_no:
+        fp_digits = re.sub(r"\D", "", str(fp_no))
+        if len(fp_digits) != 16:
+            notes.append(_("Tax invoice number must be exactly 16 digits."))
     company = getattr(doc, "company", None)
     if not company:
         cost_center = getattr(doc, "cost_center", None)
@@ -1281,6 +1285,14 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                     format_value(tolerance, "Currency"), format_value(diff, "Currency")
                 )
             )
+
+    dpp_value = flt(_get_value(doc, doctype, "dpp", 0))
+    ppn_value = flt(_get_value(doc, doctype, "ppn", 0))
+    ppnbm_value = flt(_get_value(doc, doctype, "ppnbm", 0))
+    if ppnbm_value > 0 and dpp_value > 0:
+        ppn_rate = (ppn_value / dpp_value) * 100
+        if abs(ppn_rate - 11) > 0.01:
+            notes.append(_("PPN rate must be 11% when PPNBM is present."))
 
     if notes and not force:
         _set_value(doc, doctype, "status", "Needs Review")
