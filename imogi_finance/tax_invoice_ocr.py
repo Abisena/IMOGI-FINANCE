@@ -166,12 +166,12 @@ def normalize_npwp(npwp: str | None) -> str | None:
 NPWP_REGEX = re.compile(r"(?P<npwp>\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}|\d{15,20})")
 NPWP_LABEL_REGEX = re.compile(r"NPWP\s*[:\-]?\s*(?P<npwp>[\d.\-\s]{10,})", re.IGNORECASE)
 PPN_RATE_REGEX = re.compile(r"(?:Tarif\s*)?PPN[^\d%]{0,10}(?P<rate>\d{1,2}(?:[.,]\d+)?)\s*%", re.IGNORECASE)
-TAX_INVOICE_REGEX = re.compile(r"(?P<fp>\d{2,3}[.-]?\d{2,3}[.-]?\d{1,2}[.-]?\d{8})")
+TAX_INVOICE_REGEX = re.compile(r"(?P<fp>\d{2,3}[.\-\s]?\d{2,3}[.\-\s]?\d{1,2}[.\-\s]?\d{8})")
 DATE_REGEX = re.compile(r"(?P<date>\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4})")
 NUMBER_REGEX = re.compile(r"(?P<number>\d+[.,\d]*)")
 AMOUNT_REGEX = re.compile(r"(?P<amount>\d{1,3}(?:[.,]\d{3})*[.,]\d{2})")
 FAKTUR_NO_LABEL_REGEX = re.compile(
-    r"Kode\s+dan\s+Nomor\s+Seri\s+Faktur\s+Pajak\s*[:\-]?\s*(?P<fp>[\d.\-]{10,})",
+    r"Kode\s+dan\s+Nomor\s+Seri\s+Faktur\s+Pajak\s*[:\-]?\s*(?P<fp>[\d.\-\s]{10,})",
     re.IGNORECASE,
 )
 INDO_DATE_REGEX = re.compile(r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})")
@@ -505,6 +505,15 @@ def _parse_date_from_text(text: str) -> str | None:
     return None
 
 
+def _normalize_faktur_number(value: str | None) -> str | None:
+    if not value:
+        return None
+    digits = re.sub(r"\D", "", value)
+    if len(digits) < 10:
+        return None
+    return digits
+
+
 def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     matches: dict[str, Any] = {}
     confidence = 0.0
@@ -518,13 +527,17 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     faktur_match = FAKTUR_NO_LABEL_REGEX.search(text or "")
     if faktur_match:
-        matches["fp_no"] = faktur_match.group("fp").replace(".", "").replace("-", "")
-        confidence += 0.3
+        normalized_fp = _normalize_faktur_number(faktur_match.group("fp"))
+        if normalized_fp:
+            matches["fp_no"] = normalized_fp
+            confidence += 0.3
     else:
         fp_match = TAX_INVOICE_REGEX.search(text or "")
         if fp_match:
-            matches["fp_no"] = fp_match.group("fp").replace(".", "").replace("-", "")
-            confidence += 0.25
+            normalized_fp = _normalize_faktur_number(fp_match.group("fp"))
+            if normalized_fp:
+                matches["fp_no"] = normalized_fp
+                confidence += 0.25
 
     pkp_section = _extract_section(text or "", "Pengusaha Kena Pajak", "Pembeli")
     seller_npwp = _extract_npwp_with_label(pkp_section) or _extract_npwp_from_text(pkp_section)
