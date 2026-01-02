@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import re
 import subprocess
@@ -203,6 +204,19 @@ def _extract_section(text: str, start_label: str, end_label: str | None = None) 
 def _parse_idr_amount(value: str) -> float:
     cleaned = value.replace(".", "").replace(",", ".")
     return flt(cleaned)
+
+
+def _sanitize_amount(value: Any, *, max_abs: float = 9_999_999_999_999.99) -> float | None:
+    try:
+        number = flt(value)
+    except Exception:
+        return None
+
+    if not math.isfinite(number):
+        return None
+    if abs(number) > max_abs:
+        return None
+    return number
 
 
 def _extract_section_lines(text: str, start_label: str, stop_labels: tuple[str, ...]) -> list[str]:
@@ -659,6 +673,28 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
 
     text = _strip_border_artifacts("\n".join(texts).strip())
     if not text:
+        # Fallback: use any available fullTextAnnotation/textAnnotations text if block filtering produced nothing
+        for entry in _iter_entries(responses):
+            full_text = (entry.get("fullTextAnnotation") or {}).get("text")
+            if full_text:
+                pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
+                for page in pages:
+                    if "confidence" in page:
+                        try:
+                            confidence_values.append(flt(page.get("confidence")))
+                        except Exception:
+                            continue
+                text = _strip_border_artifacts(full_text.strip())
+                if text:
+                    break
+            text_annotations = entry.get("textAnnotations") or []
+            if text_annotations:
+                description = text_annotations[0].get("description")
+                if description:
+                    text = _strip_border_artifacts((description or "").strip())
+                    if text:
+                        break
+    if not text:
         return "", data, 0.0
 
     confidence = max(confidence_values) if confidence_values else 0.0
@@ -721,12 +757,27 @@ def _update_doc_after_ocr(
     setattr(doc, _get_fieldname(doctype, "ocr_confidence"), confidence)
 
     allowed_keys = set(FIELD_MAP.get(doctype, FIELD_MAP["Purchase Invoice"]).keys()) & ALLOWED_OCR_FIELDS
+    extra_notes: list[str] = []
     for key, value in parsed.items():
         if key not in allowed_keys:
             continue
 
+        if key in {"dpp", "ppn"}:
+            sanitized = _sanitize_amount(value)
+            if sanitized is None:
+                extra_notes.append(_("OCR ignored invalid {0} value").format(key.upper()))
+                continue
+            value = sanitized
+
         fieldname = _get_fieldname(doctype, key)
         setattr(doc, fieldname, value)
+
+    if extra_notes:
+        notes_field = _get_fieldname(doctype, "notes")
+        existing_notes = getattr(doc, notes_field, None) or ""
+        combined = f"{existing_notes}\n" if existing_notes else ""
+        combined += "\n".join(extra_notes)
+        setattr(doc, notes_field, combined)
 
     if raw_json is not None:
         setattr(doc, _get_fieldname(doctype, "ocr_raw_json"), json.dumps(raw_json, indent=2))
