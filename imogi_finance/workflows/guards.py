@@ -76,6 +76,10 @@ class WorkflowGuard:
             return
         if getattr(previous, self.status_field, None) == getattr(doc, self.status_field, None):
             return
+        previous_state = getattr(previous, self.workflow_field, None)
+        current_state = getattr(doc, self.workflow_field, None)
+        if previous_state != current_state and current_state == getattr(doc, self.status_field, None):
+            return
         frappe.throw(_("Status changes must be performed via workflow actions."), title=_("Not Allowed"))
 
     @staticmethod
