@@ -429,4 +429,5 @@ fixtures = [
             ]
         ],
     },
+    "Tax Invoice Type",
 ]
