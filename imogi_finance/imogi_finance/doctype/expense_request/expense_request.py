@@ -22,7 +22,7 @@ from imogi_finance.services.approval_route_service import ApprovalRouteService
 from imogi_finance.services.workflow_service import WorkflowService
 from imogi_finance.tax_invoice_ocr import validate_tax_invoice_upload_link
 from imogi_finance.validators.finance_validator import FinanceValidator
-from imogi_finance.workflows.workflow_engine import WorkflowEngine
+from imogi_finance.workflows.workflow_engine import WorkflowConfigRegistry
 
 
 def get_approval_route(cost_center: str, accounts, amount: float, *, setting_meta=None):
@@ -35,9 +35,7 @@ class ExpenseRequest(Document):
 
     REOPEN_ALLOWED_ROLES = {"System Manager"}
     _workflow_service = WorkflowService()
-    _workflow_engine = WorkflowEngine(
-        config_path="imogi_finance/imogi_finance/workflow/expense_request_workflow/expense_request_workflow.json"
-    )
+    _workflow_engine = WorkflowConfigRegistry().get_engine("expense_request")
 
     def before_insert(self):
         self._set_requester_to_creator()
