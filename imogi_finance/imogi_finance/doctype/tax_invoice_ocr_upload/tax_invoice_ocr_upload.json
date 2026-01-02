@@ -8,147 +8,198 @@
   "editable_grid": 0,
   "engine": "InnoDB",
   "field_order": [
+    "upload_section",
+    "tax_invoice_pdf",
+    "section_basic_info",
     "fp_no",
+    "fp_date",
+    "column_break_basic",
     "tax_invoice_type",
     "tax_invoice_type_description",
-    "fp_date",
-    "tax_invoice_pdf",
-    "section_ocr",
-    "ocr_status",
-    "ocr_confidence",
-    "ocr_raw_json",
-    "section_verification",
-    "verification_status",
-    "verification_notes",
+    "section_tax_details",
     "npwp",
+    "ppn_type",
+    "column_break_tax",
     "dpp",
     "ppn",
     "ppnbm",
-    "ppn_type",
+    "section_verification",
+    "verification_status",
+    "column_break_verification",
+    "npwp_match",
     "duplicate_flag",
-    "npwp_match"
+    "section_verification_notes",
+    "verification_notes",
+    "section_ocr",
+    "ocr_status",
+    "ocr_confidence",
+    "column_break_ocr",
+    "ocr_raw_json"
   ],
   "fields": [
+    {
+      "fieldname": "upload_section",
+      "fieldtype": "Section Break",
+      "label": "📄 Upload Faktur Pajak",
+      "description": "Upload file PDF faktur pajak untuk proses OCR otomatis"
+    },
+    {
+      "fieldname": "tax_invoice_pdf",
+      "fieldtype": "Attach",
+      "label": "File Faktur Pajak (PDF)",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_basic_info",
+      "fieldtype": "Section Break",
+      "label": "ℹ️ Informasi Dasar"
+    },
     {
       "fieldname": "fp_no",
       "fieldtype": "Data",
       "in_list_view": 1,
-      "label": "Tax Invoice Number",
+      "label": "Nomor Faktur Pajak",
       "reqd": 1,
-      "unique": 1
+      "unique": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "fp_date",
+      "fieldtype": "Date",
+      "label": "Tanggal Faktur Pajak",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_basic",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "tax_invoice_type",
       "fieldtype": "Link",
-      "label": "Tax Invoice Type",
+      "label": "Tipe Faktur Pajak",
       "options": "Tax Invoice Type",
       "read_only": 1
     },
     {
       "fieldname": "tax_invoice_type_description",
       "fieldtype": "Small Text",
-      "label": "Jenis Faktur Pajak",
+      "label": "Deskripsi Jenis Faktur",
       "read_only": 1
     },
     {
-      "fieldname": "fp_date",
-      "fieldtype": "Date",
-      "label": "Tax Invoice Date"
+      "collapsible": 0,
+      "fieldname": "section_tax_details",
+      "fieldtype": "Section Break",
+      "label": "💰 Detail Pajak"
     },
     {
-      "fieldname": "tax_invoice_pdf",
-      "fieldtype": "Attach",
-      "label": "Faktur Pajak PDF",
-      "reqd": 1
+      "fieldname": "npwp",
+      "fieldtype": "Data",
+      "label": "NPWP Supplier",
+      "description": "Nomor Pokok Wajib Pajak"
+    },
+    {
+      "default": "Standard",
+      "fieldname": "ppn_type",
+      "fieldtype": "Select",
+      "label": "Tipe PPN",
+      "options": "Standard\nZero Rated\nExempt/Not PPN"
+    },
+    {
+      "fieldname": "column_break_tax",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "dpp",
+      "fieldtype": "Currency",
+      "label": "DPP (Dasar Pengenaan Pajak)",
+      "description": "Nilai sebelum pajak"
+    },
+    {
+      "fieldname": "ppn",
+      "fieldtype": "Currency",
+      "label": "PPN (Pajak Pertambahan Nilai)",
+      "bold": 1
+    },
+    {
+      "fieldname": "ppnbm",
+      "fieldtype": "Currency",
+      "label": "PPnBM (Pajak Penjualan Barang Mewah)"
+    },
+    {
+      "collapsible": 0,
+      "fieldname": "section_verification",
+      "fieldtype": "Section Break",
+      "label": "✅ Status Verifikasi"
+    },
+    {
+      "default": "Needs Review",
+      "fieldname": "verification_status",
+      "fieldtype": "Select",
+      "label": "Status Verifikasi",
+      "options": "Needs Review\nVerified\nRejected",
+      "read_only": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "column_break_verification",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "npwp_match",
+      "fieldtype": "Check",
+      "label": "✓ NPWP Sesuai",
+      "read_only": 1
+    },
+    {
+      "fieldname": "duplicate_flag",
+      "fieldtype": "Check",
+      "label": "⚠️ Faktur Duplikat",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_verification_notes",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "verification_notes",
+      "fieldtype": "Small Text",
+      "label": "Catatan Verifikasi",
+      "description": "Tambahkan catatan jika ada hal yang perlu diperhatikan"
     },
     {
       "collapsible": 1,
+      "collapsible_depends_on": "1",
       "fieldname": "section_ocr",
       "fieldtype": "Section Break",
-      "hidden": 1,
-      "label": "OCR"
+      "label": "🤖 Hasil OCR (Optical Character Recognition)",
+      "description": "Data hasil ekstraksi otomatis dari PDF"
     },
     {
       "default": "Not Started",
       "fieldname": "ocr_status",
       "fieldtype": "Select",
       "in_list_view": 0,
-      "label": "OCR Status",
+      "label": "Status OCR",
       "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-      "read_only": 1,
-      "hidden": 1
+      "read_only": 1
     },
     {
       "fieldname": "ocr_confidence",
       "fieldtype": "Float",
-      "hidden": 1,
-      "label": "OCR Confidence",
-      "read_only": 1
+      "label": "Confidence Level (%)",
+      "read_only": 1,
+      "description": "Tingkat kepercayaan hasil OCR"
+    },
+    {
+      "fieldname": "column_break_ocr",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "ocr_raw_json",
       "fieldtype": "Code",
-      "hidden": 1,
-      "label": "OCR Raw JSON",
+      "label": "Data OCR Lengkap (JSON)",
       "options": "JSON",
-      "read_only": 1
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "section_verification",
-      "fieldtype": "Section Break",
-      "label": "Verification"
-    },
-    {
-      "default": "Needs Review",
-      "fieldname": "verification_status",
-      "fieldtype": "Select",
-      "label": "Tax Invoice Verification Status",
-      "options": "Needs Review\nVerified\nRejected",
-      "read_only": 1
-    },
-    {
-      "fieldname": "verification_notes",
-      "fieldtype": "Small Text",
-      "label": "Tax Invoice Verification Notes"
-    },
-    {
-      "fieldname": "npwp",
-      "fieldtype": "Data",
-      "label": "NPWP"
-    },
-    {
-      "fieldname": "dpp",
-      "fieldtype": "Currency",
-      "label": "DPP"
-    },
-    {
-      "fieldname": "ppn",
-      "fieldtype": "Currency",
-      "label": "PPN"
-    },
-    {
-      "fieldname": "ppnbm",
-      "fieldtype": "Currency",
-      "label": "PPNBM"
-    },
-    {
-      "default": "Standard",
-      "fieldname": "ppn_type",
-      "fieldtype": "Select",
-      "label": "PPN Type",
-      "options": "Standard\nZero Rated\nExempt/Not PPN"
-    },
-    {
-      "fieldname": "duplicate_flag",
-      "fieldtype": "Check",
-      "label": "Duplicate Tax Invoice",
-      "read_only": 1
-    },
-    {
-      "fieldname": "npwp_match",
-      "fieldtype": "Check",
-      "label": "NPWP Match",
       "read_only": 1
     }
   ],
