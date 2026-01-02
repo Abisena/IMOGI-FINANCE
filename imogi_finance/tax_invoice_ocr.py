@@ -262,6 +262,14 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
                 )
             )
 
+        # If caller provides explicit parent in the path, ensure location is supported.
+        if "/locations/" in (parsed.path or ""):
+            parts = parsed.path.split("/locations/", 1)
+            if len(parts) > 1:
+                loc_part = (parts[1] or "").split("/")[0]
+                if loc_part and loc_part not in {"us", "eu"}:
+                    raise ValidationError(_("Google Vision location must be 'us' or 'eu' when specifying locations in endpoint path."))
+
         is_regional = parsed.netloc.startswith(("eu-vision.googleapis.com", "us-vision.googleapis.com"))
         if is_regional:
             if not settings.get("google_vision_project_id"):
