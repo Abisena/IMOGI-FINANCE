@@ -42,7 +42,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "dpp", "ppn", "notes"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm", "notes"}
 
 FIELD_MAP = {
     "Purchase Invoice": {
@@ -109,6 +109,30 @@ FIELD_MAP = {
         "ocr_raw_json": "out_fp_ocr_raw_json",
         "tax_invoice_pdf": "out_fp_pdf",
     },
+    "Tax Invoice OCR Upload": {
+        "fp_no": "fp_no",
+        "fp_date": "fp_date",
+        "npwp": "npwp",
+        "dpp": "dpp",
+        "ppn": "ppn",
+        "ppnbm": "ppnbm",
+        "ppn_type": "ppn_type",
+        "status": "verification_status",
+        "notes": "verification_notes",
+        "duplicate_flag": "duplicate_flag",
+        "npwp_match": "npwp_match",
+        "ocr_status": "ocr_status",
+        "ocr_confidence": "ocr_confidence",
+        "ocr_raw_json": "ocr_raw_json",
+        "tax_invoice_pdf": "tax_invoice_pdf",
+    },
+}
+
+UPLOAD_LINK_FIELDS = {
+    "Purchase Invoice": "ti_tax_invoice_upload",
+    "Expense Request": "ti_tax_invoice_upload",
+    "Branch Expense Request": "ti_tax_invoice_upload",
+    "Sales Invoice": "out_fp_tax_invoice_upload",
 }
 
 
@@ -183,9 +207,31 @@ def _get_value(doc: Any, doctype: str, key: str, default: Any = None) -> Any:
     return getattr(doc, fieldname, default)
 
 
+def _get_upload_link_field(doctype: str) -> str | None:
+    return UPLOAD_LINK_FIELDS.get(doctype)
+
+
 def _set_value(doc: Any, doctype: str, key: str, value: Any) -> None:
     fieldname = _get_fieldname(doctype, key)
     setattr(doc, fieldname, value)
+
+
+def _copy_tax_invoice_fields(source_doc: Any, source_doctype: str, target_doc: Any, target_doctype: str):
+    keys = (
+        "fp_no",
+        "fp_date",
+        "npwp",
+        "dpp",
+        "ppn",
+        "ppnbm",
+        "ppn_type",
+        "status",
+        "notes",
+        "duplicate_flag",
+        "npwp_match",
+    )
+    for key in keys:
+        _set_value(target_doc, target_doctype, key, _get_value(source_doc, source_doctype, key))
 
 
 def _extract_section(text: str, start_label: str, end_label: str | None = None) -> str:
@@ -916,9 +962,9 @@ def _build_filters(target_doctype: str, fp_no: str, company: str | None) -> dict
         "name": ("!=", None),
         _get_fieldname(target_doctype, "fp_no"): fp_no,
     }
-    if company and target_doctype != "Expense Request":
+    if company and target_doctype not in ("Expense Request", "Tax Invoice OCR Upload"):
         filters["company"] = company
-    if target_doctype != "Expense Request":
+    if target_doctype not in ("Expense Request", "Tax Invoice OCR Upload"):
         filters["docstatus"] = ("<", 2)
     return filters
 
@@ -927,7 +973,7 @@ def _check_duplicate_fp_no(current_name: str, fp_no: str, company: str | None, d
     if not fp_no:
         return False
 
-    targets = ["Purchase Invoice", "Expense Request", "Sales Invoice"]
+    targets = ["Purchase Invoice", "Expense Request", "Sales Invoice", "Tax Invoice OCR Upload"]
     filters_cache: dict[str, dict[str, Any]] = {}
 
     for target in targets:
@@ -950,6 +996,28 @@ def _check_duplicate_fp_no(current_name: str, fp_no: str, company: str | None, d
             return True
 
     return False
+
+
+def sync_tax_invoice_upload(doc: Any, doctype: str, upload_name: str | None = None, *, save: bool = True):
+    link_field = _get_upload_link_field(doctype)
+    if not link_field:
+        return None
+
+    target_doc = doc if not isinstance(doc, str) else frappe.get_doc(doctype, doc)
+    upload_docname = upload_name or getattr(target_doc, link_field, None)
+    if not upload_docname:
+        return None
+
+    upload_doc = frappe.get_doc("Tax Invoice OCR Upload", upload_docname)
+    _copy_tax_invoice_fields(upload_doc, "Tax Invoice OCR Upload", target_doc, doctype)
+
+    if save:
+        target_doc.save(ignore_permissions=True)
+
+    return {
+        "upload": upload_doc.name,
+        "status": _get_value(upload_doc, "Tax Invoice OCR Upload", "status"),
+    }
 
 
 def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[str, Any]:
@@ -1092,21 +1160,40 @@ def get_tax_invoice_ocr_monitoring(docname: str, doctype: str) -> dict[str, Any]
 
     settings = get_settings()
     doc = frappe.get_doc(doctype, docname)
-    pdf_field = _get_fieldname(doctype, "tax_invoice_pdf")
-    job_name = f"tax-invoice-ocr-{doctype}-{docname}"
-    job_info = _format_job_info(_pick_job_info(job_name), job_name)
 
+    source_doc = doc
+    source_doctype = doctype
+    link_field = _get_upload_link_field(doctype)
+    upload_name = None
+    if link_field:
+        upload_name = getattr(doc, link_field, None)
+        if upload_name:
+            source_doctype = "Tax Invoice OCR Upload"
+            source_doc = frappe.get_doc(source_doctype, upload_name)
+
+    pdf_field = _get_fieldname(source_doctype, "tax_invoice_pdf")
+    job_name = f"tax-invoice-ocr-{source_doctype}-{source_doc.name}"
+    job_info = _format_job_info(_pick_job_info(job_name), job_name)
     doc_info = {
         "name": docname,
         "doctype": doctype,
-        "ocr_status": _get_value(doc, doctype, "ocr_status"),
-        "verification_status": _get_value(doc, doctype, "status"),
-        "ocr_confidence": _get_value(doc, doctype, "ocr_confidence"),
-        "notes": _get_value(doc, doctype, "notes"),
-        "fp_no": _get_value(doc, doctype, "fp_no"),
-        "npwp": _get_value(doc, doctype, "npwp"),
-        "tax_invoice_pdf": getattr(doc, pdf_field, None),
-        "ocr_raw_json_present": bool(_get_value(doc, doctype, "ocr_raw_json")),
+        "upload_name": upload_name,
+        "ocr_status": _get_value(source_doc, source_doctype, "ocr_status"),
+        "verification_status": _get_value(source_doc, source_doctype, "status"),
+        "verification_notes": _get_value(source_doc, source_doctype, "notes"),
+        "ocr_confidence": _get_value(source_doc, source_doctype, "ocr_confidence"),
+        "fp_no": _get_value(source_doc, source_doctype, "fp_no"),
+        "fp_date": _get_value(source_doc, source_doctype, "fp_date"),
+        "npwp": _get_value(source_doc, source_doctype, "npwp"),
+        "dpp": _get_value(source_doc, source_doctype, "dpp"),
+        "ppn": _get_value(source_doc, source_doctype, "ppn"),
+        "ppnbm": _get_value(source_doc, source_doctype, "ppnbm"),
+        "ppn_type": _get_value(source_doc, source_doctype, "ppn_type"),
+        "duplicate_flag": _get_value(source_doc, source_doctype, "duplicate_flag"),
+        "npwp_match": _get_value(source_doc, source_doctype, "npwp_match"),
+        "tax_invoice_pdf": getattr(source_doc, pdf_field, None),
+        "ocr_raw_json": _get_value(source_doc, source_doctype, "ocr_raw_json"),
+        "ocr_raw_json_present": bool(_get_value(source_doc, source_doctype, "ocr_raw_json")),
     }
 
     return {

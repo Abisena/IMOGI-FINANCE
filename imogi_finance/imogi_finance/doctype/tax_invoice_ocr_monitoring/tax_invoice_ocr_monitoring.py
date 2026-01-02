@@ -28,12 +28,21 @@ class TaxInvoiceOCRMonitoring(Document):
 
         self.ocr_status = doc_info.get("ocr_status")
         self.verification_status = doc_info.get("verification_status")
+        self.verification_notes = doc_info.get("verification_notes")
+        self.upload_name = doc_info.get("upload_name")
         self.ocr_confidence = doc_info.get("ocr_confidence")
-        self.notes = doc_info.get("notes")
         self.fp_no = doc_info.get("fp_no")
+        self.fp_date = doc_info.get("fp_date")
         self.npwp = doc_info.get("npwp")
+        self.dpp = doc_info.get("dpp")
+        self.ppn = doc_info.get("ppn")
+        self.ppnbm = doc_info.get("ppnbm")
+        self.ppn_type = doc_info.get("ppn_type")
+        self.duplicate_flag = doc_info.get("duplicate_flag")
+        self.npwp_match = doc_info.get("npwp_match")
         self.tax_invoice_pdf = doc_info.get("tax_invoice_pdf")
         self.ocr_raw_json_present = 1 if doc_info.get("ocr_raw_json_present") else 0
+        self.ocr_raw_json = doc_info.get("ocr_raw_json")
 
         self.job_queue = job_info.get("queue")
         self.job_status = job_info.get("status")

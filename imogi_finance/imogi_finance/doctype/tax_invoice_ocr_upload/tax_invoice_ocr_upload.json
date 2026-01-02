@@ -1,0 +1,192 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "field:fp_no",
+  "creation": "2024-01-01 00:00:00.000000",
+  "default_view": "Form",
+  "doctype": "DocType",
+  "editable_grid": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "fp_no",
+    "fp_date",
+    "tax_invoice_pdf",
+    "section_ocr",
+    "ocr_status",
+    "ocr_confidence",
+    "ocr_raw_json",
+    "section_verification",
+    "verification_status",
+    "verification_notes",
+    "npwp",
+    "dpp",
+    "ppn",
+    "ppnbm",
+    "ppn_type",
+    "duplicate_flag",
+    "npwp_match"
+  ],
+  "fields": [
+    {
+      "fieldname": "fp_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Tax Invoice Number",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "fp_date",
+      "fieldtype": "Date",
+      "label": "Tax Invoice Date"
+    },
+    {
+      "fieldname": "tax_invoice_pdf",
+      "fieldtype": "Attach",
+      "label": "Faktur Pajak PDF",
+      "reqd": 1
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_ocr",
+      "fieldtype": "Section Break",
+      "label": "OCR"
+    },
+    {
+      "default": "Not Started",
+      "fieldname": "ocr_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "OCR Status",
+      "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ocr_confidence",
+      "fieldtype": "Float",
+      "label": "OCR Confidence",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ocr_raw_json",
+      "fieldtype": "Code",
+      "label": "OCR Raw JSON",
+      "options": "JSON",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_verification",
+      "fieldtype": "Section Break",
+      "label": "Verification"
+    },
+    {
+      "default": "Needs Review",
+      "fieldname": "verification_status",
+      "fieldtype": "Select",
+      "label": "Tax Invoice Verification Status",
+      "options": "Needs Review\nVerified\nRejected"
+    },
+    {
+      "fieldname": "verification_notes",
+      "fieldtype": "Small Text",
+      "label": "Tax Invoice Verification Notes"
+    },
+    {
+      "fieldname": "npwp",
+      "fieldtype": "Data",
+      "label": "NPWP"
+    },
+    {
+      "fieldname": "dpp",
+      "fieldtype": "Currency",
+      "label": "DPP"
+    },
+    {
+      "fieldname": "ppn",
+      "fieldtype": "Currency",
+      "label": "PPN"
+    },
+    {
+      "fieldname": "ppnbm",
+      "fieldtype": "Currency",
+      "label": "PPNBM"
+    },
+    {
+      "default": "Standard",
+      "fieldname": "ppn_type",
+      "fieldtype": "Select",
+      "label": "PPN Type",
+      "options": "Standard\nZero Rated\nExempt/Not PPN"
+    },
+    {
+      "fieldname": "duplicate_flag",
+      "fieldtype": "Check",
+      "label": "Duplicate Tax Invoice",
+      "read_only": 1
+    },
+    {
+      "fieldname": "npwp_match",
+      "fieldtype": "Check",
+      "label": "NPWP Match",
+      "read_only": 1
+    }
+  ],
+  "hide_toolbar": 0,
+  "idx": 0,
+  "index_web_pages_for_search": 1,
+  "issingle": 0,
+  "links": [],
+  "modified": "2024-01-01 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Imogi Finance",
+  "name": "Tax Invoice OCR Upload",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Accounts User",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "cancel": 1,
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Accounts Manager",
+      "share": 1,
+      "submit": 1,
+      "write": 1
+    },
+    {
+      "cancel": 1,
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "submit": 1,
+      "write": 1
+    }
+  ],
+  "quick_entry": 0,
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import cint
 
 from imogi_finance.branching import apply_branch, resolve_branch
-from imogi_finance.tax_invoice_ocr import get_settings
+from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
 
 PURCHASE_INVOICE_REQUEST_TYPES = {"Expense", "Asset"}
 PURCHASE_INVOICE_ALLOWED_STATUSES = frozenset({"Approved"})
@@ -187,6 +187,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     _sync_request_amounts(request, total_amount, expense_accounts)
 
     settings = get_settings()
+    sync_tax_invoice_upload(request, "Expense Request", save=False)
     enforce_mode = (settings.get("enforce_mode") or "").lower()
     if settings.get("enable_budget_lock") and enforce_mode in {"approval only", "both"}:
         lock_status = getattr(request, "budget_lock_status", None)
@@ -268,6 +269,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     # map tax invoice metadata
     pi.ti_tax_invoice_pdf = getattr(request, "ti_tax_invoice_pdf", None)
+    pi.ti_tax_invoice_upload = getattr(request, "ti_tax_invoice_upload", None)
     pi.ti_fp_no = getattr(request, "ti_fp_no", None)
     pi.ti_fp_date = getattr(request, "ti_fp_date", None)
     pi.ti_fp_npwp = getattr(request, "ti_fp_npwp", None)
