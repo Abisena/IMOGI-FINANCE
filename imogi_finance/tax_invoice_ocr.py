@@ -31,6 +31,9 @@ DEFAULT_SETTINGS = {
     "ppn_output_account": None,
     "default_ppn_type": "Standard",
     "use_tax_rule_effective_date": 1,
+    "google_vision_api_key": None,
+    "google_vision_endpoint": "https://vision.googleapis.com/v1/files:annotate",
+    "tesseract_cmd": None,
 }
 
 FIELD_MAP = {
@@ -200,12 +203,34 @@ def _validate_pdf_size(file_url: str, max_mb: int) -> None:
         frappe.throw(_("File exceeds maximum size of {0} MB.").format(max_mb))
 
 
-def ocr_extract_text_from_pdf(file_url: str, provider: str) -> tuple[str, dict[str, Any] | None, float]:
+def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None:
     if provider == "Manual Only":
         raise ValidationError(_("OCR provider not configured. Please select an OCR provider."))
 
     if provider == "Google Vision":
+        if not settings.get("google_vision_api_key"):
+            raise ValidationError(_("Google Vision API Key is not configured. Please update Tax Invoice OCR Settings."))
+        if not settings.get("google_vision_endpoint"):
+            raise ValidationError(_("Google Vision endpoint is not configured. Please update Tax Invoice OCR Settings."))
+        return
+
+    if provider == "Tesseract":
+        if not settings.get("tesseract_cmd"):
+            raise ValidationError(_("Tesseract command/path is not configured. Please update Tax Invoice OCR Settings."))
+        return
+
+    raise ValidationError(_("OCR provider {0} is not supported.").format(provider))
+
+
+def ocr_extract_text_from_pdf(file_url: str, provider: str) -> tuple[str, dict[str, Any] | None, float]:
+    settings = get_settings()
+    _validate_provider_settings(provider, settings)
+
+    if provider == "Google Vision":
         raise ValidationError(_("Google Vision OCR is not configured. Please add credentials."))
+
+    if provider == "Tesseract":
+        raise ValidationError(_("Tesseract OCR is not configured. Please add command path/arguments."))
 
     raise ValidationError(_("OCR provider {0} is not supported.").format(provider))
 

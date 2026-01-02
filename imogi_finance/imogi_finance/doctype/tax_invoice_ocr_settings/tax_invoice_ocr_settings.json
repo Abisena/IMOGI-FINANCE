@@ -11,6 +11,9 @@
     "section_ocr",
     "enable_tax_invoice_ocr",
     "ocr_provider",
+    "google_vision_api_key",
+    "google_vision_endpoint",
+    "tesseract_cmd",
     "ocr_language",
     "ocr_max_pages",
     "ocr_min_confidence",
@@ -48,6 +51,28 @@
       "fieldtype": "Select",
       "label": "OCR Provider",
       "options": "Manual Only\nGoogle Vision\nTesseract"
+    },
+    {
+      "description": "API Key for Google Vision when provider is Google Vision.",
+      "fieldname": "google_vision_api_key",
+      "fieldtype": "Password",
+      "label": "Google Vision API Key",
+      "depends_on": "eval:doc.ocr_provider==\"Google Vision\""
+    },
+    {
+      "default": "https://vision.googleapis.com/v1/files:annotate",
+      "description": "Endpoint for Google Vision File Annotate API.",
+      "fieldname": "google_vision_endpoint",
+      "fieldtype": "Data",
+      "label": "Google Vision Endpoint",
+      "depends_on": "eval:doc.ocr_provider==\"Google Vision\""
+    },
+    {
+      "description": "Executable/command path for Tesseract when provider is Tesseract.",
+      "fieldname": "tesseract_cmd",
+      "fieldtype": "Data",
+      "label": "Tesseract Command",
+      "depends_on": "eval:doc.ocr_provider==\"Tesseract\""
     },
     {
       "default": "id",
