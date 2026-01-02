@@ -231,8 +231,18 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
         raise ValidationError(_("OCR provider not configured. Please select an OCR provider."))
 
     if provider == "Google Vision":
-        if not settings.get("google_vision_api_key"):
-            raise ValidationError(_("Google Vision API Key is not configured. Please update Tax Invoice OCR Settings."))
+        api_key = settings.get("google_vision_api_key")
+        if not api_key:
+            try:
+                import google.auth  # type: ignore
+            except Exception:
+                raise ValidationError(
+                    _(
+                        "Google Vision credentials are not configured. "
+                        "Provide an API Key or configure Application Default Credentials (service account). "
+                        "See Google Cloud authentication guidance."
+                    )
+                )
         if not settings.get("google_vision_endpoint"):
             raise ValidationError(_("Google Vision endpoint is not configured. Please update Tax Invoice OCR Settings."))
 
@@ -315,6 +325,31 @@ def _build_google_vision_url(settings: dict[str, Any]) -> str:
     return url
 
 
+def _get_google_vision_headers(settings: dict[str, Any]) -> dict[str, str]:
+    if settings.get("google_vision_api_key"):
+        return {}
+
+    try:
+        import google.auth  # type: ignore
+        from google.auth.transport.requests import Request  # type: ignore
+    except Exception:
+        raise ValidationError(
+            _(
+                "Google Vision credentials are not configured. "
+                "Provide an API Key or configure Application Default Credentials (service account)."
+            )
+        )
+
+    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    if credentials.expired or not credentials.valid:
+        credentials.refresh(Request())
+
+    if not credentials.token:
+        raise ValidationError(_("Failed to obtain Google Vision access token from credentials."))
+
+    return {"Authorization": f"Bearer {credentials.token}"}
+
+
 def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, dict[str, Any], float]:
     try:
         import requests
@@ -325,6 +360,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     endpoint = _build_google_vision_url(settings)
     language = settings.get("ocr_language") or "id"
     max_pages = max(cint(settings.get("ocr_max_pages", 2)), 1)
+    headers = _get_google_vision_headers(settings)
 
     request_body: dict[str, Any] = {
         "requests": [
@@ -345,7 +381,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         request_body["requests"][0]["pages"] = list(range(max_pages))
 
     try:
-        response = requests.post(endpoint, json=request_body, timeout=45)
+        response = requests.post(endpoint, json=request_body, headers=headers, timeout=45)
     except Exception as exc:
         raise ValidationError(_("Failed to call Google Vision OCR: {0}").format(exc))
 
