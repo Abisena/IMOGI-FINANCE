@@ -148,7 +148,6 @@
         "state": "Rejected",
         "next_state": "Draft",
         "allowed": "System Manager",
-        "doc_status": "0",
         "allow_self_approval": 0
       },
       {
