@@ -59,7 +59,6 @@
       "fieldtype": "Data",
       "in_list_view": 1,
       "label": "Nomor Faktur Pajak",
-      "reqd": 1,
       "unique": 1,
       "bold": 1
     },
