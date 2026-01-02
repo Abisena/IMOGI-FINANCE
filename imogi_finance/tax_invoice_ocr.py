@@ -51,6 +51,7 @@ FIELD_MAP = {
         "npwp": "ti_fp_npwp",
         "dpp": "ti_fp_dpp",
         "ppn": "ti_fp_ppn",
+        "ppnbm": "ti_fp_ppnbm",
         "ppn_type": "ti_fp_ppn_type",
         "status": "ti_verification_status",
         "notes": "ti_verification_notes",
@@ -67,6 +68,7 @@ FIELD_MAP = {
         "npwp": "ti_fp_npwp",
         "dpp": "ti_fp_dpp",
         "ppn": "ti_fp_ppn",
+        "ppnbm": "ti_fp_ppnbm",
         "ppn_type": "ti_fp_ppn_type",
         "status": "ti_verification_status",
         "notes": "ti_verification_notes",
@@ -83,6 +85,7 @@ FIELD_MAP = {
         "npwp": "ti_fp_npwp",
         "dpp": "ti_fp_dpp",
         "ppn": "ti_fp_ppn",
+        "ppnbm": "ti_fp_ppnbm",
         "ppn_type": "ti_fp_ppn_type",
         "status": "ti_verification_status",
         "notes": "ti_verification_notes",
@@ -266,39 +269,20 @@ def _find_existing_upload_link(
 
 
 def validate_tax_invoice_upload_link(doc: Any, doctype: str):
-    settings = get_settings()
-    enabled = cint(settings.get("enable_tax_invoice_ocr", 0))
-    provider = (settings.get("ocr_provider") or "").strip()
-
     link_field = _get_upload_link_field(doctype)
     if not link_field:
         return
 
     fp_no = _get_value(doc, doctype, "fp_no")
     upload = getattr(doc, link_field, None)
-    has_manual_fields = fp_no or _get_value(doc, doctype, "dpp") or _get_value(doc, doctype, "ppn")
-
-    if provider == "Manual Only":
-        if has_manual_fields and not upload:
-            raise ValidationError(_("Please upload the Faktur Pajak before filling tax invoice numbers."))
-        if not upload:
-            return
-        existing_doctype, existing_name = _find_existing_upload_link(upload, doctype, getattr(doc, "name", None))
-        if existing_doctype and existing_name:
-            raise ValidationError(
-                _("Tax Invoice OCR Upload {0} is already used in {1} {2}. Please select another Faktur Pajak.")
-                .format(upload, existing_doctype, existing_name)
-            )
-        return
-
-    if not enabled:
-        return
+    has_manual_fields = any(
+        _get_value(doc, doctype, key)
+        for key in ("fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm")
+    )
 
     if not upload:
-        if fp_no:
-            raise ValidationError(
-                _("Please select a verified Tax Invoice OCR Upload for the Faktur Pajak.")
-            )
+        if has_manual_fields:
+            raise ValidationError(_("Please select a verified Tax Invoice OCR Upload for the Faktur Pajak."))
         return
 
     status = frappe.db.get_value("Tax Invoice OCR Upload", upload, "verification_status")
@@ -318,10 +302,23 @@ def get_tax_invoice_upload_context(target_doctype: str | None = None, target_nam
     used_uploads = sorted(
         get_linked_tax_invoice_uploads(exclude_doctype=target_doctype, exclude_name=target_name)
     )
+    verified_uploads = []
+    try:
+        verified_uploads = frappe.get_all(
+            "Tax Invoice OCR Upload",
+            filters={
+                "verification_status": "Verified",
+                **({"name": ("not in", used_uploads)} if used_uploads else {}),
+            },
+            fields=["name", "fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm", "ppn_type"],
+        )
+    except Exception:
+        verified_uploads = []
     return {
         "enable_tax_invoice_ocr": cint(settings.get("enable_tax_invoice_ocr", 0)),
         "ocr_provider": settings.get("ocr_provider") or "Manual Only",
         "used_uploads": used_uploads,
+        "verified_uploads": verified_uploads,
     }
 
 
@@ -1217,6 +1214,8 @@ def sync_tax_invoice_upload(doc: Any, doctype: str, upload_name: str | None = No
         return None
 
     upload_doc = frappe.get_doc("Tax Invoice OCR Upload", upload_docname)
+    if getattr(upload_doc, "verification_status", None) != "Verified":
+        raise ValidationError(_("Tax Invoice OCR Upload {0} must be Verified before syncing.").format(upload_docname))
     _copy_tax_invoice_fields(upload_doc, "Tax Invoice OCR Upload", target_doc, doctype)
 
     if save:

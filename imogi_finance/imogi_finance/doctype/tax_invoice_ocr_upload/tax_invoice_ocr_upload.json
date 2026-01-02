@@ -50,26 +50,30 @@
       "collapsible": 1,
       "fieldname": "section_ocr",
       "fieldtype": "Section Break",
+      "hidden": 1,
       "label": "OCR"
     },
     {
       "default": "Not Started",
       "fieldname": "ocr_status",
       "fieldtype": "Select",
-      "in_list_view": 1,
+      "in_list_view": 0,
       "label": "OCR Status",
       "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "ocr_confidence",
       "fieldtype": "Float",
+      "hidden": 1,
       "label": "OCR Confidence",
       "read_only": 1
     },
     {
       "fieldname": "ocr_raw_json",
       "fieldtype": "Code",
+      "hidden": 1,
       "label": "OCR Raw JSON",
       "options": "JSON",
       "read_only": 1
@@ -85,7 +89,8 @@
       "fieldname": "verification_status",
       "fieldtype": "Select",
       "label": "Tax Invoice Verification Status",
-      "options": "Needs Review\nVerified\nRejected"
+      "options": "Needs Review\nVerified\nRejected",
+      "read_only": 1
     },
     {
       "fieldname": "verification_notes",

@@ -4,6 +4,7 @@ const ER_TAX_INVOICE_FIELDS = {
   npwp: 'ti_fp_npwp',
   dpp: 'ti_fp_dpp',
   ppn: 'ti_fp_ppn',
+  ppnbm: 'ti_fp_ppnbm',
   ppn_type: 'ti_fp_ppn_type',
   verification_status: 'ti_verification_status',
   verification_notes: 'ti_verification_notes',
@@ -15,10 +16,11 @@ async function syncErUpload(frm) {
   if (!frm.doc.ti_tax_invoice_upload) {
     return;
   }
-  const upload = await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
+  const cachedUpload = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
+  const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
   Object.entries(ER_TAX_INVOICE_FIELDS).forEach(([source, target]) => {
-    updates[target] = upload[source] || null;
+    updates[target] = upload[source] ?? null;
   });
   await frm.set_value(updates);
 }
@@ -29,15 +31,9 @@ function lockErTaxInvoiceFields(frm) {
   });
 }
 
-function setErTaxInvoiceReadOnly(frm, isManualOnly) {
-  Object.values(ER_TAX_INVOICE_FIELDS).forEach((field) => {
-    frm.set_df_property(field, 'read_only', !isManualOnly);
-  });
-}
-
 async function setErUploadQuery(frm) {
   let usedUploads = [];
-  let provider = 'Manual Only';
+  let verifiedUploads = [];
 
   try {
     const { message } = await frappe.call({
@@ -45,12 +41,15 @@ async function setErUploadQuery(frm) {
       args: { target_doctype: 'Expense Request', target_name: frm.doc.name },
     });
     usedUploads = message?.used_uploads || [];
-    provider = message?.ocr_provider || provider;
+    verifiedUploads = message?.verified_uploads || [];
   } catch (error) {
     console.error('Unable to load available Tax Invoice uploads', error);
   }
 
-  setErTaxInvoiceReadOnly(frm, provider === 'Manual Only');
+  frm.taxInvoiceUploadCache = (verifiedUploads || []).reduce((acc, upload) => {
+    acc[upload.name] = upload;
+    return acc;
+  }, {});
 
   frm.set_query('ti_tax_invoice_upload', () => ({
     filters: {
@@ -62,6 +61,7 @@ async function setErUploadQuery(frm) {
 
 frappe.ui.form.on('Expense Request', {
   async refresh(frm) {
+    lockErTaxInvoiceFields(frm);
     frm.dashboard.clear_headline();
     await setErUploadQuery(frm);
     await syncErUpload(frm);
