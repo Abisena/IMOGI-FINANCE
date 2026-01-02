@@ -62,8 +62,10 @@ def resolve_expense_accounts_from_items(items: Iterable) -> tuple[str, ...]:
     return accounts
 
 
-def check_budget_available(dims: utils.Dimensions, amount: float) -> BudgetCheckResult:
-    result = ledger.check_budget_available(dims, amount)
+def check_budget_available(
+    dims: utils.Dimensions, amount: float, *, from_date=None, to_date=None
+) -> BudgetCheckResult:
+    result = ledger.check_budget_available(dims, amount, from_date=from_date, to_date=to_date)
     return BudgetCheckResult(
         ok=bool(result.get("ok")),
         message=result.get("message", ""),

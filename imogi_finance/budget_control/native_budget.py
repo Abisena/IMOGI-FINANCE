@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Iterable
 
 import frappe
@@ -99,7 +100,7 @@ def get_allocated_from_erpnext_budget(dims: Dimensions) -> float:
         return 0.0
 
 
-def get_actual_spent(dims: Dimensions) -> float:
+def get_actual_spent(dims: Dimensions, *, from_date: date | None = None, to_date: date | None = None) -> float:
     if not getattr(frappe, "db", None) or not getattr(frappe.db, "sql", None):
         return 0.0
 
@@ -109,8 +110,12 @@ def get_actual_spent(dims: Dimensions) -> float:
         "cost_center": dims.cost_center,
     }
 
-    fiscal_filters = ""
-    if dims.fiscal_year:
+    date_filters = ""
+    if from_date and to_date:
+        date_filters = "and posting_date between %(from_date)s and %(to_date)s"
+        params["from_date"] = from_date
+        params["to_date"] = to_date
+    elif dims.fiscal_year:
         try:
             fy_row = frappe.db.get_value(
                 "Fiscal Year", dims.fiscal_year, ["year_start_date", "year_end_date"], as_dict=True
@@ -119,7 +124,7 @@ def get_actual_spent(dims: Dimensions) -> float:
             fy_row = None
 
         if fy_row and fy_row.get("year_start_date") and fy_row.get("year_end_date"):
-            fiscal_filters = "and posting_date between %(year_start)s and %(year_end)s"
+            date_filters = "and posting_date between %(year_start)s and %(year_end)s"
             params["year_start"] = fy_row.get("year_start_date")
             params["year_end"] = fy_row.get("year_end_date")
 
@@ -138,7 +143,7 @@ def get_actual_spent(dims: Dimensions) -> float:
         where company = %(company)s
           and account = %(account)s
           and cost_center = %(cost_center)s
-          {fiscal_filters}
+          {date_filters}
           {branch_filter}
           {project_filter}
           and is_cancelled = 0

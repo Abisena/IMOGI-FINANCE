@@ -8,6 +8,10 @@ DEFAULT_SETTINGS = {
 	"enable_branch_expense_request": 1,
 	"default_expense_account": None,
 	"require_employee": 0,
+	"enable_budget_check": 1,
+	"budget_block_on_over": 1,
+	"budget_warn_on_over": 0,
+	"budget_check_basis": "Fiscal Year",
 }
 
 

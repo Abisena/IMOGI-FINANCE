@@ -9,7 +9,12 @@
   "field_order": [
     "enable_branch_expense_request",
     "default_expense_account",
-    "require_employee"
+    "require_employee",
+    "budget_section",
+    "enable_budget_check",
+    "budget_block_on_over",
+    "budget_warn_on_over",
+    "budget_check_basis"
   ],
   "fields": [
     {
@@ -29,6 +34,36 @@
       "fieldname": "require_employee",
       "fieldtype": "Check",
       "label": "Require Employee"
+    },
+    {
+      "fieldname": "budget_section",
+      "fieldtype": "Section Break",
+      "label": "Budget"
+    },
+    {
+      "default": "1",
+      "fieldname": "enable_budget_check",
+      "fieldtype": "Check",
+      "label": "Enable Budget Check"
+    },
+    {
+      "default": "1",
+      "fieldname": "budget_block_on_over",
+      "fieldtype": "Check",
+      "label": "Block Submission when Over Budget"
+    },
+    {
+      "default": "0",
+      "fieldname": "budget_warn_on_over",
+      "fieldtype": "Check",
+      "label": "Warn Only when Over Budget"
+    },
+    {
+      "default": "Fiscal Year",
+      "fieldname": "budget_check_basis",
+      "fieldtype": "Select",
+      "label": "Budget Check Basis",
+      "options": "Fiscal Year\nFiscal Period (Month)\nCustom"
     }
   ],
   "index_web_pages_for_search": 1,
