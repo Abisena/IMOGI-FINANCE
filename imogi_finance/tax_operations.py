@@ -156,6 +156,11 @@ def _get_tax_invoice_fields(doctype: str) -> set[str]:
 
 
 def _has_locked_period(company: str, posting_date: date | str | None) -> str | None:
+    """Check if posting date falls within a closed tax period.
+    
+    Returns the name of the locked Tax Period Closing document, or None.
+    """
+    # ✅ FIX: Add None check to prevent strftime error
     if not posting_date:
         return None
 
@@ -199,6 +204,11 @@ def validate_tax_period_lock(doc: Document, posting_date_field: str = "posting_d
         or getattr(doc, "request_date", None)
         or getattr(doc, "bill_date", None)
     )
+    
+    # ✅ Additional safety check before calling _has_locked_period
+    if not posting_date:
+        return
+    
     locked_name = _has_locked_period(company, posting_date)
     if not locked_name:
         return
