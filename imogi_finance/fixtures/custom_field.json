@@ -116,6 +116,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_tax_invoice_data_section",
     "label": "No Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -126,6 +127,7 @@
     "fieldtype": "Date",
     "insert_after": "ti_fp_no",
     "label": "Tanggal Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -136,6 +138,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_fp_date",
     "label": "NPWP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -146,6 +149,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_npwp",
     "label": "DPP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -156,6 +160,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_dpp",
     "label": "PPN",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -168,6 +173,7 @@
     "label": "PPN Type",
     "options": "Standard\nZero Rated\nExempt/Not PPN",
     "default": "Standard",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -180,6 +186,7 @@
     "label": "Tax Invoice Verification Status",
     "options": "Needs Review\nVerified\nRejected",
     "default": "Needs Review",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -190,6 +197,7 @@
     "fieldtype": "Small Text",
     "insert_after": "ti_verification_status",
     "label": "Tax Invoice Verification Notes",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -253,6 +261,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_tax_invoice_data_section",
     "label": "No Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -263,6 +272,7 @@
     "fieldtype": "Date",
     "insert_after": "ti_fp_no",
     "label": "Tanggal Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -273,6 +283,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_fp_date",
     "label": "NPWP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -283,6 +294,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_npwp",
     "label": "DPP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -293,6 +305,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_dpp",
     "label": "PPN",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -305,6 +318,7 @@
     "label": "PPN Type",
     "options": "Standard\nZero Rated\nExempt/Not PPN",
     "default": "Standard",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -317,6 +331,7 @@
     "label": "Tax Invoice Verification Status",
     "options": "Needs Review\nVerified\nRejected",
     "default": "Needs Review",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -327,6 +342,7 @@
     "fieldtype": "Small Text",
     "insert_after": "ti_verification_status",
     "label": "Tax Invoice Verification Notes",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -390,6 +406,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_tax_invoice_data_section",
     "label": "No Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -400,6 +417,7 @@
     "fieldtype": "Date",
     "insert_after": "ti_fp_no",
     "label": "Tanggal Faktur Pajak",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -410,6 +428,7 @@
     "fieldtype": "Data",
     "insert_after": "ti_fp_date",
     "label": "NPWP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -420,6 +439,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_npwp",
     "label": "DPP",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -430,6 +450,7 @@
     "fieldtype": "Currency",
     "insert_after": "ti_fp_dpp",
     "label": "PPN",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -442,6 +463,7 @@
     "label": "PPN Type",
     "options": "Standard\nZero Rated\nExempt/Not PPN",
     "default": "Standard",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -454,6 +476,7 @@
     "label": "Tax Invoice Verification Status",
     "options": "Needs Review\nVerified\nRejected",
     "default": "Needs Review",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {
@@ -464,6 +487,7 @@
     "fieldtype": "Small Text",
     "insert_after": "ti_verification_status",
     "label": "Tax Invoice Verification Notes",
+    "read_only": 1,
     "allow_on_submit": 1
   },
   {

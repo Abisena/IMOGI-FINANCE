@@ -212,6 +212,119 @@ def _get_upload_link_field(doctype: str) -> str | None:
     return UPLOAD_LINK_FIELDS.get(doctype)
 
 
+def get_linked_tax_invoice_uploads(
+    *, exclude_doctype: str | None = None, exclude_name: str | None = None
+) -> set[str]:
+    targets = ("Purchase Invoice", "Expense Request", "Branch Expense Request")
+    uploads: set[str] = set()
+
+    for target in targets:
+        fieldname = _get_upload_link_field(target)
+        if not fieldname:
+            continue
+
+        filters: dict[str, Any] = {fieldname: ("!=", None)}
+        if target != "Expense Request":
+            filters["docstatus"] = ("<", 2)
+        if exclude_name and target == exclude_doctype:
+            filters["name"] = ("!=", exclude_name)
+
+        try:
+            linked = frappe.get_all(target, filters=filters, pluck=fieldname) or []
+        except Exception:
+            continue
+
+        uploads.update(linked)
+
+    return {name for name in uploads if name}
+
+
+def _find_existing_upload_link(
+    upload_name: str, current_doctype: str, current_name: str | None = None
+) -> tuple[str | None, str | None]:
+    targets = ("Purchase Invoice", "Expense Request", "Branch Expense Request")
+
+    for target in targets:
+        fieldname = _get_upload_link_field(target)
+        if not fieldname:
+            continue
+
+        filters: dict[str, Any] = {fieldname: upload_name}
+        if target != "Expense Request":
+            filters["docstatus"] = ("<", 2)
+        if current_name and target == current_doctype:
+            filters["name"] = ("!=", current_name)
+
+        try:
+            matches = frappe.get_all(target, filters=filters, pluck="name", limit=1) or []
+        except Exception:
+            continue
+
+        if matches:
+            return target, matches[0]
+    return None, None
+
+
+def validate_tax_invoice_upload_link(doc: Any, doctype: str):
+    settings = get_settings()
+    enabled = cint(settings.get("enable_tax_invoice_ocr", 0))
+    provider = (settings.get("ocr_provider") or "").strip()
+
+    link_field = _get_upload_link_field(doctype)
+    if not link_field:
+        return
+
+    fp_no = _get_value(doc, doctype, "fp_no")
+    upload = getattr(doc, link_field, None)
+    has_manual_fields = fp_no or _get_value(doc, doctype, "dpp") or _get_value(doc, doctype, "ppn")
+
+    if provider == "Manual Only":
+        if has_manual_fields and not upload:
+            raise ValidationError(_("Please upload the Faktur Pajak before filling tax invoice numbers."))
+        if not upload:
+            return
+        existing_doctype, existing_name = _find_existing_upload_link(upload, doctype, getattr(doc, "name", None))
+        if existing_doctype and existing_name:
+            raise ValidationError(
+                _("Tax Invoice OCR Upload {0} is already used in {1} {2}. Please select another Faktur Pajak.")
+                .format(upload, existing_doctype, existing_name)
+            )
+        return
+
+    if not enabled:
+        return
+
+    if not upload:
+        if fp_no:
+            raise ValidationError(
+                _("Please select a verified Tax Invoice OCR Upload for the Faktur Pajak.")
+            )
+        return
+
+    status = frappe.db.get_value("Tax Invoice OCR Upload", upload, "verification_status")
+    if status != "Verified":
+        raise ValidationError(_("Tax Invoice OCR Upload {0} must be Verified.").format(upload))
+
+    existing_doctype, existing_name = _find_existing_upload_link(upload, doctype, getattr(doc, "name", None))
+    if existing_doctype and existing_name:
+        raise ValidationError(
+            _("Tax Invoice OCR Upload {0} is already used in {1} {2}. Please select another Faktur Pajak.")
+            .format(upload, existing_doctype, existing_name)
+        )
+
+
+def get_tax_invoice_upload_context(target_doctype: str | None = None, target_name: str | None = None) -> dict[str, Any]:
+    settings = get_settings()
+    used_uploads = sorted(
+        get_linked_tax_invoice_uploads(exclude_doctype=target_doctype, exclude_name=target_name)
+    )
+    return {
+        "enable_tax_invoice_ocr": cint(settings.get("enable_tax_invoice_ocr", 0)),
+        "ocr_provider": settings.get("ocr_provider") or "Manual Only",
+        "used_uploads": used_uploads,
+    }
+
+
 def _set_value(doc: Any, doctype: str, key: str, value: Any) -> None:
     fieldname = _get_fieldname(doctype, key)
     setattr(doc, fieldname, value)
@@ -1062,7 +1175,13 @@ def _check_duplicate_fp_no(current_name: str, fp_no: str, company: str | None, d
     if not fp_no:
         return False
 
-    targets = ["Purchase Invoice", "Expense Request", "Sales Invoice", "Tax Invoice OCR Upload"]
+    targets = [
+        "Purchase Invoice",
+        "Expense Request",
+        "Branch Expense Request",
+        "Sales Invoice",
+        "Tax Invoice OCR Upload",
+    ]
     filters_cache: dict[str, dict[str, Any]] = {}
 
     for target in targets:

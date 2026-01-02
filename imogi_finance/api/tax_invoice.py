@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from imogi_finance.tax_invoice_ocr import (
+    get_tax_invoice_upload_context,
     get_tax_invoice_ocr_monitoring,
     run_ocr,
     sync_tax_invoice_upload,
@@ -75,6 +76,11 @@ def verify_tax_invoice_upload(upload_name: str, force: bool = False):
 def monitor_tax_invoice_ocr(docname: str, doctype: str):
     frappe.only_for(("Accounts Manager", "Accounts User", "System Manager", "Tax Reviewer"))
     return get_tax_invoice_ocr_monitoring(docname, doctype)
+
+
+@frappe.whitelist()
+def get_tax_invoice_upload_context_api(target_doctype: str, target_name: str | None = None):
+    return get_tax_invoice_upload_context(target_doctype=target_doctype, target_name=target_name)
 
 
 @frappe.whitelist()

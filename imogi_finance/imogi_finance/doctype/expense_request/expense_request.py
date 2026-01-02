@@ -19,6 +19,7 @@ from imogi_finance.approval import (
     log_route_resolution_error,
 )
 from imogi_finance.budget_control.workflow import handle_expense_request_workflow, release_budget_for_request
+from imogi_finance.tax_invoice_ocr import validate_tax_invoice_upload_link
 
 
 class ExpenseRequest(Document):
@@ -36,6 +37,7 @@ class ExpenseRequest(Document):
         self.apply_branch_defaults()
         self.validate_asset_details()
         self.validate_tax_fields()
+        validate_tax_invoice_upload_link(self, "Expense Request")
         self.sync_status_with_workflow_state()
         self.handle_key_field_changes_after_submit()
         self.validate_pending_edit_restrictions()

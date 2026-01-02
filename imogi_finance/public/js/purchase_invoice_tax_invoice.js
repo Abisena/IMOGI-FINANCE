@@ -32,10 +32,33 @@ function lockPiTaxInvoiceFields(frm) {
   });
 }
 
-function setPiUploadQuery(frm) {
+function setPiTaxInvoiceReadOnly(frm, isManualOnly) {
+  Object.values(PI_TAX_INVOICE_FIELDS).forEach((field) => {
+    frm.set_df_property(field, 'read_only', !isManualOnly);
+  });
+}
+
+async function setPiUploadQuery(frm) {
+  let usedUploads = [];
+  let provider = 'Manual Only';
+
+  try {
+    const { message } = await frappe.call({
+      method: 'imogi_finance.api.tax_invoice.get_tax_invoice_upload_context_api',
+      args: { target_doctype: 'Purchase Invoice', target_name: frm.doc.name },
+    });
+    usedUploads = message?.used_uploads || [];
+    provider = message?.ocr_provider || provider;
+  } catch (error) {
+    console.error('Unable to load available Tax Invoice uploads', error);
+  }
+
+  setPiTaxInvoiceReadOnly(frm, provider === 'Manual Only');
+
   frm.set_query('ti_tax_invoice_upload', () => ({
     filters: {
       verification_status: 'Verified',
+      ...(usedUploads.length ? { name: ['not in', usedUploads] } : {}),
     },
   }));
 }
@@ -43,7 +66,7 @@ function setPiUploadQuery(frm) {
 frappe.ui.form.on('Purchase Invoice', {
   async refresh(frm) {
     lockPiTaxInvoiceFields(frm);
-    setPiUploadQuery(frm);
+    await setPiUploadQuery(frm);
 
     const addOcrButton = async () => {
       const enabled = await frappe.db.get_single_value('Tax Invoice OCR Settings', 'enable_tax_invoice_ocr');
