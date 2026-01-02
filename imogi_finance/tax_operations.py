@@ -11,7 +11,7 @@ from typing import Iterable
 import frappe
 from frappe import _, bold
 from frappe.model.document import Document
-from frappe.utils import flt, get_first_day, get_last_day, nowdate
+from frappe.utils import flt, get_first_day, get_last_day, getdate, nowdate
 from frappe.utils.xlsxutils import make_xlsx
 
 INPUT_VAT_REPORT = "imogi_finance.imogi_finance.report.vat_input_register_verified.vat_input_register_verified"
@@ -160,9 +160,10 @@ def _has_locked_period(company: str, posting_date: date | str | None) -> str | N
     
     Returns the name of the locked Tax Period Closing document, or None.
     """
-    # ✅ FIX: Add None check to prevent strftime error
     if not posting_date:
         return None
+
+    posting_date = getdate(posting_date)
 
     locked = frappe.get_all(
         "Tax Period Closing",
@@ -203,13 +204,8 @@ def validate_tax_period_lock(doc: Document, posting_date_field: str = "posting_d
     if not company:
         return
 
-    posting_date = (
-        getattr(doc, posting_date_field, None)
-        or getattr(doc, "request_date", None)
-        or getattr(doc, "bill_date", None)
-    )
+    posting_date = doc.get(posting_date_field) or doc.get("request_date") or doc.get("bill_date")
     
-    # ✅ FIX: Jika posting_date tidak ditemukan, skip validasi
     if not posting_date:
         return
     
