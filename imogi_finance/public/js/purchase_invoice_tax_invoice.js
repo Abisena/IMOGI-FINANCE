@@ -1,6 +1,20 @@
 frappe.require('/assets/imogi_finance/js/tax_invoice_fields.js');
 
-const PI_TAX_INVOICE_FIELDS = (imogi_finance?.tax_invoice?.getFieldMap && imogi_finance.tax_invoice.getFieldMap('Purchase Invoice')) || {
+const TAX_INVOICE_MODULE = imogi_finance?.tax_invoice || {};
+const DEFAULT_COPY_KEYS = [
+  'fp_no',
+  'fp_date',
+  'npwp',
+  'dpp',
+  'ppn',
+  'ppnbm',
+  'ppn_type',
+  'status',
+  'notes',
+  'duplicate_flag',
+  'npwp_match',
+];
+const DEFAULT_PI_FIELDS = {
   fp_no: 'ti_fp_no',
   fp_date: 'ti_fp_date',
   npwp: 'ti_fp_npwp',
@@ -8,11 +22,37 @@ const PI_TAX_INVOICE_FIELDS = (imogi_finance?.tax_invoice?.getFieldMap && imogi_
   ppn: 'ti_fp_ppn',
   ppnbm: 'ti_fp_ppnbm',
   ppn_type: 'ti_fp_ppn_type',
-  verification_status: 'ti_verification_status',
-  verification_notes: 'ti_verification_notes',
+  status: 'ti_verification_status',
+  notes: 'ti_verification_notes',
   duplicate_flag: 'ti_duplicate_flag',
   npwp_match: 'ti_npwp_match',
+  ocr_status: 'ti_ocr_status',
+  ocr_confidence: 'ti_ocr_confidence',
+  ocr_raw_json: 'ti_ocr_raw_json',
+  tax_invoice_pdf: 'ti_tax_invoice_pdf',
 };
+const DEFAULT_UPLOAD_FIELDS = {
+  fp_no: 'fp_no',
+  fp_date: 'fp_date',
+  npwp: 'npwp',
+  dpp: 'dpp',
+  ppn: 'ppn',
+  ppnbm: 'ppnbm',
+  ppn_type: 'ppn_type',
+  status: 'verification_status',
+  notes: 'verification_notes',
+  duplicate_flag: 'duplicate_flag',
+  npwp_match: 'npwp_match',
+  ocr_status: 'ocr_status',
+  ocr_confidence: 'ocr_confidence',
+  ocr_raw_json: 'ocr_raw_json',
+  tax_invoice_pdf: 'tax_invoice_pdf',
+};
+
+const PI_TAX_INVOICE_FIELDS = (TAX_INVOICE_MODULE.getFieldMap && TAX_INVOICE_MODULE.getFieldMap('Purchase Invoice')) || DEFAULT_PI_FIELDS;
+const UPLOAD_TAX_INVOICE_FIELDS = (TAX_INVOICE_MODULE.getFieldMap && TAX_INVOICE_MODULE.getFieldMap('Tax Invoice OCR Upload')) || DEFAULT_UPLOAD_FIELDS;
+const COPY_KEYS = (TAX_INVOICE_MODULE.getSharedCopyKeys && TAX_INVOICE_MODULE.getSharedCopyKeys('Tax Invoice OCR Upload', 'Purchase Invoice'))
+  || DEFAULT_COPY_KEYS;
 
 async function syncPiUpload(frm) {
   if (!frm.doc.ti_tax_invoice_upload) {
@@ -23,8 +63,13 @@ async function syncPiUpload(frm) {
   const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
 
-  Object.entries(PI_TAX_INVOICE_FIELDS).forEach(([source, target]) => {
-    updates[target] = upload[source] ?? null;
+  COPY_KEYS.forEach((key) => {
+    const sourceField = UPLOAD_TAX_INVOICE_FIELDS[key];
+    const targetField = PI_TAX_INVOICE_FIELDS[key];
+    if (!sourceField || !targetField) {
+      return;
+    }
+    updates[targetField] = upload[sourceField] ?? null;
   });
 
   await frm.set_value(updates);
