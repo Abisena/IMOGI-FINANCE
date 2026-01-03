@@ -1,4 +1,6 @@
-const SI_TAX_INVOICE_FIELDS = {
+frappe.require('/assets/imogi_finance/js/tax_invoice_fields.js');
+
+const SI_TAX_INVOICE_FIELDS = (imogi_finance?.tax_invoice?.getFieldMap && imogi_finance.tax_invoice.getFieldMap('Sales Invoice')) || {
   fp_no: 'out_fp_no',
   fp_date: 'out_fp_date',
   npwp: 'out_buyer_tax_id',
