@@ -84,6 +84,17 @@ def _as_amount(value) -> float:
         return 0.0
 
 
+def _parse_date(value):
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except Exception:
+        return None
+
+
 def _normalise_direction(direction: str | None) -> str:
     if not direction:
         return "out"
@@ -203,11 +214,15 @@ def parse_statement_rows(
         amount = _as_amount(row.get("amount") or row.get("Amount"))
         reference = row.get("reference") or row.get("Reference") or row.get("ref")
         posting_date = row.get("date") or row.get("posting_date") or row.get("Date")
+        raw_direction = row.get("direction") or row.get("Direction")
+        direction = _normalise_direction(raw_direction)
+        if not raw_direction:
+            direction = "in" if amount >= 0 else "out"
         rows.append(
             {
                 "branch": row.get("branch") or row.get("Branch") or branch or "Unassigned",
                 "amount": amount,
-                "direction": _normalise_direction(row.get("direction") or row.get("Direction")),
+                "direction": direction,
                 "reference": reference,
                 "posting_date": posting_date,
                 "raw": dict(row),
@@ -237,12 +252,19 @@ def build_monthly_reconciliation(
         amount = _as_amount(tx.get("amount"))
         direction = _normalise_direction(tx.get("direction"))
         signed_amount = amount if direction == "in" else -amount
+        tx_date = _parse_date(tx.get("posting_date") or tx.get("date"))
 
         match_index = next(
             (
                 idx
                 for idx, statement in enumerate(statements_pool)
-                if abs(signed_amount - _as_amount(statement.get("amount"))) <= tolerance
+                if _is_statement_match(
+                    signed_amount,
+                    direction,
+                    tx_date,
+                    statement,
+                    tolerance=tolerance,
+                )
             ),
             None,
         )
@@ -311,3 +333,32 @@ def serialize_for_export(bundle: DailyReportBundle, reconciliation: MonthlyRecon
         payload["reconciliation"] = reconciliation.to_dict()
     payload["exported_at"] = datetime.utcnow().isoformat()
     return payload
+
+
+def _is_statement_match(
+    ledger_signed_amount: float,
+    ledger_direction: str,
+    ledger_date: date | None,
+    statement: Mapping[str, object],
+    *,
+    tolerance: float = 0.0,
+) -> bool:
+    statement_amount = _as_amount(statement.get("amount"))
+    raw_direction = statement.get("direction")
+    statement_direction = _normalise_direction(raw_direction)
+    if not raw_direction:
+        statement_direction = "in" if statement_amount >= 0 else "out"
+
+    if ledger_direction != statement_direction:
+        return False
+
+    statement_signed = statement_amount if statement_direction == "in" else -statement_amount
+    if abs(ledger_signed_amount - statement_signed) > tolerance:
+        return False
+
+    ledger_dt = ledger_date
+    statement_dt = _parse_date(statement.get("posting_date") or statement.get("date"))
+    if ledger_dt and statement_dt and abs((ledger_dt - statement_dt).days) > 3:
+        return False
+
+    return True

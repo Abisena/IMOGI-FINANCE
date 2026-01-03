@@ -45,12 +45,12 @@ def test_daily_report_respects_branch_filter():
 
 def test_monthly_reconciliation_detects_gaps():
     ledger = [
-        {"amount": 200, "direction": "in", "reference": "DEP-1"},
-        {"amount": 50, "direction": "out", "reference": "PAY-1"},
+        {"amount": 200, "direction": "in", "reference": "DEP-1", "posting_date": "2024-03-01"},
+        {"amount": 50, "direction": "out", "reference": "PAY-1", "posting_date": "2024-03-02"},
     ]
     statements = [
-        {"amount": 200, "reference": "DEP-1"},
-        {"amount": 75, "reference": "DEP-UNMATCHED"},
+        {"amount": 200, "reference": "DEP-1", "direction": "in", "posting_date": "2024-03-01"},
+        {"amount": 75, "reference": "DEP-UNMATCHED", "direction": "in", "posting_date": "2024-03-03"},
     ]
 
     result = build_monthly_reconciliation(
