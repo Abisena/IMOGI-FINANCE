@@ -236,7 +236,11 @@ def _set_value(doc: Any, doctype: str, key: str, value: Any) -> None:
 
 
 def _copy_tax_invoice_fields(source_doc: Any, source_doctype: str, target_doc: Any, target_doctype: str):
+    source_map = tax_invoice_fields.get_field_map(source_doctype)
+    target_map = tax_invoice_fields.get_field_map(target_doctype)
     for key in tax_invoice_fields.iter_copy_keys():
+        if key not in source_map or key not in target_map:
+            continue
         _set_value(target_doc, target_doctype, key, _get_value(source_doc, source_doctype, key))
 
 
