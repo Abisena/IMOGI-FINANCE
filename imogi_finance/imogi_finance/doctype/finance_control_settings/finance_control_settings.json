@@ -25,6 +25,10 @@
     "inherit_branch_from_cost_center",
     "default_branch",
     "enforce_branch_on_links",
+    "section_reporting",
+    "daily_report_preparer",
+    "daily_report_approver",
+    "daily_report_acknowledger",
     "section_administrative_payments",
     "enforce_branch",
     "enforce_cost_center",
@@ -135,6 +139,29 @@
       "fieldname": "enforce_branch_on_links",
       "fieldtype": "Check",
       "label": "Enforce Branch Consistency on Links"
+    },
+    {
+      "fieldname": "section_reporting",
+      "fieldtype": "Section Break",
+      "label": "Reporting Signers"
+    },
+    {
+      "fieldname": "daily_report_preparer",
+      "fieldtype": "Link",
+      "label": "Daily Report Prepared By",
+      "options": "User"
+    },
+    {
+      "fieldname": "daily_report_approver",
+      "fieldtype": "Link",
+      "label": "Daily Report Approved By",
+      "options": "User"
+    },
+    {
+      "fieldname": "daily_report_acknowledger",
+      "fieldtype": "Link",
+      "label": "Daily Report Acknowledged By",
+      "options": "User"
     },
     {
       "fieldname": "section_administrative_payments",

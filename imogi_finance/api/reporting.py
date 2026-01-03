@@ -5,7 +5,13 @@ from importlib import util as importlib_util
 import sys
 import types
 
-from imogi_finance.reporting import ReportScheduler, build_dashboard_snapshot, build_daily_report, resolve_signers
+from imogi_finance.reporting import (
+    ReportScheduler,
+    build_dashboard_snapshot,
+    build_daily_report,
+    resolve_signers,
+)
+from imogi_finance.reporting.data import load_daily_inputs
 
 
 existing = sys.modules.get("frappe")
@@ -51,12 +57,14 @@ def _extract_signers_from_settings(doc) -> dict:
 def preview_daily_report(branches=None, report_date=None):
     signers = resolve_signers(_extract_signers_from_settings(_get_settings()))
     report_date_obj = date.fromisoformat(report_date) if report_date else None
+    branch_filter = branches or None
+    transactions, opening_balances = load_daily_inputs(report_date_obj, branch_filter)
     bundle = build_daily_report(
-        [],
-        opening_balances={},
+        transactions,
+        opening_balances=opening_balances,
         report_date=report_date_obj,
         signers=signers,
-        allowed_branches=branches or None,
+        allowed_branches=branch_filter,
         status="preview",
     )
     return bundle.to_dict()
@@ -66,11 +74,13 @@ def preview_daily_report(branches=None, report_date=None):
 def get_dashboard_snapshot(branches=None, report_date=None):
     signers = resolve_signers(_extract_signers_from_settings(_get_settings()))
     report_date_obj = date.fromisoformat(report_date) if report_date else None
+    branch_filter = branches or None
+    transactions, opening_balances = load_daily_inputs(report_date_obj, branch_filter)
     snapshot = build_dashboard_snapshot(
-        transactions=[],
-        opening_balances={},
+        transactions=transactions,
+        opening_balances=opening_balances,
         report_date=report_date_obj,
-        allowed_branches=branches or None,
+        allowed_branches=branch_filter,
         reconciliation=None,
         signers=signers,
     )

@@ -230,23 +230,14 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"imogi_finance.tasks.all"
-# 	],
-# 	"daily": [
-# 		"imogi_finance.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"imogi_finance.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"imogi_finance.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"imogi_finance.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "daily": [
+        "imogi_finance.reporting.tasks.run_daily_reporting",
+    ],
+    "monthly": [
+        "imogi_finance.reporting.tasks.run_monthly_reconciliation",
+    ],
+}
 
 # Testing
 # -------

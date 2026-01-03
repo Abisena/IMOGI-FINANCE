@@ -75,9 +75,35 @@
     }
   };
 
+  const resolveBranches = () => {
+    const source =
+      document.querySelector("[data-report-dashboard-branches]") ||
+      document.querySelector("[data-report-dashboard-chart]");
+
+    if (!source) return null;
+
+    const raw =
+      source.dataset.reportDashboardBranches ||
+      source.getAttribute("data-report-dashboard-branches") ||
+      source.value;
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (error) {
+      if (raw.includes(",")) return raw.split(",").map((item) => item.trim()).filter(Boolean);
+      return [raw];
+    }
+  };
+
   const loadSnapshot = async () => {
     try {
-      const response = await fetch(snapshotEndpoint, { method: "POST" });
+      const branches = resolveBranches();
+      const response = await fetch(snapshotEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branches }),
+      });
       const payload = await response.json();
       const snapshot = payload.message || payload;
       renderSnapshot(snapshot);
