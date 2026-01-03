@@ -1,4 +1,6 @@
-const BER_TAX_INVOICE_FIELDS = {
+frappe.require("/assets/imogi_finance/js/tax_invoice_fields.js");
+
+const BER_TAX_INVOICE_FIELDS = (imogi_finance?.tax_invoice?.getFieldMap && imogi_finance.tax_invoice.getFieldMap("Branch Expense Request")) || {
 	fp_no: "ti_fp_no",
 	fp_date: "ti_fp_date",
 	npwp: "ti_fp_npwp",
