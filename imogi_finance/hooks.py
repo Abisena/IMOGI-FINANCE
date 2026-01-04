@@ -176,6 +176,7 @@ doc_events = {
         "validate": [
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
+            "imogi_finance.events.sales_invoice.apply_dpp_ppn_to_sales_invoice",
         ]
     },
     "Expense Request": {
@@ -392,6 +393,8 @@ fixtures = [
             "Sales Invoice-synch_status",
             "Sales Invoice-out_fp_npwp",
             "Sales Invoice-out_fp_tax_invoice_pdf",
+            "Sales Invoice Item-dpp_amount",
+            "Sales Invoice Item-ppn_amount",
             "Branch Expense Request-ti_tax_invoice_section",
             "Branch Expense Request-ti_tax_invoice_upload",
             "Branch Expense Request-ti_tax_invoice_data_section",
