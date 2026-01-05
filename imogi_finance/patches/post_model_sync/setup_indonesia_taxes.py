@@ -88,6 +88,15 @@ def _setup_tax_templates(company: str, accounts: dict[str, str | None], logger) 
         )
         templates.append(
             ensure_tax_template(
+                title="ID - PPN 12% Output",
+                company=company,
+                account=ppn_output,
+                rate=12.0,
+                template_type="Sales",
+            )
+        )
+        templates.append(
+            ensure_tax_template(
                 title="ID - PPN 0% Export",
                 company=company,
                 account=ppn_output,
@@ -103,6 +112,15 @@ def _setup_tax_templates(company: str, accounts: dict[str, str | None], logger) 
                 company=company,
                 account=ppn_input,
                 rate=11.0,
+                template_type="Purchase",
+            )
+        )
+        templates.append(
+            ensure_tax_template(
+                title="ID - PPN 12% Input",
+                company=company,
+                account=ppn_input,
+                rate=12.0,
                 template_type="Purchase",
             )
         )

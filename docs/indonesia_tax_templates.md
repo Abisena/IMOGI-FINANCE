@@ -6,8 +6,9 @@ Use these steps to sanity-check the native PPN / PB1 tax templates and withholdi
 
 1. Open a **Sales Invoice** for an Indonesian company and set **Taxes and Charges** to `ID - PPN 11% Output`.
 2. Submit the document and confirm a GL credit to the **Tax Payable PPN** (or reused payable) account at 11% of the net total.
-3. Repeat with **Taxes and Charges** `ID - PB1 10%` to verify PB1 output uses the mapped PB1 payable account.
-4. For purchase-side VAT, create a **Purchase Invoice** and pick `ID - PPN 11% Input`; verify a debit to the PPN input/prepaid tax account.
+3. Repeat with **Taxes and Charges** `ID - PPN 12% Output` to confirm 12% now maps to the same payable account.
+4. Repeat with **Taxes and Charges** `ID - PB1 10%` to verify PB1 output uses the mapped PB1 payable account.
+5. For purchase-side VAT, create a **Purchase Invoice** and pick `ID - PPN 11% Input` (and `ID - PPN 12% Input` if needed); verify a debit to the PPN input/prepaid tax account.
 
 ## Withholding (Non-PPh21)
 
