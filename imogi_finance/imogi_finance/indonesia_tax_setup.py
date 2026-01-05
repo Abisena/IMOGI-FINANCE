@@ -57,6 +57,11 @@ class AccountResolver:
             if account:
                 return self._record(label, account, "keyword")
 
+        for name in preferred_names:
+            account = self._find_loose(name)
+            if account:
+                return self._record(label, account, "existing")
+
         if preferred_names:
             account = self._create_account(preferred_names[0], root_type=root_type, account_type=account_type)
             if account:
@@ -100,6 +105,33 @@ class AccountResolver:
             "Account",
             filters=conditions,
             fields=["name", "account_name", "root_type"],
+            order_by="modified desc",
+            limit=1,
+        )
+        return match[0]["name"] if match else None
+
+    def _find_loose(self, keyword: str) -> str | None:
+        """Looser search to avoid duplicate creation if names change after deployment."""
+        conditions = {
+            "company": self.company,
+            "is_group": 0,
+            "account_name": ["like", f"%{keyword}%"],
+        }
+        match = frappe.get_all(
+            "Account",
+            filters=conditions,
+            fields=["name"],
+            order_by="modified desc",
+            limit=1,
+        )
+        if match:
+            return match[0]["name"]
+
+        conditions["name"] = conditions.pop("account_name")
+        match = frappe.get_all(
+            "Account",
+            filters=conditions,
+            fields=["name"],
             order_by="modified desc",
             limit=1,
         )
