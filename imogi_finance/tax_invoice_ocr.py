@@ -998,12 +998,13 @@ def _update_doc_after_ocr(
     confidence: float,
     raw_json: dict[str, Any] | None = None,
 ):
-    setattr(doc, _get_fieldname(doctype, "status"), "Needs Review")
-    setattr(doc, _get_fieldname(doctype, "ocr_status"), "Done")
-    setattr(doc, _get_fieldname(doctype, "ocr_confidence"), confidence)
-
     allowed_keys = set(tax_invoice_fields.get_field_map(doctype).keys()) & ALLOWED_OCR_FIELDS
     extra_notes: list[str] = []
+    updates: dict[str, Any] = {
+        _get_fieldname(doctype, "status"): "Needs Review",
+        _get_fieldname(doctype, "ocr_status"): "Done",
+        _get_fieldname(doctype, "ocr_confidence"): confidence,
+    }
     for key, value in parsed.items():
         if key not in allowed_keys:
             continue
@@ -1015,20 +1016,24 @@ def _update_doc_after_ocr(
                 continue
             value = sanitized
 
-        fieldname = _get_fieldname(doctype, key)
-        setattr(doc, fieldname, value)
+        updates[_get_fieldname(doctype, key)] = value
 
     if extra_notes:
         notes_field = _get_fieldname(doctype, "notes")
         existing_notes = getattr(doc, notes_field, None) or ""
         combined = f"{existing_notes}\n" if existing_notes else ""
         combined += "\n".join(extra_notes)
-        setattr(doc, notes_field, combined)
+        updates[notes_field] = combined
 
     if raw_json is not None:
-        setattr(doc, _get_fieldname(doctype, "ocr_raw_json"), json.dumps(raw_json, indent=2))
+        updates[_get_fieldname(doctype, "ocr_raw_json")] = json.dumps(raw_json, indent=2)
 
-    doc.save(ignore_permissions=True)
+    db_set = getattr(doc, "db_set", None)
+    if callable(db_set):
+        db_set(updates)
+    else:
+        for field, value in updates.items():
+            setattr(doc, field, value)
 
 
 def _run_ocr_job(name: str, target_doctype: str, provider: str):
