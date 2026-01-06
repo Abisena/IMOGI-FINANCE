@@ -458,6 +458,7 @@ fixtures = [
                     "Receipt Maker",
                     "Receipt Approver",
                     "Receipt Auditor",
+                    "Budget Controller",
                     "Tax Reviewer",
                 ],
             ]
