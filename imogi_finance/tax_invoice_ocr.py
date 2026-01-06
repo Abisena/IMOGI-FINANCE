@@ -207,6 +207,7 @@ def validate_tax_invoice_upload_link(doc: Any, doctype: str):
 
 def get_tax_invoice_upload_context(target_doctype: str | None = None, target_name: str | None = None) -> dict[str, Any]:
     settings = get_settings()
+    provider_ready, provider_error = _get_provider_status(settings)
     used_uploads = sorted(
         get_linked_tax_invoice_uploads(exclude_doctype=target_doctype, exclude_name=target_name)
     )
@@ -225,6 +226,8 @@ def get_tax_invoice_upload_context(target_doctype: str | None = None, target_nam
     return {
         "enable_tax_invoice_ocr": cint(settings.get("enable_tax_invoice_ocr", 0)),
         "ocr_provider": settings.get("ocr_provider") or "Manual Only",
+        "provider_ready": provider_ready,
+        "provider_error": provider_error,
         "used_uploads": used_uploads,
         "verified_uploads": verified_uploads,
     }
@@ -654,6 +657,18 @@ def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None
         return
 
     raise ValidationError(_("OCR provider {0} is not supported.").format(provider))
+
+
+def _get_provider_status(settings: dict[str, Any]) -> tuple[bool, str | None]:
+    provider = settings.get("ocr_provider") or "Manual Only"
+    try:
+        _validate_provider_settings(provider, settings)
+        return True, None
+    except ValidationError as exc:
+        return False, str(exc)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Tax Invoice OCR provider check failed")
+        return False, _("OCR provider not configured. Please update Tax Invoice OCR Settings.")
 
 
 def _load_pdf_content_base64(file_url: str) -> tuple[str, str]:
@@ -1254,8 +1269,9 @@ def run_ocr(docname: str, doctype: str):
     if not cint(settings.get("enable_tax_invoice_ocr", 0)):
         frappe.throw(_("Tax Invoice OCR is disabled. Enable it in Tax Invoice OCR Settings."))
 
-    provider = settings.get("ocr_provider", "Manual Only")
-    _validate_provider_settings(provider, settings)
+    provider_ready, provider_error = _get_provider_status(settings)
+    if not provider_ready:
+        frappe.throw(provider_error)
 
     doc = frappe.get_doc(doctype, docname)
     _enqueue_ocr(doc, doctype)
