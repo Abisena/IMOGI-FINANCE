@@ -71,28 +71,34 @@ def get_settings() -> dict[str, Any]:
     return settings_obj
 
 
-def _normalize_google_vision_path(path: str | None) -> str:
-    """Ensure the Vision endpoint path targets files:annotate as per Google API docs."""
-    if not path or not path.strip("/"):
-        return "/v1/files:annotate"
+def _normalize_google_vision_path(path: str | None, *, is_pdf: bool = True) -> str:
+    """
+    Normalize Google Vision endpoint path.
+    For PDF OCR, ONLY files:annotate is supported.
+    """
 
-    normalized = path.strip()
-    if not normalized.startswith("/"):
-        normalized = f"/{normalized}"
-    normalized = normalized.rstrip("/")
+    if not path:
+        endpoint = "files:annotate"
+    else:
+        endpoint = path.strip()
 
-    if "asyncBatchAnnotate" in normalized:
-        return normalized
+        # jika user isi full URL atau /v1/xxx
+        if endpoint.startswith("http"):
+            endpoint = endpoint.split("/v1/")[-1]
 
-    if not normalized.endswith("files:annotate"):
-        raise ValidationError(
-            _(
-                "Google Vision endpoint must call files:annotate for PDF OCR. "
-                "See https://vision.googleapis.com/$discovery/rest?version=v1 for supported resources."
-            )
+        endpoint = endpoint.lstrip("/")
+
+    if is_pdf and endpoint != "files:annotate":
+        _raise_validation_error(
+            _("PDF OCR must use Google Vision 'files:annotate' endpoint.")
         )
 
-    return normalized
+    if endpoint not in {"files:annotate", "images:annotate"}:
+        _raise_validation_error(
+            _("Unsupported Google Vision endpoint: {0}").format(endpoint)
+        )
+
+    return endpoint
 
 
 def normalize_npwp(npwp: str | None) -> str | None:
@@ -721,16 +727,13 @@ def _load_pdf_content_base64(file_url: str) -> tuple[str, str]:
 
 def _build_google_vision_url(settings: dict[str, Any]) -> str:
     endpoint = settings.get("google_vision_endpoint") or DEFAULT_SETTINGS["google_vision_endpoint"]
-
     parsed = urlparse(endpoint)
+
     if not parsed.scheme or not parsed.netloc:
-        raise ValidationError(_("Google Vision endpoint is invalid. Please update Tax Invoice OCR Settings."))
+        raise_validation_error(("Google Vision endpoint is invalid."))
 
-    netloc = parsed.netloc
-    path = _normalize_google_vision_path(parsed.path)
-
-    url = f"{parsed.scheme}://{netloc}{path}"
-    return url
+    normalized = _normalize_google_vision_path(parsed.path, is_pdf=True)
+    return f"{parsed.scheme}://{parsed.netloc}/v1/{normalized}"
 
 
 def _parse_service_account_json(raw_value: str) -> dict[str, Any]:
