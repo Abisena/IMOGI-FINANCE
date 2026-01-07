@@ -39,6 +39,12 @@ def get_active_setting_meta(cost_center: str) -> dict:
     return setting
 
 
+def _normalize_route(route: dict) -> dict:
+    normalized = dict(route)
+    normalized["level_3"] = {"role": None, "user": None}
+    return normalized
+
+
 def _get_route_for_account(setting_name: str, account: str, amount: float) -> dict:
     def _get_matching_line(filters: dict):
         return frappe.get_all(
@@ -100,7 +106,6 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
         "level_3": {"role": data.get("level_3_role"), "user": data.get("level_3_user")},
     }
 
-
 def get_approval_route(
     cost_center: str, accounts: str | Iterable[str], amount: float, *, setting_meta: dict | None = None
 ) -> dict:
@@ -140,7 +145,7 @@ def get_approval_route(
                 _("All expense accounts on the request must share the same approval route.")
             )
 
-    return resolved_route or {}
+    return _normalize_route(resolved_route) if resolved_route else {}
 
 
 def approval_setting_required_message(cost_center: str | None = None) -> str:
