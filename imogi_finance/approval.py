@@ -7,6 +7,7 @@ from collections.abc import Iterable
 
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 def _normalize_accounts(accounts: str | Iterable[str]) -> tuple[str, ...]:
@@ -97,6 +98,8 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
         max_amount = data.get(f"level_{level}_max_amount")
         if min_amount is None or max_amount is None:
             continue
+        min_amount = flt(min_amount)
+        max_amount = flt(max_amount)
         if amount < min_amount or amount > max_amount:
             data[f"level_{level}_role"] = None
             data[f"level_{level}_user"] = None
@@ -125,6 +128,7 @@ def get_approval_route(
     """
 
     normalized_accounts = _normalize_accounts(accounts)
+    amount = flt(amount or 0)
     route_setting = setting_meta or get_active_setting_meta(cost_center)
     setting_name = route_setting.get("name") if isinstance(route_setting, dict) else None
     if not setting_name:

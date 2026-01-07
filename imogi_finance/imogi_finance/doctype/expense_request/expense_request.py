@@ -73,9 +73,7 @@ class ExpenseRequest(Document):
         if getattr(self, "_action", None) != "submit":
             return
 
-        route, setting_meta = self._resolve_approval_route()
-        self.apply_route(route, setting_meta=setting_meta)
-        self._skip_approval_route = self._should_skip_approval(route)
+        route = self._resolve_and_apply_route()
         if self._skip_approval_route:
             self.current_approval_level = 0
             self.status = "Approved"
@@ -216,9 +214,7 @@ class ExpenseRequest(Document):
     def before_submit(self):
         """Resolve approval route and set initial workflow state."""
         self.validate_amounts()
-        route, setting_meta = self._resolve_approval_route()
-        self.apply_route(route, setting_meta=setting_meta)
-        self._skip_approval_route = self._should_skip_approval(route)
+        route = self._resolve_and_apply_route()
         if self._skip_approval_route:
             self.current_approval_level = 0
             self.status = "Approved"
@@ -257,6 +253,14 @@ class ExpenseRequest(Document):
                 next_state=kwargs.get("next_state"),
             )
         if action == "Submit":
+            self.validate_amounts()
+            route = self._resolve_and_apply_route()
+            if self._skip_approval_route:
+                self.current_approval_level = 0
+                self.status = "Approved"
+                self.workflow_state = "Approved"
+            else:
+                self._set_pending_review(level=1)
             self.validate_submit_permission()
             self.validate_reopen_override_resolution()
             return
@@ -749,6 +753,12 @@ class ExpenseRequest(Document):
             return {}, None
 
         return route, setting_meta
+
+    def _resolve_and_apply_route(self) -> dict:
+        route, setting_meta = self._resolve_approval_route()
+        self.apply_route(route, setting_meta=setting_meta)
+        self._skip_approval_route = self._should_skip_approval(route)
+        return route
 
     @staticmethod
     def _route_has_approver(route: dict | None) -> bool:
