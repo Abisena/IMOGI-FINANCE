@@ -199,21 +199,15 @@ class ExpenseRequest(Document):
     def before_submit(self):
         """Resolve approval route and set initial workflow state."""
         self.validate_amounts()
-        try:
-            setting_meta = get_active_setting_meta(self.cost_center)
-            route = get_approval_route(
-                self.cost_center, self._get_expense_accounts(), self.amount, setting_meta=setting_meta
-            )
-        except (frappe.DoesNotExistError, frappe.ValidationError) as exc:
-            log_route_resolution_error(
-                exc,
-                cost_center=self.cost_center,
-                accounts=self._get_expense_accounts(),
-                amount=self.amount,
-            )
-            frappe.throw(approval_setting_required_message(self.cost_center))
-
+        route, setting_meta = self._resolve_approval_route()
         self.apply_route(route, setting_meta=setting_meta)
+        self._skip_approval_route = self._should_skip_approval(route)
+        if self._skip_approval_route:
+            self.current_approval_level = 0
+            self.status = "Approved"
+            self.workflow_state = "Approved"
+            return
+
         self.validate_initial_approver(route)
         self._set_pending_review(level=1)
         self.workflow_state = self.PENDING_REVIEW_STATE
@@ -318,6 +312,10 @@ class ExpenseRequest(Document):
     def on_workflow_action(self, action, **kwargs):
         """Reset approval routing when a request is reopened."""
         next_state = kwargs.get("next_state")
+        if action == "Submit" and self._should_skip_approval():
+            next_state = "Approved"
+            self.current_approval_level = 0
+            self.record_approval_route_snapshot()
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
@@ -339,24 +337,19 @@ class ExpenseRequest(Document):
             handle_expense_request_workflow(self, action, next_state)
             return
 
-        try:
-            self.validate_amounts()
-            setting_meta = get_active_setting_meta(self.cost_center)
-            route = get_approval_route(
-                self.cost_center, self._get_expense_accounts(), self.amount, setting_meta=setting_meta
-            )
-            self.clear_downstream_links()
-            self.apply_route(route, setting_meta=setting_meta)
+        self.validate_amounts()
+        route, setting_meta = self._resolve_approval_route()
+        self.clear_downstream_links()
+        self.apply_route(route, setting_meta=setting_meta)
+        self._skip_approval_route = self._should_skip_approval(route)
+        if self._skip_approval_route:
+            next_state = "Approved"
+            self.current_approval_level = 0
+            self.status = next_state
+            self.workflow_state = next_state
+        else:
             self._set_pending_review(level=1)
             self.workflow_state = next_state or self.PENDING_REVIEW_STATE
-        except (frappe.DoesNotExistError, frappe.ValidationError) as exc:
-            log_route_resolution_error(
-                exc,
-                cost_center=self.cost_center,
-                accounts=self._get_expense_accounts(),
-                amount=self.amount,
-            )
-            frappe.throw(approval_setting_required_message(self.cost_center))
 
         handle_expense_request_workflow(self, action, next_state)
 
@@ -675,6 +668,23 @@ class ExpenseRequest(Document):
             # Avoid blocking workflow if snapshot persistence fails.
             pass
 
+    def _resolve_approval_route(self) -> tuple[dict, dict | None]:
+        try:
+            setting_meta = get_active_setting_meta(self.cost_center)
+            route = get_approval_route(
+                self.cost_center, self._get_expense_accounts(), self.amount, setting_meta=setting_meta
+            )
+        except (frappe.DoesNotExistError, frappe.ValidationError) as exc:
+            log_route_resolution_error(
+                exc,
+                cost_center=self.cost_center,
+                accounts=self._get_expense_accounts(),
+                amount=self.amount,
+            )
+            return {}, None
+
+        return route, setting_meta
+
     @staticmethod
     def _route_has_approver(route: dict | None) -> bool:
         if not route:
@@ -690,6 +700,16 @@ class ExpenseRequest(Document):
                 route.get("level_3", {}).get("user"),
             ]
         )
+
+    def _should_skip_approval(self, route: dict | None = None) -> bool:
+        if route is not None:
+            return not self._route_has_approver(route)
+
+        flag = getattr(self, "_skip_approval_route", None)
+        if flag is not None:
+            return flag
+
+        return not self._route_has_approver(self.get_route_snapshot())
 
     def get_current_level_key(self) -> str | None:
         if self.is_pending_review():
@@ -770,12 +790,14 @@ class ExpenseRequest(Document):
                 title=_("Not Allowed"),
             )
 
-        setting_meta = get_active_setting_meta(self.cost_center)
-        route = get_approval_route(
-            self.cost_center, self._get_expense_accounts(), self.amount, setting_meta=setting_meta
-        )
+        route, setting_meta = self._resolve_approval_route()
         self.apply_route(route, setting_meta=setting_meta)
-        self._set_pending_review(level=1)
+        if self._should_skip_approval(route):
+            self.current_approval_level = 0
+            self.status = "Approved"
+            self.workflow_state = "Approved"
+        else:
+            self._set_pending_review(level=1)
         flags = getattr(self, "flags", None)
         if flags is None:
             flags = type("Flags", (), {})()
@@ -864,6 +886,8 @@ class ExpenseRequest(Document):
 
     def validate_initial_approver(self, route: dict):
         """Ensure the first approval level has a configured user or role."""
+        if self._should_skip_approval(route):
+            return
         first_level = route.get("level_1", {}) if route else {}
         if first_level.get("role") or first_level.get("user"):
             return
