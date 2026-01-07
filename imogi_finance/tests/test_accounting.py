@@ -629,7 +629,7 @@ def test_update_links_respects_mark_pending_flag_for_draft():
 
 
 def test_validate_request_ready_for_link_disallows_linked_status():
-    request = _make_expense_request(status="Linked")
+    request = _make_expense_request(status="PI Created")
     previous_throw = frappe.throw
     frappe.throw = _throw
 

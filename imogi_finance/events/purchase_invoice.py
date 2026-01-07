@@ -80,7 +80,7 @@ def on_submit(doc, method=None):
     frappe.db.set_value(
         "Expense Request",
         request.name,
-        {"linked_purchase_invoice": doc.name, "pending_purchase_invoice": None, "status": "Linked"},
+        {"linked_purchase_invoice": doc.name, "pending_purchase_invoice": None, "status": "PI Created"},
     )
     request.pending_purchase_invoice = None
     consume_budget_for_purchase_invoice(doc, expense_request=request)

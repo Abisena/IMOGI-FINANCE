@@ -14,7 +14,7 @@ def on_submit(doc, method=None):
         return
 
     request = get_approved_expense_request(
-        request, _("Payment Entry"), allowed_statuses=frozenset({"Linked"})
+        request, _("Payment Entry"), allowed_statuses=frozenset({"PI Created"})
     )
 
     linked_payment_entry = getattr(request, "linked_payment_entry", None)
@@ -76,7 +76,7 @@ def on_submit(doc, method=None):
     frappe.db.set_value(
         "Expense Request",
         request.name,
-        {"linked_payment_entry": doc.name, "status": "Closed"},
+        {"linked_payment_entry": doc.name, "status": "Paid"},
     )
 
 

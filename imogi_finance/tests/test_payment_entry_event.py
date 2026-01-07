@@ -59,12 +59,12 @@ def test_payment_entry_linking_requires_approved_request(monkeypatch, docstatus,
     with pytest.raises(LinkError) as excinfo:
         payment_entry.on_submit(_payment_entry_doc("ER-001"))
 
-    assert "docstatus 1 and status Linked" in str(excinfo.value)
+    assert "docstatus 1 and status PI Created" in str(excinfo.value)
     assert set_value_calls == []
 
 
 def test_payment_entry_rejects_closed_request(monkeypatch):
-    request = types.SimpleNamespace(name="ER-010", docstatus=1, status="Closed", request_type="Expense")
+    request = types.SimpleNamespace(name="ER-010", docstatus=1, status="Paid", request_type="Expense")
 
     class LinkError(Exception):
         pass
@@ -78,12 +78,12 @@ def test_payment_entry_rejects_closed_request(monkeypatch):
     with pytest.raises(LinkError) as excinfo:
         payment_entry.on_submit(_payment_entry_doc("ER-010"))
 
-    assert "status Linked" in str(excinfo.value)
+    assert "status PI Created" in str(excinfo.value)
 
 
 def test_payment_entry_links_request_when_approved(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-002", docstatus=1, status="Linked", linked_payment_entry=None, request_type="Expense", linked_purchase_invoice="PI-111"
+        name="ER-002", docstatus=1, status="PI Created", linked_payment_entry=None, request_type="Expense", linked_purchase_invoice="PI-111"
     )
     captured_set_value = {}
 
@@ -109,12 +109,12 @@ def test_payment_entry_links_request_when_approved(monkeypatch):
 
     assert captured_set_value["doctype"] == "Expense Request"
     assert captured_set_value["name"] == "ER-002"
-    assert captured_set_value["values"] == {"linked_payment_entry": doc.name, "status": "Closed"}
+    assert captured_set_value["values"] == {"linked_payment_entry": doc.name, "status": "Paid"}
 
 
 def test_payment_entry_throws_if_already_linked(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-003", docstatus=1, status="Linked", linked_payment_entry="PE-0009", request_type="Expense", linked_purchase_invoice="PI-111"
+        name="ER-003", docstatus=1, status="PI Created", linked_payment_entry="PE-0009", request_type="Expense", linked_purchase_invoice="PI-111"
     )
 
     class LinkError(Exception):
@@ -138,7 +138,7 @@ def test_payment_entry_throws_if_already_linked(monkeypatch):
 
 def test_payment_entry_rejects_existing_payment_entry(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-011", docstatus=1, status="Linked", linked_payment_entry=None, request_type="Expense", linked_purchase_invoice="PI-222"
+        name="ER-011", docstatus=1, status="PI Created", linked_payment_entry=None, request_type="Expense", linked_purchase_invoice="PI-222"
     )
 
     class LinkError(Exception):
@@ -160,7 +160,7 @@ def test_payment_entry_rejects_existing_payment_entry(monkeypatch):
 
 def test_payment_entry_requires_purchase_invoice_or_asset(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-004", docstatus=1, status="Linked", linked_payment_entry=None, linked_purchase_invoice=None,
+        name="ER-004", docstatus=1, status="PI Created", linked_payment_entry=None, linked_purchase_invoice=None,
         linked_asset=None, request_type="Asset"
     )
 
@@ -185,7 +185,7 @@ def test_payment_entry_requires_purchase_invoice_or_asset(monkeypatch):
 
 def test_payment_entry_requires_submitted_purchase_invoice(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-005", docstatus=1, status="Linked", linked_payment_entry=None, linked_purchase_invoice="PI-DRAFT",
+        name="ER-005", docstatus=1, status="PI Created", linked_payment_entry=None, linked_purchase_invoice="PI-DRAFT",
         linked_asset=None, request_type="Expense"
     )
 
@@ -207,7 +207,7 @@ def test_payment_entry_requires_submitted_purchase_invoice(monkeypatch):
 
 def test_payment_entry_requires_submitted_asset(monkeypatch):
     request = types.SimpleNamespace(
-        name="ER-006", docstatus=1, status="Linked", linked_payment_entry=None, linked_purchase_invoice=None,
+        name="ER-006", docstatus=1, status="PI Created", linked_payment_entry=None, linked_purchase_invoice=None,
         linked_asset="AST-DRAFT", request_type="Asset"
     )
 

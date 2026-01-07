@@ -360,7 +360,7 @@ def test_before_workflow_action_blocks_generic_role_without_route(monkeypatch):
 
 def test_close_requires_any_routed_user_or_role(monkeypatch):
     request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         level_1_role="Expense Approver",
         level_2_user="closer@example.com",
         items=[_item()],
@@ -391,12 +391,12 @@ def test_close_blocks_when_not_linked(monkeypatch):
     with pytest.raises(NotAllowed) as excinfo:
         request.before_workflow_action("Close")
 
-    assert "Close action is only allowed when the request is Linked or already Closed." in str(excinfo.value)
+    assert "Close action is only allowed when the request is PI Created or already Paid." in str(excinfo.value)
 
 
 def test_close_allows_routed_user_or_role(monkeypatch):
     role_request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         level_3_role="Finance Manager",
         items=[_item()],
         cost_center="CC",
@@ -415,7 +415,7 @@ def test_close_allows_routed_user_or_role(monkeypatch):
     role_request.before_workflow_action("Close")
 
     user_request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         level_1_user="closer@example.com",
         items=[_item()],
         cost_center="CC",
@@ -435,7 +435,7 @@ def test_close_allows_routed_user_or_role(monkeypatch):
 
 
 def test_close_allows_configuration_override(monkeypatch):
-    request = ExpenseRequest(status="Linked", name="ER-001", items=[_item()], cost_center="CC", request_type="Expense")
+    request = ExpenseRequest(status="PI Created", name="ER-001", items=[_item()], cost_center="CC", request_type="Expense")
     comments = []
     warnings = []
 
@@ -458,7 +458,7 @@ def test_close_allows_configuration_override(monkeypatch):
 
 def test_close_revalidates_against_current_route(monkeypatch):
     request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         items=[_item()],
         cost_center="CC",
         expense_account="5000",
@@ -519,7 +519,7 @@ def test_reopen_refreshes_route_and_status(monkeypatch):
     )
 
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         amount=250,
@@ -563,7 +563,7 @@ def test_reopen_to_draft_tracks_next_state(monkeypatch):
 
 def test_reopen_blocks_when_downstream_active(monkeypatch):
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         items=[_item(amount=100)],
@@ -586,7 +586,7 @@ def test_reopen_allows_site_override_with_audit(monkeypatch):
         captured["request_override"] = request_override
 
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         items=[_item(amount=100)],
@@ -615,7 +615,7 @@ def test_reopen_allows_request_override_with_audit(monkeypatch):
         captured["request_override"] = request_override
 
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         items=[_item(amount=100)],
@@ -673,7 +673,7 @@ def test_reopen_clears_downstream_links(monkeypatch):
     )
 
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         items=[_item(amount=100)],
@@ -741,7 +741,7 @@ def test_reopen_handles_validation_error(monkeypatch):
     )
 
     request = ExpenseRequest(
-        status="Closed",
+        status="Paid",
         cost_center="CC",
         expense_account="5000",
         amount=150,
@@ -755,13 +755,13 @@ def test_reopen_handles_validation_error(monkeypatch):
 
     assert "Approval route could not be determined" in str(excinfo.value)
     assert captured.get("called")
-    assert request.status == "Closed"
+    assert request.status == "Paid"
     assert request.linked_payment_entry == "PE-1"
 
 
 def test_cancel_requires_downstream_links_cleared(monkeypatch):
     request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         docstatus=1,
         linked_purchase_invoice="PI-100",
         linked_payment_entry="PE-200",
@@ -1247,7 +1247,7 @@ def test_validate_allows_status_change_when_workflow_flagged():
 
 def test_close_uses_snapshot_when_route_missing(monkeypatch):
     request = ExpenseRequest(
-        status="Linked",
+        status="PI Created",
         level_1_role="Expense Approver",
         items=[_item(amount=150)],
         amount=150,

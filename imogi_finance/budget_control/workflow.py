@@ -430,7 +430,7 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
     target_state = settings.get("lock_on_workflow_state") or "Approved"
     _record_budget_workflow_event(expense_request, action, next_state, target_state)
 
-    if action in {"Reject", "Reopen"} or (next_state and next_state not in {target_state, "Linked"}):
+    if action in {"Reject", "Reopen"} or (next_state and next_state not in {target_state, "PI Created"}):
         release_budget_for_request(expense_request, reason=action)
         return
 

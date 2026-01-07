@@ -23,7 +23,7 @@ def on_submit(doc, method=None):
     frappe.db.set_value(
         "Expense Request",
         request.name,
-        {"linked_asset": doc.name, "status": "Linked"},
+        {"linked_asset": doc.name, "status": "PI Created"},
     )
 
 
