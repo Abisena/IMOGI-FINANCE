@@ -15,7 +15,7 @@ def get_approved_expense_request(
     request_name: str, target_label: str, allowed_statuses: frozenset[str] | set[str] | None = None
 ):
     request = frappe.get_doc("Expense Request", request_name)
-    allowed_statuses = allowed_statuses or {"Approved", "Linked"}
+    allowed_statuses = allowed_statuses or {"Approved", "PI Created"}
     if request.docstatus != 1 or request.status not in allowed_statuses:
         frappe.throw(
             _(
@@ -42,11 +42,17 @@ def has_active_links(request_links, exclude: frozenset[str] | None = None):
 
 def get_cancel_updates(request_name: str, cleared_link_field: str):
     request_links = get_expense_request_links(request_name)
-    remaining_links = has_active_links(
-        request_links, exclude=frozenset({cleared_link_field})
-    )
-
-    return {
-        cleared_link_field: None,
-        "status": "Linked" if remaining_links else "Approved",
+    remaining_links = {
+        field: request_links.get(field)
+        for field in EXPENSE_REQUEST_LINK_FIELDS
+        if field != cleared_link_field
     }
+
+    if remaining_links.get("linked_payment_entry"):
+        next_status = "Paid"
+    elif any(remaining_links.values()):
+        next_status = "PI Created"
+    else:
+        next_status = "Approved"
+
+    return {cleared_link_field: None, "status": next_status}

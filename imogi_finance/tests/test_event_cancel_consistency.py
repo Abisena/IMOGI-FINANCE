@@ -57,5 +57,5 @@ def test_cancel_keeps_linked_status_when_other_links_exist(
 
     assert captured_set_value["doctype"] == "Expense Request"
     assert captured_set_value["name"] == "ER-CROSS"
-    assert captured_set_value["values"]["status"] == "Linked"
+    assert captured_set_value["values"]["status"] == "PI Created"
     assert captured_set_value["values"][cleared_field] is None

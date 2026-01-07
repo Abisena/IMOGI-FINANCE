@@ -13,10 +13,6 @@
       "allowed": "Expense Approver"
     },
     {
-      "action": "Close",
-      "allowed": "Expense Approver"
-    },
-    {
       "action": "Reopen",
       "allowed": "System Manager"
     }
@@ -74,13 +70,13 @@
       }
     },
     {
-      "state": "Linked",
+      "state": "PI Created",
       "doc_status": 1,
       "allow_edit": "System Manager",
       "backflow_allowed": false
     },
     {
-      "state": "Closed",
+      "state": "Paid",
       "doc_status": 1,
       "allow_edit": "System Manager",
       "backflow_allowed": false
@@ -129,13 +125,6 @@
       "doc_status": 1
     },
     {
-      "action": "Close",
-      "allowed": "Expense Approver",
-      "state": "Linked",
-      "next_state": "Closed",
-      "doc_status": 1
-    },
-    {
       "action": "Reopen",
       "allowed": "System Manager",
       "state": "Rejected",
@@ -145,7 +134,7 @@
     {
       "action": "Reopen",
       "allowed": "System Manager",
-      "state": "Closed",
+      "state": "Paid",
       "next_state": "Pending Review",
       "doc_status": 1
     }

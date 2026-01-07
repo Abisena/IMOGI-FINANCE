@@ -23,10 +23,6 @@
         "allowed": "Expense Approver"
       },
       {
-        "action": "Close",
-        "allowed": "Expense Approver"
-      },
-      {
         "action": "Reopen",
         "allowed": "System Manager"
       }
@@ -88,14 +84,14 @@
       },
       {
         "doctype": "Workflow Document State",
-        "state": "Linked",
+        "state": "PI Created",
         "doc_status": "1",
         "allow_edit": "System Manager",
         "backflow_allowed": false
       },
       {
         "doctype": "Workflow Document State",
-        "state": "Closed",
+        "state": "Paid",
         "doc_status": "1",
         "allow_edit": "System Manager",
         "backflow_allowed": false
@@ -145,13 +141,6 @@
       },
       {
         "doctype": "Workflow Transition",
-        "action": "Close",
-        "state": "Linked",
-        "next_state": "Closed",
-        "allowed": "Expense Approver"
-      },
-      {
-        "doctype": "Workflow Transition",
         "action": "Reopen",
         "state": "Rejected",
         "next_state": "Reopened",
@@ -162,7 +151,7 @@
       {
         "doctype": "Workflow Transition",
         "action": "Reopen",
-        "state": "Closed",
+        "state": "Paid",
         "next_state": "Pending Review",
         "allowed": "System Manager",
         "doc_status": "1",

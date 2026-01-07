@@ -48,7 +48,7 @@ class AuthorizationGuard:
 class WorkflowGuard:
     """Workflow guard for ensuring states only change through allowed actions."""
 
-    FINAL_STATES = {"Approved", "Linked", "Closed"}
+    FINAL_STATES = {"Approved", "PI Created", "Paid"}
 
     @staticmethod
     def require_session_user():

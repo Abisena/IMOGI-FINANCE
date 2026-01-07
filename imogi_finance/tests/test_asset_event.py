@@ -45,4 +45,4 @@ def test_asset_cancel_keeps_linked_status_when_purchase_invoice_remains(monkeypa
 
     assert captured_set_value["doctype"] == "Expense Request"
     assert captured_set_value["name"] == "ER-AST-123"
-    assert captured_set_value["values"] == {"linked_asset": None, "status": "Linked"}
+    assert captured_set_value["values"] == {"linked_asset": None, "status": "PI Created"}

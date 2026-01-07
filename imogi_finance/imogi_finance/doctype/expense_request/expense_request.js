@@ -260,7 +260,7 @@ frappe.ui.form.on('Expense Request', {
     const isSubmitted = frm.doc.docstatus === 1;
     const allowedStatuses = ['Approved'];
     const isAllowedStatus = allowedStatuses.includes(frm.doc.status);
-    const isLinked = frm.doc.status === 'Linked';
+    const isLinked = frm.doc.status === 'PI Created';
     const hasLinkedPurchaseInvoice = Boolean(frm.doc.linked_purchase_invoice);
     const canCreatePurchaseInvoice = isSubmitted && isAllowedStatus && !hasLinkedPurchaseInvoice;
 

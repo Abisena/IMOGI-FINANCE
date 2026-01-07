@@ -156,7 +156,7 @@ class ExpenseRequest(Document):
 
     def validate_final_state_immutability(self):
         """Prevent edits to key fields after approval or downstream linkage."""
-        if getattr(self, "docstatus", 0) != 1 or self.status not in {"Approved", "Linked", "Closed"}:
+        if getattr(self, "docstatus", 0) != 1 or self.status not in {"Approved", "PI Created", "Paid"}:
             return
 
         previous = self._get_previous_doc()
@@ -266,9 +266,9 @@ class ExpenseRequest(Document):
             return
 
         if action == "Close":
-            if self.status not in {"Linked", "Closed"}:
+            if self.status not in {"PI Created", "Paid"}:
                 frappe.throw(
-                    _("Close action is only allowed when the request is Linked or already Closed."),
+                    _("Close action is only allowed when the request is PI Created or already Paid."),
                     title=_("Not Allowed"),
                 )
 
@@ -849,7 +849,7 @@ class ExpenseRequest(Document):
         if not changed_fields:
             return
 
-        if self.status in {"Approved", "Linked", "Closed"}:
+        if self.status in {"Approved", "PI Created", "Paid"}:
             frappe.throw(
                 _("Cannot modify key fields after approval: {0}.").format(_(", ").join(changed_fields)),
                 title=_("Not Allowed"),
@@ -880,8 +880,8 @@ class ExpenseRequest(Document):
                 "Reopened",
                 "Approved",
                 "Rejected",
-                "Linked",
-                "Closed",
+                "PI Created",
+                "Paid",
             },
         )
         if self.is_pending_review():
@@ -1244,7 +1244,7 @@ class ExpenseRequest(Document):
         """Record when unrestricted close override is used to bypass route validation."""
         try:
             message = _(
-                "Closed using unrestricted override from site config. Ensure manual audit note is added and disable the flag after emergency use. User: {user}."
+                "Paid using unrestricted override from site config. Ensure manual audit note is added and disable the flag after emergency use. User: {user}."
             ).format(user=getattr(getattr(frappe, "session", None), "user", None))
 
             if getattr(self, "name", None) and hasattr(self, "add_comment"):

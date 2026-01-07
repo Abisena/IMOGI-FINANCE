@@ -51,7 +51,7 @@ def test_purchase_invoice_cancel_sets_status_linked_when_asset_remains(monkeypat
     assert captured_set_value["values"] == {
         "linked_purchase_invoice": None,
         "pending_purchase_invoice": None,
-        "status": "Linked",
+        "status": "PI Created",
     }
 
 
@@ -128,5 +128,5 @@ def test_purchase_invoice_submit_links_request(monkeypatch):
     assert captured_set_value["values"] == {
         "linked_purchase_invoice": "PI-001",
         "pending_purchase_invoice": None,
-        "status": "Linked",
+        "status": "PI Created",
     }
