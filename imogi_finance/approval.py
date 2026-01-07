@@ -45,11 +45,8 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
             "Expense Approval Line",
             filters=filters,
             fields=[
-                "level_1_role",
                 "level_1_user",
-                "level_2_role",
                 "level_2_user",
-                "level_3_role",
                 "level_3_user",
             ],
             order_by="min_amount desc, max_amount asc",
@@ -81,9 +78,9 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
 
     data = approval_line[0]
     return {
-        "level_1": {"role": data.get("level_1_role"), "user": data.get("level_1_user")},
-        "level_2": {"role": data.get("level_2_role"), "user": data.get("level_2_user")},
-        "level_3": {"role": data.get("level_3_role"), "user": data.get("level_3_user")},
+        "level_1": {"user": data.get("level_1_user")},
+        "level_2": {"user": data.get("level_2_user")},
+        "level_3": {"user": data.get("level_3_user")},
     }
 
 
@@ -98,7 +95,7 @@ def get_approval_route(
         amount: Total requested amount.
 
     Returns:
-        dict: Approval mapping per level, with ``role`` and ``user`` keys.
+        dict: Approval mapping per level, with ``user`` keys.
 
     Raises:
         frappe.DoesNotExistError: If no active rule exists for the cost center.

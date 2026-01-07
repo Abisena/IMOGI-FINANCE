@@ -12,11 +12,8 @@
     "min_amount",
     "max_amount",
     "section_break_1",
-    "level_1_role",
     "level_1_user",
-    "level_2_role",
     "level_2_user",
-    "level_3_role",
     "level_3_user"
   ],
   "fields": [
@@ -49,34 +46,16 @@
       "fieldtype": "Section Break"
     },
     {
-      "fieldname": "level_1_role",
-      "fieldtype": "Link",
-      "label": "Level 1 Role",
-      "options": "Role"
-    },
-    {
       "fieldname": "level_1_user",
       "fieldtype": "Link",
       "label": "Level 1 User",
       "options": "User"
     },
     {
-      "fieldname": "level_2_role",
-      "fieldtype": "Link",
-      "label": "Level 2 Role",
-      "options": "Role"
-    },
-    {
       "fieldname": "level_2_user",
       "fieldtype": "Link",
       "label": "Level 2 User",
       "options": "User"
-    },
-    {
-      "fieldname": "level_3_role",
-      "fieldtype": "Link",
-      "label": "Level 3 Role",
-      "options": "Role"
     },
     {
       "fieldname": "level_3_user",

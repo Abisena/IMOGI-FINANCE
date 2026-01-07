@@ -269,12 +269,10 @@ class ExpenseRequest(Document):
         if not current_level:
             return
 
-        role_field = f"level_{current_level}_role"
         user_field = f"level_{current_level}_user"
-        expected_role = self.get(role_field)
         expected_user = self.get(user_field)
 
-        if not expected_role and not expected_user:
+        if not expected_user:
             if action == "Approve":
                 frappe.throw(
                     _(
@@ -284,10 +282,9 @@ class ExpenseRequest(Document):
                 )
             return
 
-        role_allowed = not expected_role or expected_role in frappe.get_roles()
         user_allowed = not expected_user or expected_user == frappe.session.user
 
-        if role_allowed and user_allowed:
+        if user_allowed:
             self.validate_not_skipping_levels(action, kwargs.get("next_state"))
             return
 
@@ -296,12 +293,9 @@ class ExpenseRequest(Document):
         if expected_user:
             requirements.append(_("user '{0}'").format(expected_user))
             requirement_details.append(_("user '{0}'").format(expected_user))
-        if expected_role:
-            requirements.append(_("role '{0}'").format(expected_role))
-            requirement_details.append(_("role '{0}'").format(expected_role))
 
         self._add_denied_workflow_comment(action, current_level, requirement_details)
-        self._log_denied_action(action, current_level, expected_role, expected_user)
+        self._log_denied_action(action, current_level, None, expected_user)
         frappe.throw(
             _("You must be {requirements} to perform this action for approval level {level}.").format(
                 requirements=_(" and ").join(requirements), level=current_level
@@ -455,7 +449,6 @@ class ExpenseRequest(Document):
         Closing is allowed when:
         - The site configuration flag ``imogi_finance_allow_unrestricted_close`` is set.
         - The user matches any routed approver user.
-        - The user has any routed approver role.
         """
         if getattr(getattr(frappe, "conf", None), "imogi_finance_allow_unrestricted_close", False):
             self._add_unrestricted_close_audit()
@@ -493,15 +486,6 @@ class ExpenseRequest(Document):
                 title=_("Not Allowed"),
             )
 
-        allowed_roles = [
-            role
-            for role in (
-                route_for_close.get("level_1", {}).get("role"),
-                route_for_close.get("level_2", {}).get("role"),
-                route_for_close.get("level_3", {}).get("role"),
-            )
-            if role
-        ]
         allowed_users = [
             user
             for user in (
@@ -512,7 +496,7 @@ class ExpenseRequest(Document):
             if user
         ]
 
-        if not allowed_roles and not allowed_users:
+        if not allowed_users:
             frappe.throw(
                 _(
                     "No routed approver is defined to close this request. Refresh the approval route or enable unrestricted close via site config."
@@ -521,16 +505,13 @@ class ExpenseRequest(Document):
             )
 
         user_allowed = getattr(getattr(frappe, "session", None), "user", None) in allowed_users
-        role_allowed = bool(set(frappe.get_roles()) & set(allowed_roles))
 
-        if user_allowed or role_allowed:
+        if user_allowed:
             return
 
         requirements = []
         if allowed_users:
             requirements.append(_("one of the users ({0})").format(_(", ").join(allowed_users)))
-        if allowed_roles:
-            requirements.append(_("one of the roles ({0})").format(_(", ").join(allowed_roles)))
 
         frappe.throw(
             _("You do not have permission to close this request. Required: {requirements}.").format(
@@ -548,24 +529,19 @@ class ExpenseRequest(Document):
         if not current_level or next_state != "Approved":
             return
 
-        level_2_role = self.get("level_2_role")
         level_2_user = self.get("level_2_user")
-        level_3_role = self.get("level_3_role")
         level_3_user = self.get("level_3_user")
 
-        if current_level == "1" and (level_2_role or level_2_user or level_3_role or level_3_user):
+        if current_level == "1" and (level_2_user or level_3_user):
             frappe.throw(_("Cannot approve directly when further levels are configured."))
 
-        if current_level == "2" and (level_3_role or level_3_user):
+        if current_level == "2" and level_3_user:
             frappe.throw(_("Cannot approve directly when further levels are configured."))
 
     def apply_route(self, route: dict, *, setting_meta: dict | None = None):
         """Store approval route on the document for audit and workflow guards."""
-        self.level_1_role = route.get("level_1", {}).get("role")
         self.level_1_user = route.get("level_1", {}).get("user")
-        self.level_2_role = route.get("level_2", {}).get("role")
         self.level_2_user = route.get("level_2", {}).get("user")
-        self.level_3_role = route.get("level_3", {}).get("role")
         self.level_3_user = route.get("level_3", {}).get("user")
         self._approval_meta_recorded_during_guard = False
         self._record_route_setting_meta(setting_meta)
@@ -655,9 +631,9 @@ class ExpenseRequest(Document):
             return snapshot
 
         return {
-            "level_1": {"role": getattr(self, "level_1_role", None), "user": getattr(self, "level_1_user", None)},
-            "level_2": {"role": getattr(self, "level_2_role", None), "user": getattr(self, "level_2_user", None)},
-            "level_3": {"role": getattr(self, "level_3_role", None), "user": getattr(self, "level_3_user", None)},
+            "level_1": {"user": getattr(self, "level_1_user", None)},
+            "level_2": {"user": getattr(self, "level_2_user", None)},
+            "level_3": {"user": getattr(self, "level_3_user", None)},
         }
 
     def record_approval_route_snapshot(self):
@@ -692,11 +668,8 @@ class ExpenseRequest(Document):
 
         return any(
             [
-                route.get("level_1", {}).get("role"),
                 route.get("level_1", {}).get("user"),
-                route.get("level_2", {}).get("role"),
                 route.get("level_2", {}).get("user"),
-                route.get("level_3", {}).get("role"),
                 route.get("level_3", {}).get("user"),
             ]
         )
@@ -737,9 +710,8 @@ class ExpenseRequest(Document):
         if level not in {1, 2, 3}:
             return False
 
-        role = self.get(f"level_{level}_role")
         user = self.get(f"level_{level}_user")
-        return bool(role or user)
+        return bool(user)
 
     def has_next_approval_level(self) -> bool:
         current = getattr(self, "current_approval_level", None) or 1
@@ -850,16 +822,6 @@ class ExpenseRequest(Document):
         if not audited_fields:
             return
 
-        allowed_roles = {
-            role
-            for role in {
-                getattr(self, "level_1_role", None),
-                getattr(self, "level_2_role", None),
-                getattr(self, "level_3_role", None),
-                roles.SYSTEM_MANAGER,
-            }
-            if role
-        }
         allowed_users = {
             user
             for user in {
@@ -871,12 +833,11 @@ class ExpenseRequest(Document):
             if user
         }
 
-        role_allowed = bool(set(frappe.get_roles()) & allowed_roles)
         user_allowed = session_user in allowed_users
 
-        self._add_pending_edit_audit(previous, changed_fields=audited_fields, denied=not (role_allowed or user_allowed))
+        self._add_pending_edit_audit(previous, changed_fields=audited_fields, denied=not user_allowed)
 
-        if role_allowed or user_allowed:
+        if user_allowed:
             return
 
         frappe.throw(
@@ -885,11 +846,11 @@ class ExpenseRequest(Document):
         )
 
     def validate_initial_approver(self, route: dict):
-        """Ensure the first approval level has a configured user or role."""
+        """Ensure the first approval level has a configured user."""
         if self._should_skip_approval(route):
             return
         first_level = route.get("level_1", {}) if route else {}
-        if first_level.get("role") or first_level.get("user"):
+        if first_level.get("user"):
             return
 
         frappe.throw(

@@ -202,13 +202,11 @@ frappe.ui.form.on('Expense Request', {
             const rows = ['1', '2', '3']
               .map((level) => {
                 const info = route[`level_${level}`] || {};
-                if (!info.role && !info.user) {
+                if (!info.user) {
                   return null;
                 }
-                const role = info.role ? __('Role: {0}', [info.role]) : '';
                 const user = info.user ? __('User: {0}', [info.user]) : '';
-                const details = [role, user].filter(Boolean).join(' | ');
-                return `<li>${__('Level {0}', [level])}: ${details}</li>`;
+                return `<li>${__('Level {0}', [level])}: ${user}</li>`;
               })
               .filter(Boolean)
               .join('');
