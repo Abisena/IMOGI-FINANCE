@@ -173,9 +173,21 @@ def log_route_resolution_error(exc: Exception, *, cost_center: str | None = None
 
 
 @frappe.whitelist()
-def check_expense_request_route(cost_center: str, items=None, expense_accounts=None, amount: float | None = None):
+def check_expense_request_route(
+    cost_center: str,
+    items=None,
+    expense_accounts=None,
+    amount: float | None = None,
+    docstatus: int | None = None,
+):
     parsed_items = json.loads(items) if isinstance(items, str) else items
     parsed_accounts = json.loads(expense_accounts) if isinstance(expense_accounts, str) else expense_accounts
+
+    if not parsed_items and not parsed_accounts:
+        return {
+            "ok": False,
+            "message": _("Please add expense items or accounts before checking the approval route."),
+        }
 
     total = amount
     if parsed_items and not parsed_accounts:
@@ -184,6 +196,12 @@ def check_expense_request_route(cost_center: str, items=None, expense_accounts=N
             skip_invalid_items=True,
         )
 
+    if not parsed_accounts:
+        return {
+            "ok": False,
+            "message": _("Please add expense accounts before checking the approval route."),
+        }
+
     target_amount = amount if amount is not None else total
 
     try:
@@ -191,4 +209,11 @@ def check_expense_request_route(cost_center: str, items=None, expense_accounts=N
         return {"ok": True, "route": route}
     except (frappe.DoesNotExistError, frappe.ValidationError) as exc:
         log_route_resolution_error(exc, cost_center=cost_center, accounts=parsed_accounts, amount=target_amount)
+        if docstatus == 0:
+            return {
+                "ok": False,
+                "message": _(
+                    "Approval route could not be determined yet. Draft requests can still be edited; configure an Expense Approval Setting before submitting."
+                ),
+            }
         return {"ok": False, "message": approval_setting_required_message(cost_center)}

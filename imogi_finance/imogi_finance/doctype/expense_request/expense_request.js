@@ -186,6 +186,7 @@ frappe.ui.form.on('Expense Request', {
               items: stringify(frm.doc.items),
               expense_accounts: stringify(frm.doc.expense_accounts),
               amount: frm.doc.amount,
+              docstatus: frm.doc.docstatus,
             },
           });
 
