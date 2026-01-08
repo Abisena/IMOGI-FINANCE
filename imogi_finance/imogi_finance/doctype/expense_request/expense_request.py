@@ -324,10 +324,14 @@ class ExpenseRequest(Document):
     def on_workflow_action(self, action, **kwargs):
         """Reset approval routing when a request is reopened."""
         next_state = kwargs.get("next_state")
-        if action == "Submit" and self._should_skip_approval():
-            next_state = "Approved"
-            self.current_approval_level = 0
-            self.record_approval_route_snapshot()
+        if action == "Submit":
+            if self._should_skip_approval():
+                next_state = "Approved"
+                self.current_approval_level = 0
+                self.record_approval_route_snapshot()
+            else:
+                next_state = self.PENDING_REVIEW_STATE
+                self.current_approval_level = getattr(self, "current_approval_level", None) or 1
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
