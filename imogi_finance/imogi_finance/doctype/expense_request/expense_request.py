@@ -54,8 +54,8 @@ class ExpenseRequest(Document):
     def validate(self):
         self._set_requester_to_creator()
         self._ensure_status()
-        self._prepare_route_for_submit()
         self.validate_amounts()
+        self._prepare_route_for_submit()
         self.apply_branch_defaults()
         self.validate_asset_details()
         self._sync_tax_invoice_upload()
