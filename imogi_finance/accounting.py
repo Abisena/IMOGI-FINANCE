@@ -106,7 +106,10 @@ def _get_pph_base_amount(request: frappe.model.document.Document) -> float:
 
 
 def _validate_request_ready_for_link(request: frappe.model.document.Document) -> None:
-    if request.docstatus != 1 or request.status not in PURCHASE_INVOICE_ALLOWED_STATUSES:
+    status = None
+    if hasattr(request, "get"):
+        status = request.get("status") or request.get("workflow_state")
+    if request.docstatus != 1 or status not in PURCHASE_INVOICE_ALLOWED_STATUSES:
         frappe.throw(
             _("Expense Request must be submitted and have status {0} before creating accounting entries.").format(
                 ", ".join(sorted(PURCHASE_INVOICE_ALLOWED_STATUSES))
@@ -207,9 +210,11 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             if ic_status != "Approved":
                 frappe.throw(_("Internal Charge Request {0} must be Approved.").format(ic_name))
 
+    has_tax_invoice_upload = bool(getattr(request, "ti_tax_invoice_upload", None))
     if (
         cint(settings.get("enable_tax_invoice_ocr"))
         and cint(settings.get("require_verification_before_create_pi_from_expense_request"))
+        and has_tax_invoice_upload
         and getattr(request, "ti_verification_status", "") != "Verified"
     ):
         _raise_verification_error(
