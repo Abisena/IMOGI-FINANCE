@@ -75,6 +75,13 @@ class ExpenseRequest(Document):
             return
 
         route = self._resolve_and_apply_route()
+        if workflow_action == "Submit":
+            if self._skip_approval_route:
+                self.current_approval_level = 0
+            else:
+                self.current_approval_level = 1
+            return
+
         if self._skip_approval_route:
             self.current_approval_level = 0
             self.status = "Approved"
