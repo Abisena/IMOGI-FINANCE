@@ -84,10 +84,8 @@ class ExpenseRequest(Document):
 
         if self._skip_approval_route:
             self.current_approval_level = 0
-            self.status = "Approved"
-            self.workflow_state = "Approved"
         else:
-            self._set_pending_review(level=1)
+            self.current_approval_level = 1
 
     def validate_amounts(self):
         total, expense_accounts = FinanceValidator.validate_amounts(self.get("items"))
