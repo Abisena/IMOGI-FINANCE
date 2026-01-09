@@ -388,7 +388,10 @@ class ExpenseRequest(Document):
 
         if getattr(self, "_skip_approval_route", None) is None:
             self.validate_amounts()
-            route, setting_meta = self._resolve_approval_route()
+            route, setting_meta, failed = self._resolve_approval_route()
+            self._approval_route_resolution_failed = failed
+            if failed:
+                return
             self.apply_route(route, setting_meta=setting_meta)
             self._skip_approval_route = self._should_skip_approval(route)
 
