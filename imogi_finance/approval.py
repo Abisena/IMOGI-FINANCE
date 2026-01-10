@@ -109,47 +109,62 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
         "level_3": {"role": data.get("level_3_role"), "user": data.get("level_3_user")},
     }
 
-def get_approval_route(
-    cost_center: str, accounts: str | Iterable[str], amount: float, *, setting_meta: dict | None = None
-) -> dict:
-    """Return approval route based on cost center, account(s) and amount.
+    def get_approval_route(
+        cost_center: str, accounts: str | Iterable[str], amount: float, *, setting_meta: dict | None = None
+    ) -> dict:
+        """Return approval route based on cost center, account(s) and amount.
+        
+        Returns empty route (for auto-approve) if no setting exists.
+        """
 
-    Args:
-        cost_center: Target cost center for the request.
-        accounts: Expense account(s) being charged.
-        amount: Total requested amount.
+        normalized_accounts = _normalize_accounts(accounts)
+        amount = flt(amount or 0)
+        
+        # Get setting, return empty route if not found
+        route_setting = setting_meta or get_active_setting_meta(cost_center)
+        if not route_setting:
+            # No approval setting = auto-approve (empty route)
+            return {
+                "level_1": {"role": None, "user": None},
+                "level_2": {"role": None, "user": None},
+                "level_3": {"role": None, "user": None},
+            }
+        
+        setting_name = route_setting.get("name") if isinstance(route_setting, dict) else None
+        if not setting_name:
+            return {
+                "level_1": {"role": None, "user": None},
+                "level_2": {"role": None, "user": None},
+                "level_3": {"role": None, "user": None},
+            }
+        
+        resolved_route = None
 
-    Returns:
-        dict: Approval mapping per level, with ``role`` and ``user`` keys.
+        for account in normalized_accounts:
+            try:
+                route = _get_route_for_account(setting_name, account, amount)
+            except frappe.ValidationError:
+                # No matching rule for this account/amount = skip this account
+                continue
 
-    Raises:
-        frappe.DoesNotExistError: If no active rule exists for the cost center.
-        frappe.ValidationError: If no approval line matches or routes differ per account.
-    """
+            if resolved_route is None:
+                resolved_route = route
+                continue
 
-    normalized_accounts = _normalize_accounts(accounts)
-    amount = flt(amount or 0)
-    route_setting = setting_meta or get_active_setting_meta(cost_center)
-    setting_name = route_setting.get("name") if isinstance(route_setting, dict) else None
-    if not setting_name:
-        raise frappe.DoesNotExistError(
-            _("No active Expense Approval Setting found for Cost Center {0}").format(cost_center)
-        )
-    resolved_route = None
+            if resolved_route != route:
+                raise frappe.ValidationError(
+                    _("All expense accounts on the request must share the same approval route.")
+                )
 
-    for account in normalized_accounts:
-        route = _get_route_for_account(setting_name, account, amount)
+        # No route found = auto-approve
+        if not resolved_route:
+            return {
+                "level_1": {"role": None, "user": None},
+                "level_2": {"role": None, "user": None},
+                "level_3": {"role": None, "user": None},
+            }
 
-        if resolved_route is None:
-            resolved_route = route
-            continue
-
-        if resolved_route != route:
-            raise frappe.ValidationError(
-                _("All expense accounts on the request must share the same approval route.")
-            )
-
-    return _normalize_route(resolved_route) if resolved_route else {}
+        return _normalize_route(resolved_route)
 
 
 def approval_setting_required_message(cost_center: str | None = None) -> str:

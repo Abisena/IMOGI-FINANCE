@@ -757,7 +757,9 @@ class ExpenseRequest(Document):
             # Avoid blocking workflow if snapshot persistence fails.
             pass
 
+
     def _resolve_approval_route(self) -> tuple[dict, dict | None, bool]:
+        """Resolve approval route. Returns empty route for auto-approve if not configured."""
         try:
             setting_meta = get_active_setting_meta(self.cost_center)
             route_result = get_approval_route(
@@ -776,7 +778,13 @@ class ExpenseRequest(Document):
                 accounts=self._get_expense_accounts(),
                 amount=self.amount,
             )
-            return {}, None, True
+            # Return empty route instead of marking as failed
+            # This allows auto-approve when no setting exists
+            return {
+                "level_1": {"role": None, "user": None},
+                "level_2": {"role": None, "user": None},
+                "level_3": {"role": None, "user": None},
+            }, None, False  # <-- changed: failed = False
 
         return route, setting_meta, False
 
@@ -788,11 +796,16 @@ class ExpenseRequest(Document):
         return route
 
     def _ensure_route_ready(self, route: dict, *, context: str = "submit"):
+        """Validate route is ready for workflow progression.
+        
+        If no approval setting exists or resolution failed, treat as skip-approval
+        (auto-approve) instead of blocking.
+        """
+        # Remove the error throwing - allow empty route to proceed as auto-approve
         if getattr(self, "_approval_route_resolution_failed", False):
-            frappe.throw(
-                approval_setting_required_message(self.cost_center),
-                title=_("Not Allowed"),
-            )
+            # Log for audit but don't block
+            self._log_missing_approval_setting()
+            return
 
         if not self._route_has_approver(route):
             return
@@ -1353,6 +1366,30 @@ class ExpenseRequest(Document):
                 "{message} Current setting modified: {modified}. Perform a controlled reopen or safe key-field refresh to rebuild the route."
             ).format(message=message, modified=current_meta.get("modified") or _("unknown"))
             self.add_comment("Comment", detail)
+        except Exception:
+            pass
+
+    def _log_missing_approval_setting(self):
+        """Log when approval setting is missing but request proceeds with auto-approve."""
+        try:
+            message = _(
+                "No Expense Approval Setting found for Cost Center {0}. "
+                "Request will be auto-approved. Configure approval settings to enable review workflow."
+            ).format(self.cost_center)
+            
+            if getattr(self, "name", None) and hasattr(self, "add_comment"):
+                self.add_comment("Comment", message)
+            
+            logger = getattr(frappe, "logger", None)
+            if logger:
+                logger("imogi_finance").info(
+                    "Auto-approve due to missing approval setting",
+                    extra={
+                        "expense_request": getattr(self, "name", None),
+                        "cost_center": self.cost_center,
+                        "amount": self.amount,
+                    },
+                )
         except Exception:
             pass
 
