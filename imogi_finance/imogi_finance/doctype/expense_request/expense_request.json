@@ -8,35 +8,55 @@
   "editable_grid": 0,
   "engine": "InnoDB",
   "field_order": [
+    "request_type",
+    "workflow_state",
+
+    "tab_basic",
     "basic_info_section",
     "request_date",
-    "request_type",
-    "column_break_basic",
     "currency",
+    "column_break_basic_1",
     "cost_center",
     "project",
     "supplier_section",
     "supplier",
-    "column_break_supplier",
     "supplier_invoice_no",
+    "column_break_supplier",
     "supplier_invoice_date",
+    "branch",
+    "attachment_section",
+    "attachment",
+    "column_break_attachment",
+    "description",
+
+    "tab_items",
     "items_section",
     "items",
     "section_break_totals",
     "amount",
     "column_break_totals",
     "expense_account",
+
+    "tab_taxes",
+    "ppn_section",
+    "is_ppn_applicable",
+    "ppn_template",
+    "column_break_ppn",
+    "tax_invoice_number",
+    "tax_invoice_date",
+    "tax_invoice_attachment",
+    "pph_section",
+    "is_pph_applicable",
+    "pph_type",
+    "column_break_pph",
+    "pph_base_amount",
     "deferred_expense_section",
     "is_deferred_expense",
     "deferred_start_date",
+    "column_break_deferred",
     "deferred_periods",
-    "taxes_section",
-    "is_ppn_applicable",
-    "ppn_template",
-    "column_break_tax",
-    "is_pph_applicable",
-    "pph_type",
-    "pph_base_amount",
+
+    "tab_asset",
     "asset_section",
     "asset_category",
     "asset_name",
@@ -44,14 +64,12 @@
     "asset_location",
     "section_break_asset_desc",
     "asset_description",
-    "additional_info_section",
-    "branch",
-    "column_break_additional",
-    "attachment",
-    "section_break_description",
-    "description",
+
+    "tab_approval",
+    "approval_status_section",
+    "current_approval_level",
+    "column_break_approval_status",
     "approvers_section",
-    "column_break_approver_1",
     "level_1_role",
     "level_1_user",
     "column_break_approver_2",
@@ -60,26 +78,52 @@
     "column_break_approver_3",
     "level_3_role",
     "level_3_user",
-    "section_break_hidden",
-    "approval_route_snapshot",
-    "approval_setting",
-    "approval_setting_last_modified",
-    "pending_edit_allowed_fields",
-    "workflow_state",
-    "current_approval_level",
+
+    "tab_integration",
     "integration_section",
     "linked_purchase_invoice",
     "pending_purchase_invoice",
     "column_break_integration",
     "linked_payment_entry",
-    "linked_asset"
+    "linked_asset",
+
+    "section_break_hidden",
+    "approval_route_snapshot",
+    "approval_setting",
+    "approval_setting_last_modified",
+    "pending_edit_allowed_fields"
   ],
   "fields": [
     {
+      "bold": 1,
+      "default": "Expense",
+      "fieldname": "request_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Tipe Pengajuan",
+      "options": "Expense\nAsset",
+      "reqd": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "workflow_state",
+      "fieldtype": "Link",
+      "hidden": 1,
+      "label": "Workflow State",
+      "options": "Workflow State",
+      "read_only": 1
+    },
+
+    {
+      "fieldname": "tab_basic",
+      "fieldtype": "Tab Break",
+      "label": "Informasi Dasar"
+    },
+    {
       "fieldname": "basic_info_section",
       "fieldtype": "Section Break",
-      "label": "📋 Informasi Dasar",
-      "description": "Isi informasi dasar pengajuan expense"
+      "label": "Detail Pengajuan"
     },
     {
       "default": "Today",
@@ -90,27 +134,16 @@
       "reqd": 1
     },
     {
-      "default": "Expense",
-      "fieldname": "request_type",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "in_standard_filter": 1,
-      "label": "Tipe Pengajuan",
-      "options": "Expense\nAsset",
-      "reqd": 1,
-      "bold": 1
-    },
-    {
-      "fieldname": "column_break_basic",
-      "fieldtype": "Column Break"
-    },
-    {
       "default": "IDR",
       "fieldname": "currency",
       "fieldtype": "Link",
       "label": "Mata Uang",
       "options": "Currency",
       "reqd": 1
+    },
+    {
+      "fieldname": "column_break_basic_1",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "cost_center",
@@ -128,10 +161,9 @@
       "options": "Project"
     },
     {
-      "collapsible": 0,
       "fieldname": "supplier_section",
       "fieldtype": "Section Break",
-      "label": "🏢 Data Supplier"
+      "label": "Data Supplier"
     },
     {
       "fieldname": "supplier",
@@ -142,13 +174,13 @@
       "reqd": 1
     },
     {
-      "fieldname": "column_break_supplier",
-      "fieldtype": "Column Break"
-    },
-    {
       "fieldname": "supplier_invoice_no",
       "fieldtype": "Data",
       "label": "No. Invoice Supplier"
+    },
+    {
+      "fieldname": "column_break_supplier",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "supplier_invoice_date",
@@ -156,23 +188,53 @@
       "label": "Tanggal Invoice"
     },
     {
-      "collapsible": 0,
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Cabang",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "attachment_section",
+      "fieldtype": "Section Break",
+      "label": "Dokumen & Catatan"
+    },
+    {
+      "fieldname": "attachment",
+      "fieldtype": "Attach",
+      "label": "Dokumen Pendukung",
+      "description": "Upload invoice atau dokumen pendukung lainnya"
+    },
+    {
+      "fieldname": "column_break_attachment",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Catatan / Keterangan"
+    },
+
+    {
+      "fieldname": "tab_items",
+      "fieldtype": "Tab Break",
+      "label": "Item & Total"
+    },
+    {
       "fieldname": "items_section",
       "fieldtype": "Section Break",
-      "label": "📦 Detail Item",
-      "description": "Tambahkan item-item yang akan diajukan"
+      "label": "Daftar Item"
     },
     {
       "fieldname": "items",
       "fieldtype": "Table",
-      "label": "Daftar Item",
+      "label": "Item",
       "options": "Expense Request Item",
       "reqd": 1
     },
     {
       "fieldname": "section_break_totals",
       "fieldtype": "Section Break",
-      "label": "💰 Ringkasan Biaya"
+      "label": "Ringkasan"
     },
     {
       "bold": 1,
@@ -180,7 +242,7 @@
       "fieldtype": "Currency",
       "in_list_view": 1,
       "label": "Total Amount",
-      "description": "Total otomatis dari semua item",
+      "options": "currency",
       "read_only": 1
     },
     {
@@ -195,37 +257,16 @@
       "options": "Account",
       "read_only": 1
     },
+
     {
-      "collapsible": 1,
-      "collapsible_depends_on": "eval:doc.is_deferred_expense==0",
-      "fieldname": "deferred_expense_section",
+      "fieldname": "tab_taxes",
+      "fieldtype": "Tab Break",
+      "label": "Pajak & Deferred"
+    },
+    {
+      "fieldname": "ppn_section",
       "fieldtype": "Section Break",
-      "label": "📅 Deferred Expense"
-    },
-    {
-      "default": "0",
-      "fieldname": "is_deferred_expense",
-      "fieldtype": "Check",
-      "label": "Deferred Expense?"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_start_date",
-      "fieldtype": "Date",
-      "label": "Deferred Start Date"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_periods",
-      "fieldtype": "Int",
-      "label": "Deferred Periods (Months)"
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "taxes_section",
-      "fieldtype": "Section Break",
-      "label": "🧾 Pajak (PPN & PPh)",
-      "description": "Centang jika dikenakan pajak"
+      "label": "PPN (Pajak Pertambahan Nilai)"
     },
     {
       "default": "0",
@@ -242,8 +283,33 @@
       "options": "Purchase Taxes and Charges Template"
     },
     {
-      "fieldname": "column_break_tax",
+      "fieldname": "column_break_ppn",
       "fieldtype": "Column Break"
+    },
+    {
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "tax_invoice_number",
+      "fieldtype": "Data",
+      "label": "Nomor Faktur Pajak",
+      "description": "Masukkan nomor faktur pajak dari supplier"
+    },
+    {
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "tax_invoice_date",
+      "fieldtype": "Date",
+      "label": "Tanggal Faktur Pajak"
+    },
+    {
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "tax_invoice_attachment",
+      "fieldtype": "Attach",
+      "label": "Upload Faktur Pajak",
+      "description": "Upload file faktur pajak (PDF/Image)"
+    },
+    {
+      "fieldname": "pph_section",
+      "fieldtype": "Section Break",
+      "label": "PPh (Pajak Penghasilan)"
     },
     {
       "default": "0",
@@ -256,25 +322,64 @@
       "fieldname": "pph_type",
       "fieldtype": "Link",
       "label": "Jenis PPh",
+      "mandatory_depends_on": "eval:doc.is_pph_applicable==1",
       "options": "Tax Withholding Category"
+    },
+    {
+      "fieldname": "column_break_pph",
+      "fieldtype": "Column Break"
     },
     {
       "depends_on": "eval:doc.is_pph_applicable==1",
       "fieldname": "pph_base_amount",
       "fieldtype": "Currency",
-      "label": "Dasar Pengenaan PPh"
+      "label": "Dasar Pengenaan PPh",
+      "options": "currency"
     },
     {
+      "fieldname": "deferred_expense_section",
+      "fieldtype": "Section Break",
+      "label": "Deferred Expense",
       "collapsible": 1,
-      "collapsible_depends_on": "eval:doc.request_type!='Asset'",
+      "collapsible_depends_on": "eval:doc.is_deferred_expense==0"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_deferred_expense",
+      "fieldtype": "Check",
+      "label": "Deferred Expense?"
+    },
+    {
+      "depends_on": "eval:doc.is_deferred_expense==1",
+      "fieldname": "deferred_start_date",
+      "fieldtype": "Date",
+      "label": "Tanggal Mulai",
+      "mandatory_depends_on": "eval:doc.is_deferred_expense==1"
+    },
+    {
+      "fieldname": "column_break_deferred",
+      "fieldtype": "Column Break"
+    },
+    {
+      "depends_on": "eval:doc.is_deferred_expense==1",
+      "fieldname": "deferred_periods",
+      "fieldtype": "Int",
+      "label": "Periode (Bulan)",
+      "mandatory_depends_on": "eval:doc.is_deferred_expense==1"
+    },
+
+    {
       "depends_on": "eval:doc.request_type=='Asset'",
+      "fieldname": "tab_asset",
+      "fieldtype": "Tab Break",
+      "label": "Asset"
+    },
+    {
       "fieldname": "asset_section",
       "fieldtype": "Section Break",
-      "label": "🏭 Informasi Asset",
-      "description": "Isi jika tipe pengajuan adalah Asset"
+      "label": "Informasi Asset"
     },
     {
-      "depends_on": "eval:doc.request_type=='Asset'",
       "fieldname": "asset_category",
       "fieldtype": "Link",
       "label": "Kategori Asset",
@@ -282,7 +387,6 @@
       "mandatory_depends_on": "eval:doc.request_type=='Asset'"
     },
     {
-      "depends_on": "eval:doc.request_type=='Asset'",
       "fieldname": "asset_name",
       "fieldtype": "Data",
       "label": "Nama Asset",
@@ -293,7 +397,6 @@
       "fieldtype": "Column Break"
     },
     {
-      "depends_on": "eval:doc.request_type=='Asset'",
       "fieldname": "asset_location",
       "fieldtype": "Link",
       "label": "Lokasi Asset",
@@ -304,107 +407,132 @@
       "fieldtype": "Section Break"
     },
     {
-      "depends_on": "eval:doc.request_type=='Asset'",
       "fieldname": "asset_description",
       "fieldtype": "Small Text",
       "label": "Deskripsi Asset"
     },
+
     {
-      "collapsible": 1,
-      "fieldname": "additional_info_section",
+      "fieldname": "tab_approval",
+      "fieldtype": "Tab Break",
+      "label": "Approval"
+    },
+    {
+      "fieldname": "approval_status_section",
       "fieldtype": "Section Break",
-      "label": "📝 Informasi Tambahan"
+      "label": "Status Approval"
     },
     {
-      "fieldname": "branch",
-      "fieldtype": "Link",
-      "label": "Cabang",
-      "options": "Branch"
+      "allow_on_submit": 1,
+      "default": "1",
+      "fieldname": "current_approval_level",
+      "fieldtype": "Int",
+      "label": "Level Approval Saat Ini",
+      "read_only": 1
     },
     {
-      "fieldname": "column_break_additional",
+      "fieldname": "column_break_approval_status",
       "fieldtype": "Column Break"
     },
     {
-      "fieldname": "attachment",
-      "fieldtype": "Attach",
-      "label": "📎 Dokumen Pendukung",
-      "description": "Upload invoice atau dokumen pendukung lainnya"
-    },
-    {
-      "fieldname": "section_break_description",
-      "fieldtype": "Section Break"
-    },
-    {
-      "fieldname": "description",
-      "fieldtype": "Small Text",
-      "label": "Catatan / Keterangan"
-    },
-    {
-      "collapsible": 1,
-      "collapsible_depends_on": "1",
       "fieldname": "approvers_section",
       "fieldtype": "Section Break",
-      "label": "✅ Alur Persetujuan",
-      "description": "Informasi approver (otomatis terisi oleh sistem)"
-    },
-    {
-      "fieldname": "column_break_approver_1",
-      "fieldtype": "Column Break",
-      "label": "Level 1"
+      "label": "Daftar Approver"
     },
     {
       "fieldname": "level_1_role",
       "fieldtype": "Link",
-      "label": "Role",
+      "label": "Level 1 - Role",
       "options": "Role",
       "read_only": 1
     },
     {
       "fieldname": "level_1_user",
       "fieldtype": "Link",
-      "label": "User",
+      "label": "Level 1 - User",
       "options": "User",
       "read_only": 1
     },
     {
       "fieldname": "column_break_approver_2",
-      "fieldtype": "Column Break",
-      "label": "Level 2"
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "level_2_role",
       "fieldtype": "Link",
-      "label": "Role",
+      "label": "Level 2 - Role",
       "options": "Role",
       "read_only": 1
     },
     {
       "fieldname": "level_2_user",
       "fieldtype": "Link",
-      "label": "User",
+      "label": "Level 2 - User",
       "options": "User",
       "read_only": 1
     },
     {
       "fieldname": "column_break_approver_3",
-      "fieldtype": "Column Break",
-      "label": "Level 3"
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "level_3_role",
       "fieldtype": "Link",
-      "label": "Role",
+      "label": "Level 3 - Role",
       "options": "Role",
       "read_only": 1
     },
     {
       "fieldname": "level_3_user",
       "fieldtype": "Link",
-      "label": "User",
+      "label": "Level 3 - User",
       "options": "User",
       "read_only": 1
     },
+
+    {
+      "fieldname": "tab_integration",
+      "fieldtype": "Tab Break",
+      "label": "Dokumen Terkait"
+    },
+    {
+      "fieldname": "integration_section",
+      "fieldtype": "Section Break",
+      "label": "Link Dokumen"
+    },
+    {
+      "fieldname": "linked_purchase_invoice",
+      "fieldtype": "Link",
+      "label": "Purchase Invoice",
+      "options": "Purchase Invoice",
+      "read_only": 1
+    },
+    {
+      "fieldname": "pending_purchase_invoice",
+      "fieldtype": "Link",
+      "label": "Purchase Invoice (Draft)",
+      "options": "Purchase Invoice",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_integration",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "linked_payment_entry",
+      "fieldtype": "Link",
+      "label": "Payment Entry",
+      "options": "Payment Entry",
+      "read_only": 1
+    },
+    {
+      "fieldname": "linked_asset",
+      "fieldtype": "Link",
+      "label": "Asset",
+      "options": "Asset",
+      "read_only": 1
+    },
+
     {
       "fieldname": "section_break_hidden",
       "fieldtype": "Section Break",
@@ -444,64 +572,6 @@
       "hidden": 1,
       "label": "Pending Edit Allowed Fields",
       "read_only": 1
-    },
-    {
-      "allow_on_submit": 1,
-      "fieldname": "workflow_state",
-      "fieldtype": "Link",
-      "hidden": 1,
-      "label": "Workflow State",
-      "options": "Workflow State",
-      "read_only": 1
-    },
-    {
-      "allow_on_submit": 1,
-      "default": "1",
-      "fieldname": "current_approval_level",
-      "fieldtype": "Int",
-      "hidden": 1,
-      "label": "Current Approval Level",
-      "read_only": 1
-    },
-    {
-      "collapsible": 1,
-      "collapsible_depends_on": "1",
-      "fieldname": "integration_section",
-      "fieldtype": "Section Break",
-      "label": "🔗 Dokumen Terkait",
-      "description": "Link otomatis ke dokumen yang dibuat dari expense request ini"
-    },
-    {
-      "fieldname": "linked_purchase_invoice",
-      "fieldtype": "Link",
-      "label": "📄 Purchase Invoice",
-      "options": "Purchase Invoice",
-      "read_only": 1
-    },
-    {
-      "fieldname": "pending_purchase_invoice",
-      "fieldtype": "Link",
-      "label": "⏳ Purchase Invoice (Draft)",
-      "options": "Purchase Invoice",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_integration",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "linked_payment_entry",
-      "fieldtype": "Link",
-      "label": "💳 Payment Entry",
-      "options": "Payment Entry",
-      "read_only": 1
-    },
-    {
-      "fieldname": "linked_asset",
-      "fieldtype": "Link",
-      "label": "🏭 Asset",
-      "options": "Asset",
-      "read_only": 1
     }
   ],
   "index_web_pages_for_search": 1,
@@ -510,7 +580,7 @@
   "links": [],
   "module": "Imogi Finance",
   "name": "Expense Request",
-  "naming_rule": "By fieldname",
+  "naming_rule": "Expression",
   "permissions": [
     {
       "create": 1,

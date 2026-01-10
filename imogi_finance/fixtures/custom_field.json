@@ -237,12 +237,48 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Expense Request-allocation_mode",
+    "dt": "Expense Request",
+    "fieldname": "allocation_mode",
+    "fieldtype": "Select",
+    "insert_after": "cost_center",
+    "label": "Allocation Mode",
+    "options": "Direct\nAllocated via Internal Charge",
+    "default": "Direct"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-budget_lock_status",
+    "dt": "Expense Request",
+    "fieldname": "budget_lock_status",
+    "fieldtype": "Select",
+    "insert_after": "current_approval_level",
+    "label": "Budget Lock Status",
+    "options": "Not Locked\nLocked\nReleased\nConsumed\nOverrun Allowed",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-budget_workflow_state",
+    "dt": "Expense Request",
+    "fieldname": "budget_workflow_state",
+    "fieldtype": "Select",
+    "insert_after": "budget_lock_status",
+    "label": "Budget Workflow State",
+    "options": "Draft\nSubmitted\nUnder Review\nApproved\nRejected\nCompleted",
+    "default": "Draft",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Expense Request-ti_tax_invoice_section",
     "dt": "Expense Request",
     "fieldname": "ti_tax_invoice_section",
     "fieldtype": "Section Break",
-    "insert_after": "taxes_section",
-    "label": "Tax Invoice (OCR)"
+    "insert_after": "tax_invoice_attachment",
+    "label": "Tax Invoice OCR",
+    "collapsible": 1,
+    "depends_on": "eval:doc.is_ppn_applicable==1"
   },
   {
     "doctype": "Custom Field",
@@ -253,16 +289,18 @@
     "insert_after": "ti_tax_invoice_section",
     "label": "Tax Invoice OCR Upload",
     "options": "Tax Invoice OCR Upload",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "depends_on": "eval:doc.is_ppn_applicable==1"
   },
   {
     "doctype": "Custom Field",
-    "name": "Expense Request-ti_tax_invoice_data_section",
+    "name": "Expense Request-ti_ocr_data_section",
     "dt": "Expense Request",
-    "fieldname": "ti_tax_invoice_data_section",
+    "fieldname": "ti_ocr_data_section",
     "fieldtype": "Section Break",
     "insert_after": "ti_tax_invoice_upload",
-    "label": "Tax Invoice Data"
+    "label": "Data Hasil OCR",
+    "depends_on": "eval:doc.ti_tax_invoice_upload"
   },
   {
     "doctype": "Custom Field",
@@ -270,8 +308,8 @@
     "dt": "Expense Request",
     "fieldname": "ti_fp_no",
     "fieldtype": "Data",
-    "insert_after": "ti_tax_invoice_data_section",
-    "label": "No Faktur Pajak",
+    "insert_after": "ti_ocr_data_section",
+    "label": "No Faktur Pajak (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
   },
@@ -282,7 +320,7 @@
     "fieldname": "ti_fp_date",
     "fieldtype": "Date",
     "insert_after": "ti_fp_no",
-    "label": "Tanggal Faktur Pajak",
+    "label": "Tanggal Faktur (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
   },
@@ -293,9 +331,17 @@
     "fieldname": "ti_fp_npwp",
     "fieldtype": "Data",
     "insert_after": "ti_fp_date",
-    "label": "NPWP",
+    "label": "NPWP (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-ti_column_break_ocr",
+    "dt": "Expense Request",
+    "fieldname": "ti_column_break_ocr",
+    "fieldtype": "Column Break",
+    "insert_after": "ti_fp_npwp"
   },
   {
     "doctype": "Custom Field",
@@ -303,8 +349,8 @@
     "dt": "Expense Request",
     "fieldname": "ti_fp_dpp",
     "fieldtype": "Currency",
-    "insert_after": "ti_fp_npwp",
-    "label": "DPP",
+    "insert_after": "ti_column_break_ocr",
+    "label": "DPP (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
   },
@@ -315,7 +361,7 @@
     "fieldname": "ti_fp_ppn",
     "fieldtype": "Currency",
     "insert_after": "ti_fp_dpp",
-    "label": "PPN",
+    "label": "PPN (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
   },
@@ -326,9 +372,19 @@
     "fieldname": "ti_fp_ppnbm",
     "fieldtype": "Currency",
     "insert_after": "ti_fp_ppn",
-    "label": "PPnBM",
+    "label": "PPnBM (OCR)",
     "read_only": 1,
     "allow_on_submit": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-ti_verification_section",
+    "dt": "Expense Request",
+    "fieldname": "ti_verification_section",
+    "fieldtype": "Section Break",
+    "insert_after": "ti_fp_ppnbm",
+    "label": "Verifikasi OCR",
+    "depends_on": "eval:doc.ti_tax_invoice_upload"
   },
   {
     "doctype": "Custom Field",
@@ -336,8 +392,8 @@
     "dt": "Expense Request",
     "fieldname": "ti_fp_ppn_type",
     "fieldtype": "Select",
-    "insert_after": "ti_fp_ppnbm",
-    "label": "PPN Type",
+    "insert_after": "ti_verification_section",
+    "label": "Tipe PPN",
     "options": "Standard\nZero Rated\nExempt/Not PPN",
     "default": "Standard",
     "read_only": 1,
@@ -350,7 +406,7 @@
     "fieldname": "ti_verification_status",
     "fieldtype": "Select",
     "insert_after": "ti_fp_ppn_type",
-    "label": "Tax Invoice Verification Status",
+    "label": "Status Verifikasi",
     "options": "Needs Review\nVerified\nRejected",
     "default": "Needs Review",
     "read_only": 1,
@@ -358,14 +414,11 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Expense Request-ti_verification_notes",
+    "name": "Expense Request-ti_column_break_verify",
     "dt": "Expense Request",
-    "fieldname": "ti_verification_notes",
-    "fieldtype": "Small Text",
-    "insert_after": "ti_verification_status",
-    "label": "Tax Invoice Verification Notes",
-    "read_only": 1,
-    "allow_on_submit": 1
+    "fieldname": "ti_column_break_verify",
+    "fieldtype": "Column Break",
+    "insert_after": "ti_verification_status"
   },
   {
     "doctype": "Custom Field",
@@ -373,11 +426,10 @@
     "dt": "Expense Request",
     "fieldname": "ti_duplicate_flag",
     "fieldtype": "Check",
-    "insert_after": "ti_verification_notes",
+    "insert_after": "ti_column_break_verify",
     "label": "Duplicate Tax Invoice",
     "read_only": 1,
-    "allow_on_submit": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "allow_on_submit": 1
   },
   {
     "doctype": "Custom Field",
@@ -388,8 +440,40 @@
     "insert_after": "ti_duplicate_flag",
     "label": "NPWP Match",
     "read_only": 1,
-    "allow_on_submit": 1,
-    "depends_on": "eval:frappe.user.has_role('System Manager') || frappe.user.has_role('Accounts Manager')"
+    "allow_on_submit": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-ti_verification_notes",
+    "dt": "Expense Request",
+    "fieldname": "ti_verification_notes",
+    "fieldtype": "Small Text",
+    "insert_after": "ti_npwp_match",
+    "label": "Catatan Verifikasi",
+    "read_only": 1,
+    "allow_on_submit": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-internal_charge_request",
+    "dt": "Expense Request",
+    "fieldname": "internal_charge_request",
+    "fieldtype": "Link",
+    "insert_after": "linked_asset",
+    "label": "Internal Charge Request",
+    "options": "Internal Charge Request",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Expense Request-prevent_pi_if_not_ready",
+    "dt": "Expense Request",
+    "fieldname": "prevent_pi_if_not_ready",
+    "fieldtype": "Check",
+    "insert_after": "internal_charge_request",
+    "label": "Prevent PI if Not Ready",
+    "read_only": 1,
+    "hidden": 1
   },
   {
     "doctype": "Custom Field",
@@ -763,61 +847,6 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Expense Request-budget_lock_status",
-    "dt": "Expense Request",
-    "fieldname": "budget_lock_status",
-    "fieldtype": "Select",
-    "insert_after": "status",
-    "label": "Budget Lock Status",
-    "options": "Not Locked\nLocked\nReleased\nConsumed\nOverrun Allowed",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-budget_workflow_state",
-    "dt": "Expense Request",
-    "fieldname": "budget_workflow_state",
-    "fieldtype": "Select",
-    "insert_after": "budget_lock_status",
-    "label": "Budget Workflow State",
-    "options": "Draft\nSubmitted\nUnder Review\nApproved\nRejected\nCompleted",
-    "default": "Draft",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-internal_charge_request",
-    "dt": "Expense Request",
-    "fieldname": "internal_charge_request",
-    "fieldtype": "Link",
-    "insert_after": "linked_asset",
-    "label": "Internal Charge Request",
-    "options": "Internal Charge Request",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-allocation_mode",
-    "dt": "Expense Request",
-    "fieldname": "allocation_mode",
-    "fieldtype": "Select",
-    "insert_after": "cost_center",
-    "label": "Allocation Mode",
-    "options": "Direct\nAllocated via Internal Charge",
-    "default": "Direct"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Expense Request-prevent_pi_if_not_ready",
-    "dt": "Expense Request",
-    "fieldname": "prevent_pi_if_not_ready",
-    "fieldtype": "Check",
-    "insert_after": "internal_charge_request",
-    "label": "Prevent PI if Not Ready",
-    "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
     "name": "Purchase Invoice-internal_charge_request",
     "dt": "Purchase Invoice",
     "fieldname": "internal_charge_request",
@@ -829,3 +858,4 @@
     "allow_on_submit": 1
   }
 ]
+
