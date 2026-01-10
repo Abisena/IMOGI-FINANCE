@@ -213,23 +213,66 @@ frappe.ui.form.on('Expense Request', {
               .filter(Boolean)
               .join('');
 
-            frappe.msgprint({
-              title: __('Approval Route'),
-              message: rows
+            let messageContent = rows
                 ? `<ul>${rows}</ul>`
-                : __('No approver configured for the current route.'),
-              indicator: 'green',
-            });
-            return;
+              : __('No approver configured for the current route.');
+
+            // Show auto-approve notice if applicable
+            if (message.auto_approve) {
+              messageContent = __('No approval required. Request will be auto-approved.');
           }
 
           frappe.msgprint({
             title: __('Approval Route'),
-            message: message?.message
-              ? message.message
-              : __('Approval route could not be determined. Please ask your System Manager to configure an Expense Approval Setting.'),
-            indicator: 'orange',
+              message: messageContent,
+              indicator: 'green',
           });
+      return;
+    }
+
+          // Handle validation errors (including invalid users)
+          let indicator = 'orange';
+          let errorMessage = message?.message
+            ? message.message
+            : __('Approval route could not be determined. Please ask your System Manager to configure an Expense Approval Setting.');
+
+          // Show red indicator for user validation errors
+          if (message?.user_validation && !message.user_validation.valid) {
+            indicator = 'red';
+
+            // Build detailed error message
+            const details = [];
+
+            if (message.user_validation.invalid_users?.length) {
+              details.push(
+                '<strong>' + __('Users not found:') + '</strong><ul>' +
+                message.user_validation.invalid_users.map(u =>
+                  `<li>${__('Level {0}', [u.level])}: <code>${u.user}</code></li>`
+                ).join('') +
+                '</ul>'
+      );
+    }
+
+            if (message.user_validation.disabled_users?.length) {
+              details.push(
+                '<strong>' + __('Users disabled:') + '</strong><ul>' +
+                message.user_validation.disabled_users.map(u =>
+                  `<li>${__('Level {0}', [u.level])}: <code>${u.user}</code></li>`
+                ).join('') +
+                '</ul>'
+              );
+      }
+
+            if (details.length) {
+              errorMessage = details.join('<br>') +
+                '<br><br>' + __('Please update the Expense Approval Setting to use valid, active users.');
+            }
+          }
+            frappe.msgprint({
+            title: __('Approval Route'),
+            message: errorMessage,
+            indicator: indicator,
+            });
         } catch (error) {
           frappe.msgprint({
             title: __('Approval Route'),
@@ -397,3 +440,4 @@ function maybeRenderInternalChargeButton(frm) {
     }
   }, __('Actions'));
 }
+

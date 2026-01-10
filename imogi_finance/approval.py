@@ -207,6 +207,54 @@ def log_route_resolution_error(exc: Exception, *, cost_center: str | None = None
         except Exception:
             pass
 
+def validate_route_users(route: dict) -> dict:
+    """Validate users in route exist and are enabled.
+
+    Returns dict with validation results:
+    {
+        "valid": bool,
+        "invalid_users": [{"level": int, "user": str, "reason": str}],
+        "disabled_users": [{"level": int, "user": str, "reason": str}],
+    }
+    """
+    invalid_users = []
+    disabled_users = []
+
+    if not route:
+        return {"valid": True, "invalid_users": [], "disabled_users": []}
+
+    for level in (1, 2, 3):
+        level_data = route.get(f"level_{level}", {})
+        if not isinstance(level_data, dict):
+            continue
+
+        user = level_data.get("user")
+        if not user:
+            continue
+
+        # Check if user exists
+        if not frappe.db.exists("User", user):
+            invalid_users.append({
+                "level": level,
+                "user": user,
+                "reason": "not_found",
+            })
+            continue
+
+        # Check if user is enabled
+        is_enabled = frappe.db.get_value("User", user, "enabled")
+        if not is_enabled:
+            disabled_users.append({
+                "level": level,
+                "user": user,
+                "reason": "disabled",
+            })
+    return {
+        "valid": not invalid_users and not disabled_users,
+        "invalid_users": invalid_users,
+        "disabled_users": disabled_users,
+    }
+
 
 @frappe.whitelist()
 def check_expense_request_route(
@@ -219,7 +267,6 @@ def check_expense_request_route(
     """API to check approval route for expense request."""
     parsed_items = json.loads(items) if isinstance(items, str) else items
     parsed_accounts = json.loads(expense_accounts) if isinstance(expense_accounts, str) else expense_accounts
-
     if not parsed_items and not parsed_accounts:
         return {
             "ok": False,
@@ -243,6 +290,34 @@ def check_expense_request_route(
 
     route = get_approval_route(cost_center, parsed_accounts or [], target_amount or 0)
     
+    # Validate users in route
+    user_validation = validate_route_users(route)
+    if not user_validation["valid"]:
+        error_parts = []
+
+        if user_validation["invalid_users"]:
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u["level"], user=u["user"])
+                for u in user_validation["invalid_users"]
+            )
+            error_parts.append(_("Users not found: {0}").format(user_list))
+
+        if user_validation["disabled_users"]:
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u["level"], user=u["user"])
+                for u in user_validation["disabled_users"]
+            )
+            error_parts.append(_("Users disabled: {0}").format(user_list))
+
+        return {
+            "ok": False,
+            "route": route,
+            "message": _("{errors}. Please update the Expense Approval Setting.").format(
+                errors=_("; ").join(error_parts)
+            ),
+            "user_validation": user_validation,
+        }
+
     # Check if route has any approvers
     has_approvers = any([
         route.get("level_1", {}).get("role"),
@@ -260,5 +335,6 @@ def check_expense_request_route(
             "message": _("No approval required. Request will be auto-approved."),
             "auto_approve": True,
         }
-    
+
     return {"ok": True, "route": route, "auto_approve": False}
+
