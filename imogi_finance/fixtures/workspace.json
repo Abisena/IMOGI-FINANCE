@@ -11,11 +11,16 @@
     "is_hidden": 0,
     "hide_custom": 0,
     "content_type": "Blocks",
-    "content": "[{\"id\": \"hdr1\", \"type\": \"header\", \"data\": {\"text\": \"Expense & Approval\", \"col\": 12}}, {\"id\": \"s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Expense Request\", \"col\": 3}}, {\"id\": \"s1a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Invoice\", \"col\": 3}}, {\"id\": \"s1b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Payment Entry\", \"col\": 3}}, {\"id\": \"s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Approval Settings\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr2\", \"type\": \"header\", \"data\": {\"text\": \"Linked Documents\", \"col\": 12}}, {\"id\": \"c1\", \"type\": \"card\", \"data\": {\"col\": 6, \"links\": [{\"label\": \"Purchase Invoice (Linked)\", \"link_to\": \"/app/purchase-invoice?imogi_expense_request!=null\", \"type\": \"URL\"}, {\"label\": \"Payment Entry (Linked)\", \"link_to\": \"/app/payment-entry?imogi_expense_request!=null\", \"type\": \"URL\"}, {\"label\": \"Asset (Linked)\", \"link_to\": \"/app/asset?imogi_expense_request!=null\", \"type\": \"URL\"}]}}, {\"id\": \"spacer2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr3\", \"type\": \"header\", \"data\": {\"text\": \"DocTypes\", \"col\": 12}}, {\"id\": \"d1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Finance Control Settings\", \"col\": 3}}, {\"id\": \"d2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"BCA Bank Statement Import\", \"col\": 3}}, {\"id\": \"d3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice OCR Settings\", \"col\": 3}}, {\"id\": \"d4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Profile\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Receipt Design\", \"col\": 3}}, {\"id\": \"d5a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Letter Template Settings\", \"col\": 3}}, {\"id\": \"d5b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Letter Template\", \"col\": 3}}, {\"id\": \"d6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Payment Batch\", \"col\": 3}}, {\"id\": \"d7\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Period Closing\", \"col\": 3}}, {\"id\": \"d8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt\", \"col\": 3}}, {\"id\": \"d9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Item\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Payment\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Stamp Log\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Digital Stamp Template\", \"col\": 3}}, {\"id\": \"spacer_tax_1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"tax_hdr1\", \"type\": \"header\", \"data\": {\"text\": \"Closings & Payments\", \"col\": 12}}, {\"id\": \"tax_s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Period Closing\", \"col\": 3}}, {\"id\": \"tax_s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Payment Batch\", \"col\": 3}}, {\"id\": \"tax_hdr2\", \"type\": \"header\", \"data\": {\"text\": \"Registers\", \"col\": 12}}, {\"id\": \"tax_s3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"VAT Input Register Verified\", \"col\": 3}}, {\"id\": \"tax_s4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"VAT Output Register Verified\", \"col\": 3}}, {\"id\": \"tax_s5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Withholding Register\", \"col\": 3}}, {\"id\": \"tax_s6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"PB1 Register\", \"col\": 3}}, {\"id\": \"tax_hdr3\", \"type\": \"header\", \"data\": {\"text\": \"Needs Review\", \"col\": 12}}, {\"id\": \"tax_c1\", \"type\": \"card\", \"data\": {\"col\": 6, \"links\": [{\"label\": \"Purchase Invoices (Tax Needs Review)\", \"link_to\": \"/app/purchase-invoice?ti_verification_status=Needs+Review\", \"type\": \"URL\"}, {\"label\": \"Expense Requests (Tax Needs Review)\", \"link_to\": \"/app/expense-request?ti_verification_status=Needs+Review\", \"type\": \"URL\"}, {\"label\": \"Sales Invoices (Tax Needs Review)\", \"link_to\": \"/app/sales-invoice?out_fp_status=Needs+Review\", \"type\": \"URL\"}]}}, {\"id\": \"transfer_hdr\", \"type\": \"header\", \"data\": {\"text\": \"Transfer Applications\", \"col\": 12}}, {\"id\": \"transfer_s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transfer Application\", \"col\": 3}}, {\"id\": \"transfer_s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transfer Application Settings\", \"col\": 3}}]",
+    "content": "[{\"id\": \"hdr1\", \"type\": \"header\", \"data\": {\"text\": \"Expense & Approval\", \"col\": 12}}, {\"id\": \"s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Expense Request\", \"col\": 3}}, {\"id\": \"s1a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Branch Expense Request\", \"col\": 3}}, {\"id\": \"s1b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Invoice\", \"col\": 3}}, {\"id\": \"s1c\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Payment Entry\", \"col\": 3}}, {\"id\": \"s1d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Administrative Payment Voucher\", \"col\": 3}}, {\"id\": \"s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Expense Approval Setting\", \"col\": 3}}, {\"id\": \"s3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Branch Expense Approval Setting\", \"col\": 3}}, {\"id\": \"s4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Branch Expense Request Settings\", \"col\": 3}}, {\"id\": \"spacer_adv\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr_adv\", \"type\": \"header\", \"data\": {\"text\": \"Advance Payment\", \"col\": 12}}, {\"id\": \"adv1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Advance Payment Entry\", \"col\": 3}}, {\"id\": \"spacer_budget\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr_budget\", \"type\": \"header\", \"data\": {\"text\": \"Budget Control\", \"col\": 12}}, {\"id\": \"budget1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Budget Control Entry\", \"col\": 3}}, {\"id\": \"budget2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Budget Reclass Request\", \"col\": 3}}, {\"id\": \"budget3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Additional Budget Request\", \"col\": 3}}, {\"id\": \"budget4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Budget Control Settings\", \"col\": 3}}, {\"id\": \"spacer_internal\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr_internal\", \"type\": \"header\", \"data\": {\"text\": \"Internal Charges\", \"col\": 12}}, {\"id\": \"ic1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Internal Charge Request\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr2\", \"type\": \"header\", \"data\": {\"text\": \"Tax Management\", \"col\": 12}}, {\"id\": \"tax1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Period Closing\", \"col\": 3}}, {\"id\": \"tax2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Payment Batch\", \"col\": 3}}, {\"id\": \"tax3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Profile\", \"col\": 3}}, {\"id\": \"tax4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice OCR Settings\", \"col\": 3}}, {\"id\": \"tax5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice Type\", \"col\": 3}}, {\"id\": \"tax5a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice OCR Monitoring\", \"col\": 3}}, {\"id\": \"tax5b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice OCR Upload\", \"col\": 3}}, {\"id\": \"tax5c\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tax Invoice Upload\", \"col\": 3}}, {\"id\": \"tax6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Coretax Export Settings\", \"col\": 3}}, {\"id\": \"spacer_reg\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr_reg\", \"type\": \"header\", \"data\": {\"text\": \"Tax Registers\", \"col\": 12}}, {\"id\": \"reg1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"VAT Input Register Verified\", \"col\": 3}}, {\"id\": \"reg2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"VAT Output Register Verified\", \"col\": 3}}, {\"id\": \"reg3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Withholding Register\", \"col\": 3}}, {\"id\": \"reg4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"PB1 Register\", \"col\": 3}}, {\"id\": \"spacer2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr3\", \"type\": \"header\", \"data\": {\"text\": \"Settings & Tools\", \"col\": 12}}, {\"id\": \"d1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Finance Control Settings\", \"col\": 3}}, {\"id\": \"d2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"BCA Bank Statement Import\", \"col\": 3}}, {\"id\": \"d5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Receipt Design\", \"col\": 3}}, {\"id\": \"d5a\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Letter Template Settings\", \"col\": 3}}, {\"id\": \"d5b\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Letter Template\", \"col\": 3}}, {\"id\": \"d12\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Digital Stamp Template\", \"col\": 3}}, {\"id\": \"spacer_receipt\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"hdr_receipt\", \"type\": \"header\", \"data\": {\"text\": \"Customer Receipt\", \"col\": 12}}, {\"id\": \"d8\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt\", \"col\": 3}}, {\"id\": \"d9\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Item\", \"col\": 3}}, {\"id\": \"d10\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Payment\", \"col\": 3}}, {\"id\": \"d11\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Customer Receipt Stamp Log\", \"col\": 3}}, {\"id\": \"transfer_hdr\", \"type\": \"header\", \"data\": {\"text\": \"Transfer Applications\", \"col\": 12}}, {\"id\": \"transfer_s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transfer Application\", \"col\": 3}}, {\"id\": \"transfer_s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transfer Application Settings\", \"col\": 3}}]",
     "shortcuts": [
       {
         "label": "Expense Request",
         "link_to": "Expense Request",
+        "type": "DocType"
+      },
+      {
+        "label": "Branch Expense Request",
+        "link_to": "Branch Expense Request",
         "type": "DocType"
       },
       {
@@ -29,38 +34,78 @@
         "type": "DocType"
       },
       {
-        "label": "Approval Settings",
+        "label": "Administrative Payment Voucher",
+        "link_to": "Administrative Payment Voucher",
+        "type": "DocType"
+      },
+      {
+        "label": "Expense Approval Setting",
         "link_to": "Expense Approval Setting",
         "type": "DocType"
       },
       {
-        "label": "Purchase Invoice (Linked)",
-        "link_to": "/app/purchase-invoice?imogi_expense_request!=null",
-        "type": "URL"
-      },
-      {
-        "label": "Payment Entry (Linked)",
-        "link_to": "/app/payment-entry?imogi_expense_request!=null",
-        "type": "URL"
-      },
-      {
-        "label": "Asset (Linked)",
-        "link_to": "/app/asset?imogi_expense_request!=null",
-        "type": "URL"
-      },
-      {
-        "label": "Finance Control Settings",
-        "link_to": "Finance Control Settings",
+        "label": "Branch Expense Approval Setting",
+        "link_to": "Branch Expense Approval Setting",
         "type": "DocType"
       },
       {
-        "label": "BCA Bank Statement Import",
-        "link_to": "BCA Bank Statement Import",
+        "label": "Branch Expense Request Settings",
+        "link_to": "Branch Expense Request Settings",
+        "type": "DocType"
+      },
+      {
+        "label": "Advance Payment Entry",
+        "link_to": "Advance Payment Entry",
+        "type": "DocType"
+      },
+      {
+        "label": "Budget Control Entry",
+        "link_to": "Budget Control Entry",
+        "type": "DocType"
+      },
+      {
+        "label": "Budget Reclass Request",
+        "link_to": "Budget Reclass Request",
+        "type": "DocType"
+      },
+      {
+        "label": "Additional Budget Request",
+        "link_to": "Additional Budget Request",
+        "type": "DocType"
+      },
+      {
+        "label": "Budget Control Settings",
+        "link_to": "Budget Control Settings",
+        "type": "DocType"
+      },
+      {
+        "label": "Internal Charge Request",
+        "link_to": "Internal Charge Request",
+        "type": "DocType"
+      },
+      {
+        "label": "Tax Period Closing",
+        "link_to": "Tax Period Closing",
+        "type": "DocType"
+      },
+      {
+        "label": "Tax Payment Batch",
+        "link_to": "Tax Payment Batch",
+        "type": "DocType"
+      },
+      {
+        "label": "Tax Profile",
+        "link_to": "Tax Profile",
         "type": "DocType"
       },
       {
         "label": "Tax Invoice OCR Settings",
         "link_to": "Tax Invoice OCR Settings",
+        "type": "DocType"
+      },
+      {
+        "label": "Tax Invoice Type",
+        "link_to": "Tax Invoice Type",
         "type": "DocType"
       },
       {
@@ -74,73 +119,13 @@
         "type": "DocType"
       },
       {
-        "label": "Tax Invoice Type",
-        "link_to": "Tax Invoice Type",
-        "type": "DocType"
-      },
-      {
         "label": "Tax Invoice Upload",
         "link_to": "Tax Invoice Upload",
         "type": "DocType"
       },
       {
-        "label": "Tax Profile",
-        "link_to": "Tax Profile",
-        "type": "DocType"
-      },
-      {
         "label": "Coretax Export Settings",
         "link_to": "Coretax Export Settings",
-        "type": "DocType"
-      },
-      {
-        "label": "Receipt Design",
-        "link_to": "Receipt Design",
-        "type": "DocType"
-      },
-      {
-        "label": "Letter Template Settings",
-        "link_to": "Letter Template Settings",
-        "type": "DocType"
-      },
-      {
-        "label": "Letter Template",
-        "link_to": "Letter Template",
-        "type": "DocType"
-      },
-      {
-        "label": "Tax Payment Batch",
-        "link_to": "Tax Payment Batch",
-        "type": "DocType"
-      },
-      {
-        "label": "Tax Period Closing",
-        "link_to": "Tax Period Closing",
-        "type": "DocType"
-      },
-      {
-        "label": "Customer Receipt",
-        "link_to": "Customer Receipt",
-        "type": "DocType"
-      },
-      {
-        "label": "Customer Receipt Item",
-        "link_to": "Customer Receipt Item",
-        "type": "DocType"
-      },
-      {
-        "label": "Customer Receipt Payment",
-        "link_to": "Customer Receipt Payment",
-        "type": "DocType"
-      },
-      {
-        "label": "Customer Receipt Stamp Log",
-        "link_to": "Customer Receipt Stamp Log",
-        "type": "DocType"
-      },
-      {
-        "label": "Digital Stamp Template",
-        "link_to": "Digital Stamp Template",
         "type": "DocType"
       },
       {
@@ -162,6 +147,56 @@
         "label": "PB1 Register",
         "link_to": "PB1 Register",
         "type": "Report"
+      },
+      {
+        "label": "Finance Control Settings",
+        "link_to": "Finance Control Settings",
+        "type": "DocType"
+      },
+      {
+        "label": "BCA Bank Statement Import",
+        "link_to": "BCA Bank Statement Import",
+        "type": "DocType"
+      },
+      {
+        "label": "Receipt Design",
+        "link_to": "Receipt Design",
+        "type": "DocType"
+      },
+      {
+        "label": "Letter Template Settings",
+        "link_to": "Letter Template Settings",
+        "type": "DocType"
+      },
+      {
+        "label": "Letter Template",
+        "link_to": "Letter Template",
+        "type": "DocType"
+      },
+      {
+        "label": "Digital Stamp Template",
+        "link_to": "Digital Stamp Template",
+        "type": "DocType"
+      },
+      {
+        "label": "Customer Receipt",
+        "link_to": "Customer Receipt",
+        "type": "DocType"
+      },
+      {
+        "label": "Customer Receipt Item",
+        "link_to": "Customer Receipt Item",
+        "type": "DocType"
+      },
+      {
+        "label": "Customer Receipt Payment",
+        "link_to": "Customer Receipt Payment",
+        "type": "DocType"
+      },
+      {
+        "label": "Customer Receipt Stamp Log",
+        "link_to": "Customer Receipt Stamp Log",
+        "type": "DocType"
       },
       {
         "label": "Transfer Application",
