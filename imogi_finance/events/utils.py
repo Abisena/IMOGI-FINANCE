@@ -57,4 +57,4 @@ def get_cancel_updates(request_name: str, cleared_link_field: str, *, include_pe
     request_links = get_expense_request_links(request_name, include_pending=include_pending)
     remaining_links = {field: request_links.get(field) for field in request_links if field != cleared_link_field}
     next_status = get_expense_request_status(remaining_links)
-    return {cleared_link_field: None, "status": next_status}
+    return {cleared_link_field: None, "status": next_status, "workflow_state": next_status}

@@ -124,6 +124,8 @@ def on_trash(doc, method=None):
     remaining_links = dict(request_links)
     for field in updates:
         remaining_links[field] = None
-    updates["status"] = get_expense_request_status(remaining_links)
+    next_status = get_expense_request_status(remaining_links)
+    updates["status"] = next_status
+    updates["workflow_state"] = next_status
 
     frappe.db.set_value("Expense Request", request, updates)
