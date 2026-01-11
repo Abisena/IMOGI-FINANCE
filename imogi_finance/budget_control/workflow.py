@@ -365,11 +365,11 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             remarks=_("Budget reservation for Expense Request"),
         )
 
-    status = "Overrun Allowed" if any_overrun else "Locked"
-    if getattr(expense_request, "budget_lock_status", None) != status:
+    lock_status = "Overrun Allowed" if any_overrun else "Locked"
+    if getattr(expense_request, "budget_lock_status", None) != lock_status:
         if hasattr(expense_request, "db_set"):
-            expense_request.db_set("budget_lock_status", status)
-        expense_request.budget_lock_status = status
+            expense_request.db_set("budget_lock_status", lock_status)
+        expense_request.budget_lock_status = lock_status
         _set_budget_workflow_state(
             expense_request,
             "Approved",
