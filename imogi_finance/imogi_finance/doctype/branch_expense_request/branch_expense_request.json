@@ -37,6 +37,20 @@
     "deferred_periods",
     "budget_check_status",
     "budget_check_message",
+    "approval_routing_section",
+    "current_approval_level",
+    "column_break_approval",
+    "approval_setting",
+    "level_1_section",
+    "level_1_user",
+    "level_1_role",
+    "level_2_section",
+    "level_2_user",
+    "level_2_role",
+    "level_3_section",
+    "level_3_user",
+    "level_3_role",
+    "approval_route_snapshot",
     "status",
     "workflow_state",
     "attachments"
@@ -235,6 +249,102 @@
       "fieldname": "budget_check_message",
       "fieldtype": "Small Text",
       "label": "Budget Check Message",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:doc.docstatus==0",
+      "fieldname": "approval_routing_section",
+      "fieldtype": "Section Break",
+      "label": "✅ Approval Routing"
+    },
+    {
+      "default": "0",
+      "description": "Current approval level (0 means not in approval flow)",
+      "fieldname": "current_approval_level",
+      "fieldtype": "Int",
+      "label": "Current Approval Level",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_approval",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "approval_setting",
+      "fieldtype": "Link",
+      "label": "Approval Setting",
+      "options": "Branch Expense Approval Setting",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:!doc.level_1_user",
+      "fieldname": "level_1_section",
+      "fieldtype": "Section Break",
+      "label": "👤 Level 1 Approver"
+    },
+    {
+      "fieldname": "level_1_user",
+      "fieldtype": "Link",
+      "label": "User",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_1_role",
+      "fieldtype": "Link",
+      "label": "Role",
+      "options": "Role",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:!doc.level_2_user",
+      "fieldname": "level_2_section",
+      "fieldtype": "Section Break",
+      "label": "👥 Level 2 Approver"
+    },
+    {
+      "fieldname": "level_2_user",
+      "fieldtype": "Link",
+      "label": "User",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_2_role",
+      "fieldtype": "Link",
+      "label": "Role",
+      "options": "Role",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:!doc.level_3_user",
+      "fieldname": "level_3_section",
+      "fieldtype": "Section Break",
+      "label": "👑 Level 3 Approver"
+    },
+    {
+      "fieldname": "level_3_user",
+      "fieldtype": "Link",
+      "label": "User",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_role",
+      "fieldtype": "Link",
+      "label": "Role",
+      "options": "Role",
+      "read_only": 1
+    },
+    {
+      "fieldname": "approval_route_snapshot",
+      "fieldtype": "Long Text",
+      "hidden": 1,
+      "label": "Approval Route Snapshot",
       "read_only": 1
     },
     {

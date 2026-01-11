@@ -4,8 +4,8 @@ frappe.listview_settings["Branch Expense Request"] = {
 		if (doc.status === "Approved") {
 			return [__("Approved"), "green", "status,=,Approved"];
 		}
-		if (doc.status === "Pending Approval") {
-			return [__("Pending Approval"), "orange", "status,=,Pending Approval"];
+		if (doc.status === "Pending Review") {
+			return [__("Pending Review"), "orange", "status,=,Pending Review"];
 		}
 		if (doc.status === "Rejected") {
 			return [__("Rejected"), "red", "status,=,Rejected"];

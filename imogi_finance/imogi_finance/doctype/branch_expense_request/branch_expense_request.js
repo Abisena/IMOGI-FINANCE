@@ -83,6 +83,12 @@ function lockBerTaxInvoiceFields(frm) {
 	});
 }
 
+function setExpenseAccountQuery(frm) {
+	const filters = { root_type: "Expense", is_group: 0 };
+	frm.set_query("expense_account", () => ({ filters }));
+	frm.set_query("expense_account", "items", () => ({ filters }));
+}
+
 async function setBerUploadQuery(frm) {
 	let usedUploads = [];
 	let verifiedUploads = [];
@@ -158,6 +164,7 @@ frappe.ui.form.on("Branch Expense Request", {
 		update_totals(frm);
 	},
 	async refresh(frm) {
+		setExpenseAccountQuery(frm);
 		lockBerTaxInvoiceFields(frm);
 		update_totals(frm);
 		await setBerUploadQuery(frm);
@@ -165,6 +172,7 @@ frappe.ui.form.on("Branch Expense Request", {
 		maybeAddDeferredExpenseActions(frm);
 		maybeAddOcrButton(frm);
 		maybeAddUploadActions(frm);
+		addCheckRouteButton(frm);
 	},
 	items_add(frm) {
 		update_totals(frm);
@@ -260,4 +268,124 @@ function maybeAddUploadActions(frm) {
 		});
 		await frm.reload_doc();
 	}, __("Tax Invoice"));
+}
+
+function addCheckRouteButton(frm) {
+	if (!frm.doc.branch || frm.doc.docstatus !== 0) {
+		return;
+	}
+
+	const routeBtn = frm.add_custom_button(__('Check Approval Route'), async () => {
+		const stringify = (value) => JSON.stringify(value || []);
+
+		try {
+			routeBtn?.prop?.('disabled', true);
+		} catch (error) {
+			// ignore if prop is not available
+		}
+
+		try {
+			const { message } = await frappe.call({
+				method: 'imogi_finance.branch_approval.check_branch_expense_request_route',
+				args: {
+					branch: frm.doc.branch,
+					items: stringify(frm.doc.items),
+					expense_accounts: stringify(frm.doc.expense_accounts),
+					amount: frm.doc.amount,
+					docstatus: frm.doc.docstatus,
+				},
+			});
+
+			if (message?.ok) {
+				const route = message.route || {};
+				const rows = ['1', '2', '3']
+					.map((level) => {
+						const info = route[`level_${level}`] || {};
+						if (!info.user) {
+							return null;
+						}
+						const role = info.role ? __('Role: {0}', [info.role]) : '';
+						const user = info.user ? __('User: {0}', [info.user]) : '';
+						const details = [user, role].filter(Boolean).join(' | ');
+						return `<li>${__('Level {0}', [level])}: ${details}</li>`;
+					})
+					.filter(Boolean)
+					.join('');
+
+				let messageContent = rows
+					? `<ul>${rows}</ul>`
+					: __('No approver configured for the current route.');
+
+				// Show auto-approve notice if applicable
+				if (message.auto_approve) {
+					messageContent = __('No approval required. Request will be auto-approved.');
+				}
+
+				frappe.msgprint({
+					title: __('Approval Route'),
+					message: messageContent,
+					indicator: 'green',
+				});
+				return;
+			}
+
+			// Handle validation errors (including invalid users)
+			let indicator = 'orange';
+			let errorMessage = message?.message
+				? message.message
+				: __('Approval route could not be determined. Please ask your System Manager to configure a Branch Expense Approval Setting.');
+
+			// Show red indicator for user validation errors
+			if (message?.user_validation && !message.user_validation.valid) {
+				indicator = 'red';
+
+				// Build detailed error message
+				const details = [];
+
+				if (message.user_validation.invalid_users?.length) {
+					details.push(
+						'<strong>' + __('Users not found:') + '</strong><ul>' +
+						message.user_validation.invalid_users.map(u =>
+							`<li>${__('Level {0}', [u.level])}: <code>${u.user}</code></li>`
+						).join('') +
+						'</ul>'
+					);
+				}
+
+				if (message.user_validation.disabled_users?.length) {
+					details.push(
+						'<strong>' + __('Users disabled:') + '</strong><ul>' +
+						message.user_validation.disabled_users.map(u =>
+							`<li>${__('Level {0}', [u.level])}: <code>${u.user}</code></li>`
+						).join('') +
+						'</ul>'
+					);
+				}
+
+				if (details.length) {
+					errorMessage = details.join('<br>') +
+						'<br><br>' + __('Please update the Branch Expense Approval Setting to use valid, active users.');
+				}
+			}
+			frappe.msgprint({
+				title: __('Approval Route'),
+				message: errorMessage,
+				indicator: indicator,
+			});
+		} catch (error) {
+			frappe.msgprint({
+				title: __('Approval Route'),
+				message: error?.message
+					? error.message
+					: __('Unable to check approval route right now. Please try again.'),
+				indicator: 'red',
+			});
+		} finally {
+			try {
+				routeBtn?.prop?.('disabled', false);
+			} catch (error) {
+				// ignore if prop is not available
+			}
+		}
+	}, __('Actions'));
 }
