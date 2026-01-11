@@ -68,6 +68,7 @@ class ExpenseRequest(Document):
         self.validate_tax_fields()
         self.validate_deferred_expense()
         validate_tax_invoice_upload_link(self, "Expense Request")
+        self._prepare_route_for_workflow()
         self.sync_status_with_workflow_state()
         self.handle_key_field_changes_after_submit()
         self.validate_pending_edit_restrictions()
@@ -77,6 +78,18 @@ class ExpenseRequest(Document):
     def _prepare_route_for_submit(self):
         """Deprecated - route resolution now happens in before_submit only."""
         return
+
+    def _prepare_route_for_workflow(self):
+        if getattr(self, "docstatus", 0) != 0:
+            return
+
+        if not getattr(self, "cost_center", None):
+            return
+
+        if not self._get_expense_accounts():
+            return
+
+        self._resolve_and_apply_route()
 
     def validate_amounts(self):
         total, expense_accounts = FinanceValidator.validate_amounts(self.get("items"))
