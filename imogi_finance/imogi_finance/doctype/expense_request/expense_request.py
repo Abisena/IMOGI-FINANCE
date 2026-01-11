@@ -51,7 +51,6 @@ class ExpenseRequest(Document):
 
     def before_validate(self):
         self.validate_amounts()
-        self._prepare_route_for_submit()
 
     def before_insert(self):
         self._set_requester_to_creator()
@@ -63,7 +62,6 @@ class ExpenseRequest(Document):
         self._set_requester_to_creator()
         self._ensure_status()
         self.validate_amounts()
-        self._prepare_route_for_submit()
         self.apply_branch_defaults()
         self.validate_asset_details()
         self._sync_tax_invoice_upload()
@@ -77,17 +75,8 @@ class ExpenseRequest(Document):
         self.validate_workflow_action_guard()
 
     def _prepare_route_for_submit(self):
-        """Resolve approval routing before workflow validation during submit."""
-        workflow_action = getattr(self, "_workflow_action", None)
-        action = getattr(self, "_action", None)
-        if action != "submit" and workflow_action != "Submit":
-            return
-
-        route = self._resolve_and_apply_route()
-        target_state = "Approved" if self._skip_approval_route else self.PENDING_REVIEW_STATE
-        self.current_approval_level = 0 if self._skip_approval_route else 1
-        self.status = target_state
-        self.workflow_state = target_state
+        """Deprecated - route resolution now happens in before_submit only."""
+        return
 
     def validate_amounts(self):
         total, expense_accounts = FinanceValidator.validate_amounts(self.get("items"))
@@ -285,6 +274,8 @@ class ExpenseRequest(Document):
     def before_submit(self):
         """Resolve approval route and set initial workflow state."""
         self.validate_amounts()
+        self.validate_submit_permission()
+        self.validate_reopen_override_resolution()
         route = self._resolve_and_apply_route()
         self._ensure_route_ready(route)
         self.validate_route_users_exist(route)
@@ -292,11 +283,17 @@ class ExpenseRequest(Document):
             self.current_approval_level = 0
             self.status = "Approved"
             self.workflow_state = "Approved"
+            self.record_approval_route_snapshot()
+            frappe.msgprint(
+                _("No approval route configured. Request auto-approved."),
+                alert=True,
+                indicator="green",
+            )
             return
 
         self.validate_initial_approver(route)
-        self._set_pending_review(level=self._get_initial_approval_level(route))
-        self.workflow_state = self.PENDING_REVIEW_STATE
+        initial_level = self._get_initial_approval_level(route)
+        self._set_pending_review(level=initial_level)
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow transitions by the resolved approver route.
@@ -312,27 +309,17 @@ class ExpenseRequest(Document):
             flags = type("Flags", (), {})()
             self.flags = flags
         self.flags.workflow_action_allowed = True
+        if action == "Submit":
+            self.validate_submit_permission()
+            self.validate_reopen_override_resolution()
+            return
+
         self._workflow_engine.guard_action(
             doc=self,
             action=action,
             current_state=self.status,
             next_state=kwargs.get("next_state"),
         )
-        if action == "Submit":
-            self.validate_amounts()
-            route = self._resolve_and_apply_route()
-            self._ensure_route_ready(route)
-            self.validate_route_users_exist(route)
-            if self._skip_approval_route:
-                self.current_approval_level = 0
-                self.status = "Approved"
-                self.workflow_state = "Approved"
-            else:
-                self._set_pending_review(level=self._get_initial_approval_level(route))
-            self.validate_submit_permission()
-            self.validate_reopen_override_resolution()
-            return
-
         if action == "Reopen":
             self.validate_reopen_permission()
             return
@@ -390,16 +377,12 @@ class ExpenseRequest(Document):
         )
 
     def on_workflow_action(self, action, **kwargs):
-        """Reset approval routing when a request is reopened."""
+        """Handle post-workflow action state updates."""
         next_state = kwargs.get("next_state")
         if action == "Submit":
-            if self._should_skip_approval():
-                next_state = "Approved"
-                self.current_approval_level = 0
-                self.record_approval_route_snapshot()
-            else:
-                next_state = self.PENDING_REVIEW_STATE
-                self.current_approval_level = getattr(self, "current_approval_level", None) or 1
+            handle_expense_request_workflow(self, action, self.status)
+            return
+
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
@@ -409,14 +392,18 @@ class ExpenseRequest(Document):
         if action == "Reject":
             self.current_approval_level = 0
 
-        if action in {"Approve", "Reject", "Submit"} and next_state:
+        if action in {"Approve", "Reject"} and next_state:
             self.status = next_state
             self.workflow_state = next_state
 
-        if action != "Reopen":
-            handle_expense_request_workflow(self, action, next_state)
+        if action == "Reopen":
+            self._handle_reopen_action(next_state)
             return
 
+        handle_expense_request_workflow(self, action, next_state)
+
+    def _handle_reopen_action(self, next_state):
+        """Handle reopen workflow action."""
         self.validate_amounts()
         route, setting_meta, failed = self._resolve_approval_route()
         self._approval_route_resolution_failed = failed
@@ -425,16 +412,15 @@ class ExpenseRequest(Document):
         self.clear_downstream_links()
         self.apply_route(route, setting_meta=setting_meta)
         self._skip_approval_route = self._should_skip_approval(route)
+
         if self._skip_approval_route:
-            next_state = "Approved"
             self.current_approval_level = 0
-            self.status = next_state
-            self.workflow_state = next_state
+            self.status = "Approved"
+            self.workflow_state = "Approved"
         else:
             self._set_pending_review(level=self._get_initial_approval_level(route))
-            self.workflow_state = next_state or self.PENDING_REVIEW_STATE
 
-        handle_expense_request_workflow(self, action, next_state)
+        handle_expense_request_workflow(self, "Reopen", self.status)
 
     def on_cancel(self):
         release_budget_for_request(self, reason="Cancel")

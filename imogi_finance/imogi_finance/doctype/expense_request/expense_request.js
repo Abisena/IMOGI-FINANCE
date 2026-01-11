@@ -112,7 +112,7 @@ function formatCurrency(frm, value) {
 }
 
 function computeTotals(frm) {
-  const flt = frappe.utils.flt;
+  const flt = (frappe.utils && frappe.utils.flt) || window.flt || ((value) => parseFloat(value) || 0);
   const totalExpense = flt(frm.doc.amount || 0);
   const totalAsset = (frm.doc.asset_items || []).reduce(
     (sum, row) => sum + flt(row.amount || 0),
