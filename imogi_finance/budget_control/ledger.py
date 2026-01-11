@@ -88,6 +88,19 @@ def check_budget_available(dims: Dimensions, amount: float, from_date: date | No
     if not settings.get("enable_budget_lock"):
         return {"ok": True, "message": _("Budget lock disabled in settings."), "available": None}
 
+    # Check if Budget document exists for this cost center/company/fiscal year
+    if not native_budget.budget_exists_for_dims(dims):
+        return {
+            "ok": True,
+            "message": _("No Budget configured for Cost Center {cc} - budget check bypassed.").format(
+                cc=dims.cost_center or _("(unknown)")
+            ),
+            "available": None,
+            "allocated": None,
+            "actual": None,
+            "reserved": None,
+        }
+
     snapshot = get_availability(dims, from_date=from_date, to_date=to_date)
     ok = snapshot["available"] >= float(amount or 0)
     message = (

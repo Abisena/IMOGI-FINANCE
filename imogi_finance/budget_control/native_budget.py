@@ -84,6 +84,17 @@ def _load_budget_account_row(budget_name: str, account: str | None):
         return None
 
 
+def budget_exists_for_dims(dims: Dimensions) -> bool:
+    """Check if an ERPNext Budget document exists for the given dimensions.
+    
+    Returns:
+        True if a Budget document exists for the company/fiscal year/cost center combination.
+        False if no Budget document is found.
+    """
+    budget_name = _find_budget_for_dims(dims)
+    return budget_name is not None
+
+
 def get_allocated_from_erpnext_budget(dims: Dimensions) -> float:
     budget_name = _find_budget_for_dims(dims)
     if not budget_name:
