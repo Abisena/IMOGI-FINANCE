@@ -2,15 +2,8 @@ import frappe
 
 
 def before_install():
-    """Clean up legacy custom fields that conflict with standard DocType fields."""
+    """Setup required roles before installation."""
     ensure_role_exists("Budget Controller")
-    duplicates = frappe.get_all(
-        "Custom Field",
-        filters={"dt": "Expense Request", "fieldname": "workflow_state"},
-        pluck="name",
-    )
-    for name in duplicates:
-        frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
 
 
 def ensure_role_exists(role_name: str) -> None:
