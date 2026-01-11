@@ -427,7 +427,19 @@ class ExpenseRequest(Document):
 
     def on_submit(self):
         # Purchase Invoice creation is handled manually via action button.
-        pass
+        if self._should_skip_approval():
+            target_state = "Approved"
+            if getattr(self, "workflow_state", None) != target_state:
+                self.db_set("workflow_state", target_state)
+                self.workflow_state = target_state
+            if getattr(self, "status", None) != target_state:
+                self.db_set("status", target_state)
+                self.status = target_state
+
+        flags = getattr(self, "flags", None)
+        workflow_action_allowed = bool(flags and getattr(flags, "workflow_action_allowed", False))
+        if not workflow_action_allowed:
+            handle_expense_request_workflow(self, "Submit", getattr(self, "status", None))
 
     def on_update_after_submit(self):
         self.sync_status_with_workflow_state()
