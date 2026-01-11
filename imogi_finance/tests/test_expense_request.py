@@ -267,15 +267,16 @@ def test_before_workflow_action_requires_both_user_and_role(monkeypatch):
 
     with pytest.raises(NotAllowed) as excinfo:
         wrong_user.before_workflow_action("Approve")
+
+
 # Test removed: role-based approval no longer supported
 def test_before_workflow_action_blocks_skipping_level_three(monkeypatch):
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="level2@example.com"))
-    monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 2 User"])
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 2 User", "Expense Approver"])
 
     request = ExpenseRequest(
         status="Pending Review",
         current_approval_level=2,
-# Test removed: role-based approval no longer supported
         level_2_user="level2@example.com",
         level_3_user="level3@example.com",
         items=[_item()],
@@ -284,9 +285,9 @@ def test_before_workflow_action_blocks_skipping_level_three(monkeypatch):
     )
 
     with pytest.raises(NotAllowed):
-        request.before_workflow_action("Approve", next_Expense Approver"])
+        request.before_workflow_action("Approve", next_state="Approved")
 
-    request = _make_request(
+
 def test_before_workflow_action_allows_final_approval_when_no_next_level(monkeypatch):
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="approver@example.com"))
     monkeypatch.setattr(frappe, "get_roles", lambda: ["Level 1 User", "Expense Approver"])
@@ -295,28 +296,26 @@ def test_before_workflow_action_allows_final_approval_when_no_next_level(monkeyp
 
     request.before_workflow_action("Approve", next_state="Approved")
 
-Expense Approver"])
 
-    reqRouting enforces the actual approver user."""
+def test_before_workflow_action_enforces_routed_user(monkeypatch):
+    """Routing enforces the actual approver user."""
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="routed@example.com"))
-    monkeypatch.setattr(frappe, "get_roles", lambda: [
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Expense Approver"])
+
     request = _make_request(user="routed@example.com")
 
     request.before_workflow_action("Approve")
 
 
-def test_before_workflow_action_blocks_generic_role_without_route(monkeypatch):
-    """Having a generic workflow role iwrong_user(monkeypatch):
+def test_before_workflow_action_blocks_wrong_user(monkeypatch):
     """Routing expects a specific user."""
     monkeypatch.setattr(frappe, "session", types.SimpleNamespace(user="other@example.com"))
-    monkeypatch.setattr(frappe, "get_roles", lambda: [
+    monkeypatch.setattr(frappe, "get_roles", lambda: ["Expense Approver"])
+
     request = _make_request(user="owner@example.com")
 
     with pytest.raises(NotAllowed) as excinfo:
         request.before_workflow_action("Approve")
-Expense Approver"])
-
-    request = _make_request(
 
 def test_close_requires_routed_user(monkeypatch):
     request = ExpenseRequest(
