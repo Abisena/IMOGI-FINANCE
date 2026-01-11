@@ -53,6 +53,8 @@
     "approval_route_snapshot",
     "status",
     "workflow_state",
+    "approved_on",
+    "rejected_on",
     "attachments"
   ],
   "fields": [
@@ -360,6 +362,18 @@
       "hidden": 1,
       "label": "Workflow State",
       "options": "Workflow State",
+      "read_only": 1
+    },
+    {
+      "fieldname": "approved_on",
+      "fieldtype": "Datetime",
+      "label": "Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Rejected On",
       "read_only": 1
     },
     {

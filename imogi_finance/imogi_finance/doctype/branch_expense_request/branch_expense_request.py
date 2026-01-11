@@ -7,7 +7,7 @@ from typing import Iterable
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, get_first_day, get_last_day, nowdate
+from frappe.utils import flt, get_first_day, get_last_day, nowdate, now_datetime
 
 from imogi_finance import accounting, roles
 from imogi_finance.branching import apply_branch, resolve_branch
@@ -54,6 +54,7 @@ class BranchExpenseRequest(Document):
 
     def before_insert(self):
         self._set_requester()
+        self._reset_status_if_copied()
 
     def validate(self):
         settings = get_settings()
@@ -99,6 +100,7 @@ class BranchExpenseRequest(Document):
             self.status = "Approved"
             self.workflow_state = "Approved"
             self.record_approval_route_snapshot()
+            self._set_approval_audit()
             frappe.msgprint(
                 _("No approval route configured. Request auto-approved."),
                 alert=True,
@@ -126,11 +128,15 @@ class BranchExpenseRequest(Document):
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
+            self._set_approval_audit()
         if action == "Approve" and next_state == self.PENDING_REVIEW_STATE:
             self._advance_approval_level()
 
         if action == "Reject":
             self.current_approval_level = 0
+            # Ensure approval audit fields are cleared when rejected
+            self.approved_on = None
+            self.rejected_on = now_datetime()
 
         if next_state:
             self.workflow_state = next_state
@@ -227,6 +233,14 @@ class BranchExpenseRequest(Document):
             self.flags = flags
         self.flags.deferred_amortization_schedule = schedule
 
+    def _set_approval_audit(self):
+        """Set approval timestamp when the request reaches Approved state."""
+        try:
+            self.approved_on = now_datetime()
+        except Exception:
+            # Avoid blocking workflow if timestamp setting fails for any reason.
+            pass
+
     def _sync_tax_invoice_upload(self):
         if not getattr(self, "ti_tax_invoice_upload", None):
             return
@@ -268,6 +282,25 @@ class BranchExpenseRequest(Document):
         employee_branch = frappe.db.get_value("Employee", self.employee, "branch")
         if employee_branch:
             apply_branch(self, employee_branch)
+
+    def _reset_status_if_copied(self):
+        """Ensure duplicated documents start from Draft instead of Rejected/Approved.
+
+        When a submitted request (e.g. Rejected) is duplicated, Frappe copies the
+        status and workflow_state fields. For the new draft, we want a clean start
+        so users can submit it again without being stuck in a terminal state.
+        """
+        if getattr(self, "docstatus", 0) == 0 and getattr(self, "status", None) in {self.STATUS_REJECTED, self.STATUS_APPROVED}:
+            self.status = self.STATUS_DRAFT
+            self.workflow_state = None
+            self.current_approval_level = 0
+            # Clear approval audit and route snapshot on copied drafts
+            self.approved_on = None
+            self.rejected_on = None
+            self.approval_route_snapshot = None
+            self.level_1_user = None
+            self.level_2_user = None
+            self.level_3_user = None
 
     def _get_company(self):
         if getattr(self, "company", None):

@@ -77,6 +77,8 @@
     "approval_status_section",
     "current_approval_level",
     "column_break_approval_status",
+    "approved_on",
+    "rejected_on",
     "approvers_section",
     "level_1_user",
     "column_break_approver_2",
@@ -494,6 +496,18 @@
     {
       "fieldname": "column_break_approval_status",
       "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "approved_on",
+      "fieldtype": "Datetime",
+      "label": "Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Rejected On",
+      "read_only": 1
     },
     {
       "fieldname": "approvers_section",

@@ -9,7 +9,7 @@ from datetime import datetime
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 
 from imogi_finance import accounting, roles
 from imogi_finance.branching import apply_branch, resolve_branch
@@ -54,6 +54,7 @@ class ExpenseRequest(Document):
 
     def before_insert(self):
         self._set_requester_to_creator()
+        self._reset_status_if_copied()
 
     def after_insert(self):
         self._auto_submit_if_skip_approval()
@@ -267,6 +268,25 @@ class ExpenseRequest(Document):
         if getattr(self, "requester", None) in {None, "", "frappe.session.user"}:
             self.requester = frappe.session.user
 
+    def _reset_status_if_copied(self):
+        """Ensure duplicated documents start from Draft instead of Rejected/Approved.
+
+        When a submitted request (e.g. Rejected) is duplicated, Frappe copies the
+        status and workflow_state fields. For the new draft, we want a clean start
+        so users can submit it again without being stuck in a terminal state.
+        """
+        if getattr(self, "docstatus", 0) == 0 and getattr(self, "status", None) in {"Rejected", "Approved"}:
+            self.status = None
+            self.workflow_state = None
+            self.current_approval_level = 0
+            # Clear approval audit and route snapshot on copied drafts
+            self.approved_on = None
+            self.rejected_on = None
+            self.approval_route_snapshot = None
+            self.level_1_user = None
+            self.level_2_user = None
+            self.level_3_user = None
+
     def _ensure_status(self):
         if getattr(self, "status", None):
             if self.status == self.PENDING_REVIEW_STATE and not getattr(self, "current_approval_level", None):
@@ -296,6 +316,7 @@ class ExpenseRequest(Document):
             self.current_approval_level = 0
             self.status = "Approved"
             self.workflow_state = "Approved"
+            self._set_approval_audit()
             self.record_approval_route_snapshot()
             frappe.msgprint(
                 _("No approval route configured. Request auto-approved."),
@@ -405,11 +426,15 @@ class ExpenseRequest(Document):
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
+            self._set_approval_audit()
         if action == "Approve" and next_state == self.PENDING_REVIEW_STATE:
             self._advance_approval_level()
 
         if action == "Reject":
             self.current_approval_level = 0
+            # Ensure approval audit fields are cleared when rejected
+            self.approved_on = None
+            self.rejected_on = now_datetime()
 
         if action in {"Approve", "Reject"} and next_state:
             self.status = next_state
@@ -436,6 +461,7 @@ class ExpenseRequest(Document):
             self.current_approval_level = 0
             self.status = "Approved"
             self.workflow_state = "Approved"
+            self._set_approval_audit()
         else:
             # Set workflow_action_allowed flag for ERPNext v15+ compatibility
             flags = getattr(self, "flags", None)
@@ -460,11 +486,20 @@ class ExpenseRequest(Document):
             if getattr(self, "status", None) != target_state:
                 self.db_set("status", target_state)
                 self.status = target_state
+            self._set_approval_audit()
 
         flags = getattr(self, "flags", None)
         workflow_action_allowed = bool(flags and getattr(flags, "workflow_action_allowed", False))
         if not workflow_action_allowed:
             handle_expense_request_workflow(self, "Submit", getattr(self, "status", None))
+
+    def _set_approval_audit(self):
+        """Set approval timestamp when the request reaches Approved state."""
+        try:
+            self.approved_on = now_datetime()
+        except Exception:
+            # Avoid blocking workflow if timestamp setting fails for any reason.
+            pass
 
     def on_update_after_submit(self):
         self.sync_status_with_workflow_state()
