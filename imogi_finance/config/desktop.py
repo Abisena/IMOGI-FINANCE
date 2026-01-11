@@ -44,9 +44,39 @@ def get_data():
                 },
                 {
                     "type": "doctype",
+                    "name": "Tax Invoice OCR Monitoring",
+                    "label": "Tax Invoice OCR Monitoring",
+                    "description": "Monitor OCR processing and verification of uploaded tax invoices.",
+                },
+                {
+                    "type": "doctype",
+                    "name": "Tax Invoice OCR Upload",
+                    "label": "Tax Invoice OCR Upload",
+                    "description": "Upload faktur pajak PDF for OCR processing.",
+                },
+                {
+                    "type": "doctype",
+                    "name": "Tax Invoice Type",
+                    "label": "Tax Invoice Type",
+                    "description": "Maintain master data of tax invoice prefixes and types.",
+                },
+                {
+                    "type": "doctype",
+                    "name": "Tax Invoice Upload",
+                    "label": "Tax Invoice Upload",
+                    "description": "Upload and track tax invoices linked to sales invoices.",
+                },
+                {
+                    "type": "doctype",
                     "name": "Tax Profile",
                     "label": "Tax Profile",
                     "description": "Maintain tax profile settings.",
+                },
+                {
+                    "type": "doctype",
+                    "name": "Coretax Export Settings",
+                    "label": "Coretax Export Settings",
+                    "description": "Configure export templates for Coretax/e-Faktur files.",
                 },
                 {
                     "type": "doctype",
@@ -169,6 +199,12 @@ def get_data():
                     "name": "Internal Charge Request",
                     "label": "Internal Charge Request",
                     "description": "Allocate expense requests across cost centers.",
+                },
+                {
+                    "type": "doctype",
+                    "name": "Branch Expense Request",
+                    "label": "Branch Expense Request",
+                    "description": "Request and track branch level expenses.",
                 },
                 {
                     "type": "doctype",

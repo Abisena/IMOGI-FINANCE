@@ -295,18 +295,18 @@ def get_reference_outstanding_amount(document) -> float | None:
 
 
 def get_existing_allocated_amount(reference_doctype: str, reference_name: str) -> float:
-    total = frappe.db.sql(
-        """
-        SELECT SUM(ref.allocated_amount)
-        FROM `tabAdvance Payment Reference` ref
-        JOIN `tabAdvance Payment Entry` ape ON ape.name = ref.parent
-        WHERE ref.invoice_doctype = %s
-          AND ref.invoice_name = %s
-          AND ape.docstatus < 2
-        """,
-        (reference_doctype, reference_name),
-    )
-    return flt(total[0][0]) if total else 0.0
+        total = frappe.db.sql(
+                """
+                SELECT SUM(ref.allocated_amount)
+                FROM `tabAdvance Payment Reference` ref
+                JOIN `tabAdvance Payment Entry` ape ON ape.name = ref.parent
+                WHERE ref.invoice_doctype = %s
+                    AND ref.invoice_name = %s
+                    AND ape.docstatus < 2
+                """,
+                (reference_doctype, reference_name),
+        )
+        return flt(total[0][0]) if total else 0.0
 
 
 def get_reference_currency(document) -> str | None:

@@ -10,6 +10,10 @@ from frappe.utils import flt
 
 class AdvancePaymentEntry(Document):
     def validate(self):
+        # Prevent manual creation; entries should originate from Payment Entry workflow
+        if not self.payment_entry and not getattr(self.flags, "allow_manual_creation", False):
+            frappe.throw(_("Advance Payment Entry can only be created from a Payment Entry."))
+
         self._set_defaults()
         self._set_amounts()
         self._validate_allocations()
