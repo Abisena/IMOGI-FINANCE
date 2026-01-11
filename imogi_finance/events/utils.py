@@ -9,6 +9,7 @@ EXPENSE_REQUEST_LINK_FIELDS = (
     "linked_purchase_invoice",
     "linked_asset",
 )
+EXPENSE_REQUEST_PENDING_FIELDS = ("pending_purchase_invoice",)
 
 
 def get_approved_expense_request(
@@ -25,9 +26,10 @@ def get_approved_expense_request(
     return request
 
 
-def get_expense_request_links(request_name: str):
+def get_expense_request_links(request_name: str, *, include_pending: bool = False):
+    fields = EXPENSE_REQUEST_LINK_FIELDS + (EXPENSE_REQUEST_PENDING_FIELDS if include_pending else ())
     return frappe.db.get_value(
-        "Expense Request", request_name, EXPENSE_REQUEST_LINK_FIELDS, as_dict=True
+        "Expense Request", request_name, fields, as_dict=True
     ) or {}
 
 
@@ -40,19 +42,19 @@ def has_active_links(request_links, exclude: frozenset[str] | None = None):
     )
 
 
-def get_cancel_updates(request_name: str, cleared_link_field: str):
-    request_links = get_expense_request_links(request_name)
-    remaining_links = {
-        field: request_links.get(field)
-        for field in EXPENSE_REQUEST_LINK_FIELDS
-        if field != cleared_link_field
-    }
+def get_expense_request_status(request_links: dict) -> str:
+    if request_links.get("linked_payment_entry"):
+        return "Paid"
+    if any(
+        request_links.get(field)
+        for field in ("linked_purchase_invoice", "linked_asset", "pending_purchase_invoice")
+    ):
+        return "PI Created"
+    return "Approved"
 
-    if remaining_links.get("linked_payment_entry"):
-        next_status = "Paid"
-    elif any(remaining_links.values()):
-        next_status = "PI Created"
-    else:
-        next_status = "Approved"
 
+def get_cancel_updates(request_name: str, cleared_link_field: str, *, include_pending: bool = False):
+    request_links = get_expense_request_links(request_name, include_pending=include_pending)
+    remaining_links = {field: request_links.get(field) for field in request_links if field != cleared_link_field}
+    next_status = get_expense_request_status(remaining_links)
     return {cleared_link_field: None, "status": next_status}

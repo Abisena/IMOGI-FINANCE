@@ -19,8 +19,8 @@ from imogi_finance import accounting  # noqa: E402
 from imogi_finance.events import purchase_invoice  # noqa: E402
 
 
-def _purchase_invoice_doc(request_name="ER-PI-001"):
-    doc = types.SimpleNamespace(imogi_expense_request=request_name, name="PI-001")
+def _purchase_invoice_doc(request_name="ER-PI-001", name="PI-001"):
+    doc = types.SimpleNamespace(imogi_expense_request=request_name, name=name)
     doc.get = lambda key, default=None: getattr(doc, key, default)
     return doc
 
@@ -118,6 +118,11 @@ def test_purchase_invoice_submit_links_request(monkeypatch):
         captured_set_value["values"] = values
 
     monkeypatch.setattr(purchase_invoice, "get_approved_expense_request", fake_get_approved_expense_request)
+    monkeypatch.setattr(
+        purchase_invoice,
+        "get_branch_settings",
+        lambda: types.SimpleNamespace(enable_multi_branch=False, enforce_branch_on_links=False),
+    )
     monkeypatch.setattr(frappe.db, "set_value", fake_set_value)
 
     doc = _purchase_invoice_doc("ER-PI-004")
@@ -129,4 +134,35 @@ def test_purchase_invoice_submit_links_request(monkeypatch):
         "linked_purchase_invoice": "PI-001",
         "pending_purchase_invoice": None,
         "status": "PI Created",
+    }
+
+
+def test_purchase_invoice_trash_clears_pending_links(monkeypatch):
+    captured_set_value = {}
+
+    def fake_get_value(doctype, name, fields, as_dict=True):
+        return {
+            "linked_payment_entry": None,
+            "linked_asset": None,
+            "linked_purchase_invoice": "PI-DRAFT",
+            "pending_purchase_invoice": "PI-DRAFT",
+        }
+
+    def fake_set_value(doctype, name, values):
+        captured_set_value["doctype"] = doctype
+        captured_set_value["name"] = name
+        captured_set_value["values"] = values
+
+    monkeypatch.setattr(frappe.db, "get_value", fake_get_value)
+    monkeypatch.setattr(frappe.db, "set_value", fake_set_value)
+
+    doc = _purchase_invoice_doc("ER-PI-005", name="PI-DRAFT")
+    purchase_invoice.on_trash(doc)
+
+    assert captured_set_value["doctype"] == "Expense Request"
+    assert captured_set_value["name"] == "ER-PI-005"
+    assert captured_set_value["values"] == {
+        "linked_purchase_invoice": None,
+        "pending_purchase_invoice": None,
+        "status": "Approved",
     }
