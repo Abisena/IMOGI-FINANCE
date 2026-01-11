@@ -1079,7 +1079,9 @@ class ExpenseRequest(Document):
             return
 
         target_state = settings.get("lock_on_workflow_state") or "Approved"
-        if getattr(self, "status", None) != target_state:
+        status = getattr(self, "status", None)
+        workflow_state = getattr(self, "workflow_state", None)
+        if status != target_state and workflow_state != target_state:
             return
 
         name = getattr(self, "name", None)

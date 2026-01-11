@@ -319,7 +319,9 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         return
 
     target_state = settings.get("lock_on_workflow_state") or "Approved"
-    if getattr(expense_request, "status", None) != target_state:
+    status = getattr(expense_request, "status", None)
+    workflow_state = getattr(expense_request, "workflow_state", None)
+    if status != target_state and workflow_state != target_state:
         return
 
     ic_doc = None
@@ -434,7 +436,9 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
         release_budget_for_request(expense_request, reason=action)
         return
 
-    if getattr(expense_request, "status", None) == target_state or next_state == target_state:
+    status = getattr(expense_request, "status", None)
+    workflow_state = getattr(expense_request, "workflow_state", None)
+    if status == target_state or workflow_state == target_state or next_state == target_state:
         reserve_budget_for_request(expense_request, trigger_action=action, next_state=next_state)
 
 
