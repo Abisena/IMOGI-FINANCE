@@ -174,6 +174,7 @@ doc_events = {
             "imogi_finance.events.purchase_invoice.on_cancel",
             "imogi_finance.advance_payment.api.on_reference_cancel",
         ],
+        "on_trash": "imogi_finance.events.purchase_invoice.on_trash",
     },
     "Sales Invoice": {
         "validate": [

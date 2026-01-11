@@ -7,6 +7,8 @@ from imogi_finance.accounting import PURCHASE_INVOICE_ALLOWED_STATUSES, PURCHASE
 from imogi_finance.events.utils import (
     get_approved_expense_request,
     get_cancel_updates,
+    get_expense_request_links,
+    get_expense_request_status,
 )
 from imogi_finance.tax_invoice_ocr import (
     get_settings,
@@ -102,3 +104,26 @@ def on_cancel(doc, method=None):
 
     frappe.db.set_value("Expense Request", request, updates)
     reverse_consumption_for_purchase_invoice(doc)
+
+
+def on_trash(doc, method=None):
+    request = doc.get("imogi_expense_request")
+    if not request:
+        return
+
+    request_links = get_expense_request_links(request, include_pending=True)
+    updates = {}
+    if request_links.get("pending_purchase_invoice") == doc.name:
+        updates["pending_purchase_invoice"] = None
+    if request_links.get("linked_purchase_invoice") == doc.name:
+        updates["linked_purchase_invoice"] = None
+
+    if not updates:
+        return
+
+    remaining_links = dict(request_links)
+    for field in updates:
+        remaining_links[field] = None
+    updates["status"] = get_expense_request_status(remaining_links)
+
+    frappe.db.set_value("Expense Request", request, updates)
