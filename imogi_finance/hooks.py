@@ -420,21 +420,6 @@ fixtures = [
     },
     {"dt": "Letter Template Settings"},
     {
-        "dt": "Workflow",
-        "filters": [
-            [
-                "name",
-                "in",
-                [
-                    "Expense Request Workflow",
-                    "Administrative Payment Voucher Workflow",
-                    "Transfer Application Workflow",
-                    "Branch Expense Request Workflow",
-                ],
-            ]
-        ],
-    },
-    {
         "dt": "Workflow State",
         "filters": [
             [
@@ -454,6 +439,10 @@ fixtures = [
                     "Approved for Transfer",
                     "Awaiting Bank Confirmation",
                     "Paid",
+                    "Pending L1 Approval",
+                    "Pending L2 Approval",
+                    "Pending L3 Approval",
+                    "Partially Approved",
                 ],
             ]
         ],
