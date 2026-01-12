@@ -1,0 +1,230 @@
+{
+  "actions": [
+    {
+      "action": "Submit",
+      "allowed": "All"
+    },
+    {
+      "action": "Approve",
+      "allowed": "All"
+    },
+    {
+      "action": "Reject",
+      "allowed": "All"
+    }
+  ],
+  "creation": "",
+  "docstatus": 0,
+  "doctype": "Workflow",
+  "document_type": "Internal Charge Request",
+  "is_active": 1,
+  "module": "Imogi Finance",
+  "name": "Internal Charge Request Workflow",
+  "notes": "Internal Charge Request approval workflow with line-level cost-centre approval routing. Roles are intentionally broad; approval enforcement happens in InternalChargeRequest.before_workflow_action based on dynamically resolved per-line routes. Each line in internal_charge_lines has its own approval status (Pending L1/L2/L3, Approved, Rejected) with target_cost_center-based route resolution.",
+  "override_status": 1,
+  "states": [
+    {
+      "state": "Draft",
+      "doc_status": 0,
+      "allow_edit": "All",
+      "backflow_allowed": false
+    },
+    {
+      "state": "Pending L1 Approval",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": true,
+      "acl": {
+        "roles": [],
+        "users": []
+      }
+    },
+    {
+      "state": "Pending L2 Approval",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": true,
+      "acl": {
+        "roles": [],
+        "users": []
+      }
+    },
+    {
+      "state": "Pending L3 Approval",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": true,
+      "acl": {
+        "roles": [],
+        "users": []
+      }
+    },
+    {
+      "state": "Approved",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": false,
+      "acl": {
+        "roles": ["System Manager"],
+        "users": []
+      }
+    },
+    {
+      "state": "Rejected",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": false,
+      "acl": {
+        "roles": ["System Manager"],
+        "users": []
+      }
+    },
+    {
+      "state": "Partially Approved",
+      "doc_status": 1,
+      "allow_edit": "",
+      "backflow_allowed": true,
+      "acl": {
+        "roles": [],
+        "users": []
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "action": "Submit",
+      "allow_self_approval": 0,
+      "allowed": "All",
+      "state": "Draft",
+      "next_state": "Pending L1 Approval",
+      "condition": "any(getattr(line, 'line_status') in ('Pending L1', 'Pending L2', 'Pending L3') for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 0
+    },
+    {
+      "action": "Submit",
+      "allow_self_approval": 0,
+      "allowed": "All",
+      "state": "Draft",
+      "next_state": "Approved",
+      "condition": "all(getattr(line, 'line_status') == 'Approved' for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 0
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L1 Approval",
+      "next_state": "Pending L1 Approval",
+      "condition": "doc.get('status') == 'Pending Approval'",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L1 Approval",
+      "next_state": "Pending L2 Approval",
+      "condition": "any(getattr(line, 'line_status') == 'Pending L2' for line in doc.get('internal_charge_lines') or []) and not any(getattr(line, 'line_status') in ('Pending L1', 'Pending L3') for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L2 Approval",
+      "next_state": "Pending L2 Approval",
+      "condition": "doc.get('status') == 'Pending Approval' and any(getattr(line, 'line_status') == 'Pending L2' for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L2 Approval",
+      "next_state": "Pending L3 Approval",
+      "condition": "any(getattr(line, 'line_status') == 'Pending L3' for line in doc.get('internal_charge_lines') or []) and not any(getattr(line, 'line_status') in ('Pending L1', 'Pending L2') for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L3 Approval",
+      "next_state": "Pending L3 Approval",
+      "condition": "doc.get('status') == 'Pending Approval' and any(getattr(line, 'line_status') == 'Pending L3' for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L3 Approval",
+      "next_state": "Approved",
+      "condition": "all(getattr(line, 'line_status') == 'Approved' for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L1 Approval",
+      "next_state": "Partially Approved",
+      "condition": "doc.get('status') == 'Partially Approved'",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L2 Approval",
+      "next_state": "Partially Approved",
+      "condition": "doc.get('status') == 'Partially Approved'",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Pending L3 Approval",
+      "next_state": "Partially Approved",
+      "condition": "doc.get('status') == 'Partially Approved'",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Partially Approved",
+      "next_state": "Partially Approved",
+      "condition": "doc.get('status') == 'Partially Approved'",
+      "doc_status": 1
+    },
+    {
+      "action": "Approve",
+      "allowed": "All",
+      "state": "Partially Approved",
+      "next_state": "Approved",
+      "condition": "all(getattr(line, 'line_status') == 'Approved' for line in doc.get('internal_charge_lines') or [])",
+      "doc_status": 1
+    },
+    {
+      "action": "Reject",
+      "allowed": "All",
+      "state": "Pending L1 Approval",
+      "next_state": "Rejected",
+      "doc_status": 1
+    },
+    {
+      "action": "Reject",
+      "allowed": "All",
+      "state": "Pending L2 Approval",
+      "next_state": "Rejected",
+      "doc_status": 1
+    },
+    {
+      "action": "Reject",
+      "allowed": "All",
+      "state": "Pending L3 Approval",
+      "next_state": "Rejected",
+      "doc_status": 1
+    },
+    {
+      "action": "Reject",
+      "allowed": "All",
+      "state": "Partially Approved",
+      "next_state": "Rejected",
+      "doc_status": 1
+    }
+  ],
+  "workflow_state_field": "workflow_state"
+}

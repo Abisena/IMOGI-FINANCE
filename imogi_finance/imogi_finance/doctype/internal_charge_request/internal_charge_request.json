@@ -18,7 +18,11 @@
     "total_amount",
     "allocation_mode",
     "internal_charge_lines",
-    "status"
+    "status",
+    "workflow_state",
+    "current_approval_level",
+    "approved_by",
+    "approved_on"
   ],
   "fields": [
     {
@@ -90,6 +94,35 @@
       "read_only": 1,
       "options": "Draft\nPending Approval\nPartially Approved\nApproved\nRejected",
       "default": "Draft"
+    },
+    {
+      "fieldname": "workflow_state",
+      "label": "Workflow State",
+      "fieldtype": "Select",
+      "read_only": 1,
+      "options": "Draft\nPending L1 Approval\nPending L2 Approval\nPending L3 Approval\nApproved\nRejected\nPartially Approved"
+    },
+    {
+      "fieldname": "current_approval_level",
+      "label": "Current Approval Level",
+      "fieldtype": "Int",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "approved_by",
+      "label": "Approved By",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "approved_on",
+      "label": "Approved On",
+      "fieldtype": "DateTime",
+      "read_only": 1,
+      "hidden": 1
     }
   ],
   "permissions": [

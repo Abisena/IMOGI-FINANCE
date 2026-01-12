@@ -39,15 +39,41 @@ class InternalChargeRequest(Document):
 
         self._populate_line_routes()
         self._sync_status()
+        self._sync_workflow_state()
 
     def before_workflow_action(self, action, **kwargs):
+        """Gate workflow transitions by cost-centre-based approval routes.
+        
+        Each internal_charge_line targets a different cost_center with its own approval route.
+        Permission enforcement happens per-line based on current user's roles and the 
+        dynamically resolved approval route for that cost_center.
+        """
         settings = utils.get_settings()
         if not settings.get("enable_internal_charge"):
+            return
+
+        if action == "Submit":
+            self._validate_submit_permission()
             return
 
         if action != "Approve":
             return
 
+        # Validate Approve action - similar to ExpenseRequest pattern
+        self._validate_approve_permission()
+
+    def _validate_submit_permission(self):
+        """Validate user can submit Internal Charge Request."""
+        # Any user can submit as long as document is in Draft state
+        # Actual approver enforcement happens on first Approve action
+        pass
+
+    def _validate_approve_permission(self):
+        """Validate user can approve pending lines based on cost-centre routes.
+        
+        Enforces that current user matches the expected approver (role or user) 
+        at the current approval level for each approvable line's target cost_center.
+        """
         approvable_lines = []
         session_user = getattr(getattr(frappe, "session", None), "user", None)
         session_roles = set(frappe.get_roles())
@@ -65,16 +91,25 @@ class InternalChargeRequest(Document):
 
             role_allowed = not expected_role or expected_role in session_roles
             user_allowed = not expected_user or expected_user == session_user
+            
             if role_allowed and user_allowed:
                 approvable_lines.append(line)
 
         if not approvable_lines:
-            frappe.throw(_("You are not authorized to approve any pending lines."))
+            cost_centers = {getattr(line, "target_cost_center") for line in getattr(self, "internal_charge_lines", []) or []}
+            frappe.throw(
+                _("You are not authorized to approve pending lines. Required cost centers: {0}").format(
+                    ", ".join(cost_centers)
+                )
+            )
 
+        # Apply approval advancement to approvable lines
         for line in approvable_lines:
             _advance_line_status(line, session_user=session_user)
 
         self._sync_status()
+        self._sync_workflow_state()
+        
         if self.status == "Approved":
             self.approved_by = session_user
             self.approved_on = frappe.utils.now_datetime()
@@ -161,6 +196,49 @@ class InternalChargeRequest(Document):
             self.status = "Pending Approval"
         else:
             self.status = "Partially Approved"
+
+    def _sync_workflow_state(self):
+        """Sync workflow_state based on current status and line statuses.
+        
+        Maps line approval levels to document workflow states for proper
+        workflow state management alongside the line-based approval tracking.
+        """
+        if not getattr(self, "status", None):
+            self.workflow_state = "Draft"
+            return
+
+        status = self.status
+        lines = getattr(self, "internal_charge_lines", []) or []
+        
+        # Map status to workflow states
+        if status == "Approved":
+            self.workflow_state = "Approved"
+        elif status == "Rejected":
+            self.workflow_state = "Rejected"
+        elif status == "Pending Approval":
+            # Determine which level is pending
+            pending_levels = set()
+            for line in lines:
+                line_status = getattr(line, "line_status", None)
+                if line_status == "Pending L1":
+                    pending_levels.add(1)
+                elif line_status == "Pending L2":
+                    pending_levels.add(2)
+                elif line_status == "Pending L3":
+                    pending_levels.add(3)
+            
+            if 3 in pending_levels:
+                self.workflow_state = "Pending L3 Approval"
+            elif 2 in pending_levels:
+                self.workflow_state = "Pending L2 Approval"
+            elif 1 in pending_levels:
+                self.workflow_state = "Pending L1 Approval"
+            else:
+                self.workflow_state = "Draft"
+        elif status == "Partially Approved":
+            self.workflow_state = "Partially Approved"
+        else:
+            self.workflow_state = "Draft"
 
 
 def _advance_line_status(line, *, session_user=None):
