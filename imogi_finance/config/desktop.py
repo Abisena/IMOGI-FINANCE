@@ -74,9 +74,9 @@ def get_data():
                 },
                 {
                     "type": "doctype",
-                    "name": "Coretax Export Settings",
-                    "label": "Coretax Export Settings",
-                    "description": "Configure export templates for Coretax/e-Faktur files.",
+                    "name": "CoreTax Export Settings",
+                    "label": "CoreTax Export Settings",
+                    "description": "Configure export templates for CoreTax/e-Faktur files.",
                 },
                 {
                     "type": "doctype",
