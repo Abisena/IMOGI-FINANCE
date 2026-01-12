@@ -354,8 +354,7 @@ def check_expense_request_route(
             "ok": False,
             "route": route,
             "message": approval_setting_required_message(cost_center),
-            "auto_approve": False,
         }
 
-    return {"ok": True, "route": route, "auto_approve": False}
+    return {"ok": True, "route": route}
 

@@ -378,21 +378,16 @@ frappe.ui.form.on('Expense Request', {
               .join('');
 
             let messageContent = rows
-                ? `<ul>${rows}</ul>`
+              ? `<ul>${rows}</ul>`
               : __('No approver configured for the current route.');
 
-            // Show auto-approve notice if applicable
-            if (message.auto_approve) {
-              messageContent = __('No approval required. Request will be auto-approved.');
-          }
-
-          frappe.msgprint({
-            title: __('Approval Route'),
+            frappe.msgprint({
+              title: __('Approval Route'),
               message: messageContent,
               indicator: 'green',
-          });
-      return;
-    }
+            });
+            return;
+          }
 
           // Handle validation errors (including invalid users)
           let indicator = 'orange';
