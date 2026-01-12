@@ -59,17 +59,7 @@
       "state": "Draft",
       "next_state": "Pending Review",
       "allowed": "All",
-      "allow_self_approval": 0,
-      "condition": "frappe.db.exists('Expense Approval Setting', {'cost_center': doc.cost_center, 'is_active': 1})"
-    },
-    {
-      "doctype": "Workflow Transition",
-      "action": "Submit",
-      "state": "Draft",
-      "next_state": "Approved",
-      "allowed": "All",
-      "allow_self_approval": 1,
-      "condition": "not frappe.db.exists('Expense Approval Setting', {'cost_center': doc.cost_center, 'is_active': 1})"
+      "allow_self_approval": 0
     },
     {
       "doctype": "Workflow Transition",
@@ -120,7 +110,7 @@
       "next_state": "Paid",
       "allowed": "Accounts Manager",
       "allow_self_approval": 0,
-      "condition": "doc.purchase_invoice and frappe.db.get_value('Purchase Invoice', doc.purchase_invoice, 'docstatus') == 1"
+      "condition": "doc.get('linked_purchase_invoice') and frappe.db.get_value('Purchase Invoice', doc.get('linked_purchase_invoice'), 'docstatus') == 1"
     },
     {
       "doctype": "Workflow Transition",
