@@ -11,6 +11,7 @@ class ExpenseApprovalLine(Document):
 
     def validate(self):
         self.validate_level_amounts()
+        self.validate_default_vs_account()
 
     def validate_level_amounts(self):
         """Validate level-specific amount ranges."""
@@ -33,3 +34,23 @@ class ExpenseApprovalLine(Document):
                 frappe.throw(
                     _("Level {0} Min Amount cannot exceed Max Amount.").format(level)
                 )
+
+    def validate_default_vs_account(self):
+        """Ensure default (Apply to All) lines do not specify an Expense Account.
+
+        Business rule:
+        - Default lines (is_default = 1 / Apply to All Accounts) are global fallbacks
+          and must NOT bind to a specific Expense Account.
+        - Account-specific rules should use is_default = 0 with Expense Account filled.
+        """
+
+        is_default = getattr(self, "is_default", 0)
+        expense_account = getattr(self, "expense_account", None)
+
+        if is_default and expense_account:
+            frappe.throw(
+                _(
+                    "Default approval line (Apply to All Accounts) cannot specify an Expense Account. "
+                    "Please either clear the Expense Account or uncheck Apply to All Accounts."
+                )
+            )
