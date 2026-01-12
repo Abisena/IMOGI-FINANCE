@@ -10,6 +10,36 @@ Membuat Internal Charge Request approval flow yang mirip dengan Expense Request 
 
 ---
 
+## ⚠️ The Problem
+
+**Internal Charge Request** sebelumnya **tidak memiliki approval flow yang konsisten** dengan Expense Request padahal struktur bisnisnya mirip (both cost-centre based):
+
+| Aspek | Expense Request | Internal Charge (Before) |
+|-------|-----------------|------------------------|
+| **Workflow States** | ✅ Draft → Pending Review → Approved | ❌ Hanya status field, no workflows |
+| **Route Resolution** | ✅ By cost center | ✅ Per-line, by target cost center |
+| **Approval Enforcement** | ✅ Workflow enforcement | ❌ Only before_action hook, no transitions |
+| **Multi-Cost-Center Support** | N/A | ❌ Routes ada tapi enforcement tidak |
+| **Audit Trail** | ✅ Workflow state history | ❌ No workflow state tracking |
+
+**Dampak:**
+- Approval logic tidak isolated per cost-center
+- Status berubah tanpa proper workflow transitions
+- Inconsistent dengan Expense Request pattern
+- Sulit untuk audit history
+
+---
+
+## ✅ The Solution
+
+**Buat dedicated workflow JSON** (seperti Expense Request) dengan:
+- Proper workflow states (Draft, Pending L1/L2/L3 Approval, Partially Approved, Approved, Rejected)
+- Per-line cost-centre-aware approval enforcement
+- Workflow state tracking untuk audit trail
+- Level advancement berbasis configuration
+
+---
+
 ## ✅ Implementation Completed
 
 ### Phase 1: Analysis ✅

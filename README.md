@@ -2,6 +2,8 @@
 
 App for managing expenses at IMOGI.
 
+> **📖 For detailed documentation, see [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) and [00_START_HERE.md](00_START_HERE.md)**
+
 ### Key Features
 
 #### Expense Request & Approvals

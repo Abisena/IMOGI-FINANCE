@@ -1,54 +1,86 @@
-# 📚 Refactoring Complete: Documentation Hub
+# 📚 Imogi Finance: Documentation Hub
 
-Welcome! Refactoring Expense Request ke modular, scalable, native-first architecture sudah **SELESAI** dan **READY TO DEPLOY**.
+Welcome! Dokumentasi telah dibersihkan dan dikonsolidasikan. 
 
-## 🎯 Start Here (Choose Your Role)
+**Refactoring Expense Request** ke modular, scalable, native-first architecture sudah **SELESAI** ✅  
+**Internal Charge Request** workflow sudah di-upgrade dengan proper approval states ✅  
+**Workflow "Create PI"** fix sudah siap deploy ✅
+
+---
+
+## 🎯 Choose Your Role
 
 ### 👔 Decision Maker / Manager
-> "Should we do this refactoring?"
+> "Apa yang berubah? Apa manfaatnya?"
 
-**Read**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md) (5 min)  
-**Then**: [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) (10 min)  
-**Result**: Understand business value, risks, timeline  
+**Read**: 
+- [00_START_HERE.md](00_START_HERE.md) (this file, 5 min) - untuk understand business value
+- [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) → Overview section (5 min)
+
+**Result**: Memahami value, risks, timeline  
 **Decision**: ✅ Go / ❌ No Go
 
-### 💻 Developer / Tech Lead  
-> "What changed? How does it work?"
+---
 
-**Read**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md) (5 min)  
-**Then**: [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) (15 min)  
-**Then**: [REFACTORED_ARCHITECTURE.md](REFACTORED_ARCHITECTURE.md) (30 min)  
-**Code Review**: `approval_service.py` + `expense_request_refactored.py` (30 min)  
+### 💻 Developer / Tech Lead  
+> "Apa yang berubah di code? Bagaimana cara kerjanya?"
+
+**Read**: 
+1. [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) (15 min) - High-level overview
+2. [REFACTORED_ARCHITECTURE.md](REFACTORED_ARCHITECTURE.md) (30 min) - Detailed design
+3. [INTERNAL_CHARGE_IMPLEMENTATION_SUMMARY.md](INTERNAL_CHARGE_IMPLEMENTATION_SUMMARY.md) (15 min) - IC workflow
+4. Code review: `imogi_finance/services/approval_service.py` (30 min)
+
 **Result**: Full technical understanding  
 
-### 🧪 QA / Test Engineer
-> "How do I test this?"
+---
 
-**Read**: [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) → Step 3 (20 min)  
-**Then**: [REFACTORED_ARCHITECTURE.md](REFACTORED_ARCHITECTURE.md) → Testing Checklist (15 min)  
-**Run**: `pytest imogi_finance/tests/test_approval_service.py -v` (10 min)  
-**Manual Testing**: Follow checklist (30 min)  
-**Result**: Comprehensive test coverage
+### 🧪 QA / Test Engineer
+> "Bagaimana cara test ini?"
+
+**Read**: 
+1. [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) → Testing section (20 min)
+2. [REFACTORED_ARCHITECTURE.md](REFACTORED_ARCHITECTURE.md) → Testing Checklist (15 min)
+
+**Run Tests**:
+```bash
+pytest imogi_finance/tests/test_approval_service.py -v
+pytest imogi_finance/tests/test_internal_charge_workflow.py -v
+```
+
+**Result**: Comprehensive test coverage + confidence untuk deploy
+
+---
 
 ### 🚀 DevOps / Deployment  
-> "How do I deploy this?"
+> "Bagaimana cara deploy ini?"
 
-**Read**: [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) → Step 4 (15 min)  
-**Then**: [DEPLOYMENT_CHECKLIST_MODULAR.md](DEPLOYMENT_CHECKLIST_MODULAR.md) (20 min)  
+**Read**: 
+1. [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) → Deployment section (20 min)
+2. [DEPLOYMENT_CHECKLIST_MODULAR.md](DEPLOYMENT_CHECKLIST_MODULAR.md) (30 min)
+
 **Execute**: Follow step-by-step checklist (1 hour deployment)  
-**Monitor**: First 24 hours (watch logs)  
+**Monitor**: Watch logs first 24 hours  
 **Result**: Production ready
 
 ---
 
-## 📋 All Documentation Files
+## 📖 For Complete Documentation Structure
 
-### Quick Reference
+→ See [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) for complete mapping of all docs, features, and reading paths.
+
+---
+
+## 📋 Core Documents
+
 | File | Purpose | Time | Audience |
 |------|---------|------|----------|
-| [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | TL;DR overview + decision tree | 5 min | Everyone |
-| [REFACTORING_COMPLETE.md](REFACTORING_COMPLETE.md) | What's been done (this view) | 10 min | Decision makers |
-| [REFACTORING_INDEX.md](REFACTORING_INDEX.md) | Navigation guide + learning path | 5 min | Everyone |
+| [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) | 📍 Master navigation | 5 min | Everyone |
+| [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) | How-to + checklist | 30 min | Dev + QA + DevOps |
+| [REFACTORED_ARCHITECTURE.md](REFACTORED_ARCHITECTURE.md) | Technical design | 1 hour | Tech Lead + Architects |
+| [INTERNAL_CHARGE_IMPLEMENTATION_SUMMARY.md](INTERNAL_CHARGE_IMPLEMENTATION_SUMMARY.md) | IC workflow complete | 20 min | Developers |
+| [DEPLOYMENT_CHECKLIST_MODULAR.md](DEPLOYMENT_CHECKLIST_MODULAR.md) | Deploy checklist | 1 hour | DevOps |
+| [QUICK_FIX_WORKFLOW_CREATE_PI.md](QUICK_FIX_WORKFLOW_CREATE_PI.md) | Workflow fix quick ref | 5 min | Everyone |
 
 ### Detailed Guides
 | File | Purpose | Time | Audience |
