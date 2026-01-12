@@ -110,16 +110,22 @@ def _get_route_for_account(setting_name: str, account: str, amount: float) -> di
         if not user:
             continue
 
-        # Skip if amount range not configured
-        if min_amount is None or max_amount is None:
+        # Skip if min_amount not configured (required field)
+        if min_amount is None:
             continue
 
         min_amount = flt(min_amount)
-        max_amount = flt(max_amount)
-
-        # Check if amount falls within this level's range
-        if min_amount <= amount <= max_amount:
-            route[f"level_{level}"] = {"user": user}
+        
+        # max_amount is optional - if None/0, treat as unlimited
+        if max_amount is not None and flt(max_amount) > 0:
+            max_amount = flt(max_amount)
+            # Check if amount falls within this level's range
+            if min_amount <= amount <= max_amount:
+                route[f"level_{level}"] = {"user": user}
+        else:
+            # No max limit - only check min
+            if amount >= min_amount:
+                route[f"level_{level}"] = {"user": user}
 
     return route
 

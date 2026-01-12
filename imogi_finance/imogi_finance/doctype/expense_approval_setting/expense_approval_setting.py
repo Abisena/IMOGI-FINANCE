@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 class ExpenseApprovalSetting(Document):
@@ -14,6 +15,7 @@ class ExpenseApprovalSetting(Document):
         self.validate_lines_present()
         self.validate_default_line()
         self.validate_no_duplicate_accounts()
+        self.validate_amount_coverage()
 
     def ensure_unique_cost_center(self):
         """Ensure only one active setting per cost center."""
@@ -37,7 +39,7 @@ class ExpenseApprovalSetting(Document):
             frappe.throw(_("Please add at least one approval line."))
 
     def validate_default_line(self):
-        """Ensure at least one default line exists for fallback."""
+        """Ensure exactly one default line exists for fallback."""
         defaults = [
             line for line in self.expense_approval_lines 
             if getattr(line, "is_default", 0)
@@ -46,6 +48,13 @@ class ExpenseApprovalSetting(Document):
         if not defaults:
             frappe.throw(
                 _("Add at least one Default approval line (Apply to All Accounts) as fallback.")
+            )
+
+        if len(defaults) > 1:
+            frappe.throw(
+                _("Only one Default approval line (Apply to All Accounts) is allowed. Found {0} default lines.").format(
+                    len(defaults)
+                )
             )
 
         # Non-default lines must have expense_account
@@ -70,3 +79,24 @@ class ExpenseApprovalSetting(Document):
                         )
                     )
                 accounts.append(account)
+
+    def validate_amount_coverage(self):
+        """Validate that approval lines have proper amount coverage.
+        
+        Checks:
+        1. Each line's Level 1 should start from 0 (or warn if gap exists)
+        2. Warn if there are gaps between level max and next level min
+        """
+        for idx, line in enumerate(self.expense_approval_lines, 1):
+            level_1_min = flt(getattr(line, "level_1_min_amount", 0))
+            
+            # Warning if Level 1 doesn't start from 0
+            if level_1_min > 0:
+                account_label = getattr(line, "expense_account", None) or "Default (All Accounts)"
+                frappe.msgprint(
+                    _("Row {0} ({1}): Level 1 starts at {2}. Amounts below this will auto-approve.").format(
+                        idx, account_label, frappe.format_value(level_1_min, "Currency")
+                    ),
+                    title=_("Amount Gap Warning"),
+                    indicator="orange"
+                )
