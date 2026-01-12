@@ -189,9 +189,15 @@ class ApprovalService:
 
     def _has_approver(self, route: dict | None) -> bool:
         """Check if route has at least one approver."""
-        if not route:
-            return False
-        return any(route.get(f"level_{level}", {}).get("user") for level in (1, 2, 3))
+        # Import here to avoid circular dependency
+        try:
+            from imogi_finance.approval import has_approver_in_route
+            return has_approver_in_route(route)
+        except ImportError:
+            # Fallback for testing or edge cases
+            if not route:
+                return False
+            return any(route.get(f"level_{level}", {}).get("user") for level in (1, 2, 3))
 
     def _get_initial_level(self, route: dict | None) -> int:
         """Get first configured approval level."""
@@ -256,17 +262,16 @@ class ApprovalService:
 
     def _get_route_snapshot(self, doc: Document) -> dict:
         """Get stored approval route from document."""
-        snapshot = getattr(doc, "approval_route_snapshot", None)
-        if isinstance(snapshot, str):
-            try:
-                import json
-                snapshot = json.loads(snapshot)
-            except Exception:
-                snapshot = None
+        try:
+            from imogi_finance.approval import parse_route_snapshot
+            snapshot = getattr(doc, "approval_route_snapshot", None)
+            parsed = parse_route_snapshot(snapshot)
+            if parsed:
+                return parsed
+        except ImportError:
+            pass
 
-        if snapshot:
-            return snapshot
-
+        # Fallback: build from document fields
         return {
             f"level_{level}": {"user": doc.get(self.level_field_prefix.format(level=level))}
             for level in (1, 2, 3)

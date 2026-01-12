@@ -361,37 +361,55 @@ class ExpenseRequest(Document):
 
     def validate_route_users_exist(self, route: dict | None = None) -> None:
         """Ensure all route users exist and are enabled."""
+        from imogi_finance.approval import validate_route_users
+
         route = route or self._get_route_snapshot()
         if not route:
             return
 
-        invalid = []
-        for level in (1, 2, 3):
-            user = route.get(f"level_{level}", {}).get("user")
-            if not user:
-                continue
-            if not frappe.db.exists("User", user):
-                invalid.append(f"Level {level}: {user} not found")
-                continue
-            if not frappe.db.get_value("User", user, "enabled"):
-                invalid.append(f"Level {level}: {user} disabled")
+        validation = validate_route_users(route)
+        if validation.get("valid"):
+            return
 
-        if invalid:
-            frappe.throw(_("Invalid approvers: {0}. Update Expense Approval Setting.").format("; ".join(invalid)))
+        error_parts: list[str] = []
+
+        invalid_users = validation.get("invalid_users") or []
+        if invalid_users:
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u.get("level"), user=u.get("user"))
+                for u in invalid_users
+            )
+            error_parts.append(_("Users not found: {0}").format(user_list))
+
+        disabled_users = validation.get("disabled_users") or []
+        if disabled_users:
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u.get("level"), user=u.get("user"))
+                for u in disabled_users
+            )
+            error_parts.append(_("Users disabled: {0}").format(user_list))
+
+        if error_parts:
+            frappe.throw(
+                _("Invalid approvers: {0}. Update Expense Approval Setting.").format("; ".join(error_parts))
+            )
 
     def _get_route_snapshot(self) -> dict:
         """Get stored approval route."""
+        from imogi_finance.approval import parse_route_snapshot
+        
         snapshot = getattr(self, "approval_route_snapshot", None)
-        if isinstance(snapshot, str):
-            try:
-                snapshot = json.loads(snapshot)
-            except Exception:
-                snapshot = None
-        return snapshot or {f"level_{l}": {"user": getattr(self, f"level_{l}_user", None)} for l in (1, 2, 3)}
+        parsed = parse_route_snapshot(snapshot)
+        if parsed:
+            return parsed
+        
+        # Fallback: build from level_*_user fields
+        return {f"level_{l}": {"user": getattr(self, f"level_{l}_user", None)} for l in (1, 2, 3)}
 
     def _has_approver(self, route: dict | None) -> bool:
         """Check if route has at least one approver."""
-        return bool(route and any(route.get(f"level_{l}", {}).get("user") for l in (1, 2, 3)))
+        from imogi_finance.approval import has_approver_in_route
+        return has_approver_in_route(route)
 
     # ===================== Utility =====================
 

@@ -235,6 +235,37 @@ def validate_route_users(route: dict) -> dict:
     }
 
 
+def has_approver_in_route(route: dict | None) -> bool:
+    """Check if route has at least one approver.
+    
+    Shared helper to avoid duplication across doctypes and services.
+    """
+    if not route:
+        return False
+    return any(route.get(f"level_{level}", {}).get("user") for level in (1, 2, 3))
+
+
+def parse_route_snapshot(snapshot: str | dict | None) -> dict:
+    """Parse approval route snapshot from string or dict.
+    
+    Shared helper to avoid duplication across doctypes and services.
+    Returns dict with level_1/2/3 structure.
+    """
+    if isinstance(snapshot, dict):
+        return snapshot
+    
+    if isinstance(snapshot, str):
+        try:
+            import json
+            parsed = json.loads(snapshot)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    
+    return {}
+
+
 @frappe.whitelist()
 def check_branch_expense_request_route(
     branch: str,
@@ -301,13 +332,7 @@ def check_branch_expense_request_route(
         }
 
     # Check if route has any approvers
-    has_approvers = any([
-        route.get("level_1", {}).get("user"),
-        route.get("level_2", {}).get("user"),
-        route.get("level_3", {}).get("user"),
-    ])
-    
-    if not has_approvers:
+    if not has_approver_in_route(route):
         return {
             "ok": True,
             "route": route,

@@ -620,39 +620,36 @@ class BranchExpenseRequest(Document):
 
     def validate_route_users_exist(self, route: dict | None = None):
         """Validate approval route users still exist and are enabled."""
+        from imogi_finance.branch_approval import validate_route_users
+
         route = route or self.get_route_snapshot()
         if not route:
             return
 
-        invalid_users = []
-        disabled_users = []
+        validation = validate_route_users(route)
+        if validation.get("valid"):
+            return
 
-        for level in (1, 2, 3):
-            level_data = route.get(f"level_{level}", {}) if isinstance(route, dict) else {}
-            user = level_data.get("user")
+        error_parts: list[str] = []
 
-            if not user:
-                continue
+        invalid_users = validation.get("invalid_users") or []
+        if invalid_users:
+            self._log_invalid_route_users(invalid_users, validation.get("disabled_users") or [])
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u.get("level"), user=u.get("user"))
+                for u in invalid_users
+            )
+            error_parts.append(_("Users not found: {0}").format(user_list))
 
-            user_doc = frappe.db.get_value("User", user, ["enabled"], as_dict=True)
+        disabled_users = validation.get("disabled_users") or []
+        if disabled_users:
+            user_list = ", ".join(
+                _("Level {level}: {user}").format(level=u.get("level"), user=u.get("user"))
+                for u in disabled_users
+            )
+            error_parts.append(_("Users disabled: {0}").format(user_list))
 
-            if not user_doc:
-                invalid_users.append({"level": level, "user": user})
-                continue
-
-            if not user_doc.get("enabled"):
-                disabled_users.append({"level": level, "user": user})
-
-        if invalid_users or disabled_users:
-            self._log_invalid_route_users(invalid_users, disabled_users)
-            error_parts = []
-            if invalid_users:
-                users = ", ".join(u["user"] for u in invalid_users)
-                error_parts.append(_("Users not found: {0}").format(users))
-            if disabled_users:
-                users = ", ".join(u["user"] for u in disabled_users)
-                error_parts.append(_("Users disabled: {0}").format(users))
-
+        if error_parts:
             frappe.throw(
                 _("; ").join(error_parts) + ". " + _("Please update the Branch Expense Approval Setting."),
                 title=_("Invalid Approvers"),
@@ -684,13 +681,14 @@ class BranchExpenseRequest(Document):
 
     def get_route_snapshot(self) -> dict | None:
         """Get approval route snapshot."""
+        from imogi_finance.branch_approval import parse_route_snapshot
+        
         snapshot = getattr(self, "approval_route_snapshot", None)
         if not snapshot:
             return None
-        try:
-            return json.loads(snapshot)
-        except Exception:
-            return None
+        
+        parsed = parse_route_snapshot(snapshot)
+        return parsed if parsed else None
 
     def _get_expense_accounts(self) -> tuple[str, ...]:
         """Get expense accounts from items."""
