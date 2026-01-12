@@ -104,7 +104,7 @@ before_install = "imogi_finance.install.before_install"
 after_install = "imogi_finance.utils.ensure_coretax_export_doctypes"
 
 # Migration safeguards
-before_migrate = "imogi_finance.fixtures.sanitize_fixture_files"
+# (see consolidated before_migrate hook near the bottom of this file)
 
 fixtures = [
     {"doctype": "Custom Field", "filters": {"module": "Imogi Finance"}},
@@ -272,7 +272,12 @@ scheduler_events = {
 
 # before_tests = "imogi_finance.install.before_tests"
 
-before_migrate = "imogi_finance.utils.ensure_coretax_export_doctypes"
+# Run fixture sanitization first to avoid malformed rows during migrate,
+# then ensure Coretax export doctypes are present.
+before_migrate = [
+    "imogi_finance.fixtures.sanitize_fixture_files",
+    "imogi_finance.utils.ensure_coretax_export_doctypes",
+]
 after_migrate = "imogi_finance.utils.ensure_coretax_export_doctypes"
 
 # Overriding Methods
