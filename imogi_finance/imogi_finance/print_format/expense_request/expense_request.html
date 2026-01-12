@@ -1,0 +1,551 @@
+<style>
+	@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  
+	* {
+		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	}
+  
+	body {
+		background: #fafafa;
+	}
+  
+	.modern-container {
+		max-width: 1200px;
+		margin: 0 auto;
+		padding: 40px;
+		background: #ffffff;
+	}
+  
+	.modern-header {
+		background: #1a1a1a;
+		color: white;
+		padding: 40px 48px;
+		margin-bottom: 40px;
+		border-bottom: 3px solid #333333;
+	}
+  
+	.modern-header h1 {
+		font-size: 24px;
+		font-weight: 600;
+		margin: 0 0 12px 0;
+		letter-spacing: 0.5px;
+		text-transform: uppercase;
+		color: #ffffff;
+	}
+  
+	.modern-header .doc-id {
+		font-size: 15px;
+		font-weight: 400;
+		color: #d1d5db;
+		letter-spacing: 0.3px;
+	}
+  
+	.status-badge {
+		display: inline-block;
+		padding: 6px 18px;
+		margin-top: 14px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		border-radius: 3px;
+	}
+  
+	.status-draft { background: #f5f5f5; color: #424242; border: 1px solid #d0d0d0; }
+	.status-pending { background: #f5f5f5; color: #616161; border: 1px solid #d0d0d0; }
+	.status-approved { background: #2d2d2d; color: #ffffff; border: 1px solid #1a1a1a; }
+	.status-rejected { background: #f5f5f5; color: #757575; border: 1px solid #d0d0d0; }
+	.status-cancelled { background: #f5f5f5; color: #9e9e9e; border: 1px solid #d0d0d0; }
+  
+	.info-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 24px;
+		margin-bottom: 40px;
+	}
+  
+	.info-card {
+		background: #fafafa;
+		padding: 28px;
+		border-left: 3px solid #333333;
+	}
+  
+	.info-card h3 {
+		font-size: 11px;
+		color: #1a1a1a;
+		font-weight: 700;
+		margin: 0 0 20px 0;
+		text-transform: uppercase;
+		letter-spacing: 1.2px;
+	}
+  
+	.info-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 10px 0;
+		border-bottom: 1px solid #e5e5e5;
+		align-items: baseline;
+	}
+  
+	.info-row:last-child {
+		border-bottom: none;
+	}
+  
+	.info-label {
+		color: #737373;
+		font-size: 13px;
+		font-weight: 400;
+	}
+  
+	.info-value {
+		color: #1a1a1a;
+		font-size: 13px;
+		font-weight: 600;
+		text-align: right;
+	}
+  
+	.purpose-section {
+		background: #fafafa;
+		padding: 28px;
+		border-left: 3px solid #525252;
+		margin-bottom: 40px;
+	}
+  
+	.purpose-section h3 {
+		font-size: 11px;
+		color: #1a1a1a;
+		font-weight: 700;
+		margin: 0 0 14px 0;
+		text-transform: uppercase;
+		letter-spacing: 1.2px;
+	}
+  
+	.purpose-section p {
+		margin: 0;
+		color: #404040;
+		line-height: 1.7;
+		font-size: 14px;
+		font-weight: 400;
+	}
+  
+	.modern-table {
+		width: 100%;
+		border-collapse: collapse;
+		margin-bottom: 40px;
+		border: 1px solid #e5e5e5;
+	}
+  
+	.modern-table thead {
+		background: #1a1a1a;
+		color: white;
+	}
+  
+	.modern-table thead th {
+		padding: 16px 14px;
+		text-align: left;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		border-bottom: 2px solid #333333;
+	}
+  
+	.modern-table thead th.text-right {
+		text-align: right;
+	}
+  
+	.modern-table tbody tr {
+		border-bottom: 1px solid #e5e5e5;
+	}
+  
+	.modern-table tbody tr:last-child {
+		border-bottom: none;
+	}
+  
+	.modern-table tbody tr:nth-child(even) {
+		background: #fafafa;
+	}
+  
+	.modern-table tbody td {
+		padding: 14px 14px;
+		font-size: 13px;
+		color: #404040;
+		font-weight: 400;
+	}
+  
+	.modern-table tbody td.text-right {
+		text-align: right;
+		font-weight: 500;
+		color: #1a1a1a;
+	}
+  
+	.modern-table tfoot {
+		background: #f5f5f5;
+		border-top: 2px solid #333333;
+	}
+  
+	.modern-table tfoot th {
+		padding: 18px 14px;
+		font-size: 13px;
+		color: #1a1a1a;
+		font-weight: 700;
+	}
+  
+	.modern-table tfoot th.text-right {
+		text-align: right;
+	}
+  
+	.detail-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 24px;
+		margin-bottom: 20px;
+	}
+  
+	.detail-card {
+		background: #fafafa;
+		padding: 28px;
+		border-left: 3px solid #525252;
+	}
+  
+	.detail-card h3 {
+		font-size: 11px;
+		color: #1a1a1a;
+		font-weight: 700;
+		margin: 0 0 20px 0;
+		text-transform: uppercase;
+		letter-spacing: 1.2px;
+		padding-bottom: 14px;
+		border-bottom: 1px solid #d4d4d4;
+	}
+  
+	.detail-item {
+		margin-bottom: 14px;
+		font-size: 13px;
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+	}
+  
+	.detail-item:last-child {
+		margin-bottom: 0;
+	}
+  
+	.detail-label {
+		color: #737373;
+		font-weight: 400;
+		flex-shrink: 0;
+		margin-right: 16px;
+	}
+  
+	.detail-value {
+		color: #1a1a1a;
+		font-weight: 600;
+		text-align: right;
+	}
+  
+	.badge-yes {
+		background: #2d2d2d;
+		color: #ffffff;
+		padding: 3px 10px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.5px;
+	}
+  
+	.badge-no {
+		background: #f5f5f5;
+		color: #737373;
+		padding: 3px 10px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.5px;
+		border: 1px solid #e5e5e5;
+	}
+  
+	.budget-ok { color: #2d2d2d; font-weight: 700; }
+	.budget-warning { color: #525252; font-weight: 700; }
+	.budget-over { color: #1a1a1a; font-weight: 700; }
+  
+	@media print {
+		body {
+			background: white;
+		}
+		.modern-container {
+			padding: 20px;
+		}
+		.modern-header {
+			background: #1a1a1a !important;
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+		}
+		.modern-table thead {
+			background: #1a1a1a !important;
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+		}
+		.status-approved {
+			background: #2d2d2d !important;
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+		}
+		.badge-yes {
+			background: #2d2d2d !important;
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+		}
+	}
+</style>
+
+<div class="modern-container">
+	<!-- Header -->
+	<div class="modern-header">
+		<h1>{{ _("Expense Request") }}</h1>
+		<div class="doc-id">{{ doc.name }}</div>
+		{% if doc.workflow_state %}
+		<span class="status-badge status-{{ (doc.workflow_state or '').lower().replace(' ', '-') }}">
+			{{ doc.workflow_state }}
+		</span>
+		{% endif %}
+	</div>
+
+	<!-- Main Info Grid -->
+	<div class="info-grid">
+		<div class="info-card">
+			<h3>Request Details</h3>
+			<div class="info-row">
+				<span class="info-label">{{ _("Request Type") }}</span>
+				<span class="info-value">{{ doc.request_type }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Request Date") }}</span>
+				<span class="info-value">{{ frappe.utils.formatdate(doc.request_date) }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Currency") }}</span>
+				<span class="info-value">{{ doc.currency }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Cost Center") }}</span>
+				<span class="info-value">{{ doc.cost_center }}</span>
+			</div>
+			{% if doc.project %}
+			<div class="info-row">
+				<span class="info-label">{{ _("Project") }}</span>
+				<span class="info-value">{{ doc.project }}</span>
+			</div>
+			{% endif %}
+			{% if doc.branch %}
+			<div class="info-row">
+				<span class="info-label">{{ _("Branch") }}</span>
+				<span class="info-value">{{ doc.branch }}</span>
+			</div>
+			{% endif %}
+		</div>
+    
+		<div class="info-card">
+			<h3>Supplier & Summary</h3>
+			<div class="info-row">
+				<span class="info-label">{{ _("Supplier") }}</span>
+				<span class="info-value">{{ doc.supplier }}</span>
+			</div>
+			{% if doc.supplier_invoice_no %}
+			<div class="info-row">
+				<span class="info-label">{{ _("Supplier Invoice No.") }}</span>
+				<span class="info-value">{{ doc.supplier_invoice_no }}</span>
+			</div>
+			{% endif %}
+			{% if doc.supplier_invoice_date %}
+			<div class="info-row">
+				<span class="info-label">{{ _("Invoice Date") }}</span>
+				<span class="info-value">{{ frappe.utils.formatdate(doc.supplier_invoice_date) }}</span>
+			</div>
+			{% endif %}
+			<div class="info-row">
+				<span class="info-label">{{ _("Total Expense") }}</span>
+				<span class="info-value">{{ frappe.utils.fmt_money(doc.total_expense or 0, currency=doc.currency) }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Total Asset") }}</span>
+				<span class="info-value">{{ frappe.utils.fmt_money(doc.total_asset or 0, currency=doc.currency) }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Total PPN") }}</span>
+				<span class="info-value">{{ frappe.utils.fmt_money(doc.total_ppn or 0, currency=doc.currency) }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Total PPh") }}</span>
+				<span class="info-value">{{ frappe.utils.fmt_money(doc.total_pph or 0, currency=doc.currency) }}</span>
+			</div>
+			<div class="info-row">
+				<span class="info-label">{{ _("Total") }}</span>
+				<span class="info-value">{{ frappe.utils.fmt_money(doc.total_amount or 0, currency=doc.currency) }}</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- Description / Notes -->
+	<div class="purpose-section">
+		<h3>{{ _("Description / Notes") }}</h3>
+		<p>{{ doc.description or "" }}</p>
+	</div>
+
+	<!-- Items Table -->
+	<table class="modern-table">
+		<thead>
+			<tr>
+				<th width="35%">{{ _("Expense Account") }}</th>
+				<th width="35%">{{ _("Description") }}</th>
+				<th width="15%" class="text-right">{{ _("Amount") }}</th>
+				<th width="15%" class="text-right">{{ _("PPh Base Amount") }}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for row in doc.items %}
+			<tr>
+				<td>{{ row.expense_account }}</td>
+				<td>{{ row.description }}</td>
+				<td class="text-right">{{ frappe.utils.fmt_money(row.amount or 0, currency=doc.currency) }}</td>
+				<td class="text-right">{{ frappe.utils.fmt_money(row.pph_base_amount or 0, currency=doc.currency) }}</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+		<tfoot>
+			<tr>
+				<th colspan="2" class="text-right">{{ _("TOTAL AMOUNT") }}</th>
+				<th colspan="2" class="text-right">{{ frappe.utils.fmt_money(doc.amount or 0, currency=doc.currency) }}</th>
+			</tr>
+		</tfoot>
+	</table>
+
+	<!-- Detail Sections -->
+	<div class="detail-grid">
+		<!-- Tax Information -->
+		<div class="detail-card">
+			<h3>{{ _("Tax Information") }}</h3>
+			<div class="detail-item">
+				<span class="detail-label">{{ _("PPN Applicable") }}:</span>
+				<span class="detail-value">
+					{% if doc.is_ppn_applicable %}
+					<span class="badge-yes">{{ _("YES") }}</span>
+					{% else %}
+					<span class="badge-no">{{ _("NO") }}</span>
+					{% endif %}
+				</span>
+			</div>
+			{% if doc.is_ppn_applicable and doc.ppn_template %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("PPN Template") }}:</span>
+				<span class="detail-value">{{ doc.ppn_template }}</span>
+			</div>
+			{% endif %}
+			{% if doc.is_ppn_applicable %}
+			{% if doc.tax_invoice_number %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Tax Invoice Number") }}:</span>
+				<span class="detail-value">{{ doc.tax_invoice_number }}</span>
+			</div>
+			{% endif %}
+			{% if doc.tax_invoice_date %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Tax Invoice Date") }}:</span>
+				<span class="detail-value">{{ frappe.utils.formatdate(doc.tax_invoice_date) }}</span>
+			</div>
+			{% endif %}
+			{% endif %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("PPh Applicable") }}:</span>
+				<span class="detail-value">
+					{% if doc.is_pph_applicable %}
+					<span class="badge-yes">{{ _("YES") }}</span>
+					{% else %}
+					<span class="badge-no">{{ _("NO") }}</span>
+					{% endif %}
+				</span>
+			</div>
+			{% if doc.is_pph_applicable and doc.pph_type %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("PPh Type") }}:</span>
+				<span class="detail-value">{{ doc.pph_type }}</span>
+			</div>
+			{% endif %}
+			{% if doc.is_pph_applicable and doc.pph_base_amount %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("PPh Base Amount") }}:</span>
+				<span class="detail-value">{{ frappe.utils.fmt_money(doc.pph_base_amount or 0, currency=doc.currency) }}</span>
+			</div>
+			{% endif %}
+		</div>
+
+		<!-- Deferred Expense -->
+		<div class="detail-card">
+			<h3>{{ _("Deferred Expense") }}</h3>
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Is Deferred") }}:</span>
+				<span class="detail-value">
+					{% if doc.is_deferred_expense %}
+					<span class="badge-yes">{{ _("YES") }}</span>
+					{% else %}
+					<span class="badge-no">{{ _("NO") }}</span>
+					{% endif %}
+				</span>
+			</div>
+			{% if doc.is_deferred_expense %}
+				{% if doc.deferred_start_date %}
+				<div class="detail-item">
+					<span class="detail-label">{{ _("Start Date") }}:</span>
+					<span class="detail-value">{{ frappe.utils.formatdate(doc.deferred_start_date) }}</span>
+				</div>
+				{% endif %}
+				{% if doc.deferred_periods %}
+				<div class="detail-item">
+					<span class="detail-label">{{ _("Periods (Months)") }}:</span>
+					<span class="detail-value">{{ doc.deferred_periods }}</span>
+				</div>
+				{% endif %}
+			{% endif %}
+		</div>
+
+		<!-- Approval Information -->
+		<div class="detail-card">
+			<h3>{{ _("Approval Information") }}</h3>
+			{% if doc.workflow_state %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Workflow State") }}:</span>
+				<span class="detail-value">{{ doc.workflow_state }}</span>
+			</div>
+			{% endif %}
+			{% if doc.current_approval_level %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Current Level") }}:</span>
+				<span class="detail-value">{{ doc.current_approval_level }}</span>
+			</div>
+			{% endif %}
+			{% if doc.approved_on %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Approved On") }}:</span>
+				<span class="detail-value">{{ frappe.utils.format_datetime(doc.approved_on) }}</span>
+			</div>
+			{% endif %}
+			{% if doc.rejected_on %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Rejected On") }}:</span>
+				<span class="detail-value">{{ frappe.utils.format_datetime(doc.rejected_on) }}</span>
+			</div>
+			{% endif %}
+			{% if doc.level_1_user or doc.level_2_user or doc.level_3_user %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Approvers") }}:</span>
+				<span class="detail-value">
+					{% if doc.level_1_user %}{{ doc.level_1_user }}{% endif %}
+					{% if doc.level_2_user %}<br>{{ doc.level_2_user }}{% endif %}
+					{% if doc.level_3_user %}<br>{{ doc.level_3_user }}{% endif %}
+				</span>
+			</div>
+			{% endif %}
+		</div>
+	</div>
+</div>
+
