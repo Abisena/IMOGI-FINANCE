@@ -212,6 +212,9 @@ doc_events = {
         "validate": [
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.events.expense_request.validate_workflow_action",
+        ],
+        "on_update": [
+            "imogi_finance.events.expense_request.sync_status_with_workflow",
         ]
     },
     "Payment Entry": {

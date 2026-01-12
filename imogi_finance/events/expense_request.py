@@ -44,6 +44,32 @@ def validate_workflow_action(doc, method=None):
         )
 
 
+def sync_status_with_workflow(doc, method=None):
+    """Sync status field with workflow_state after save.
+    
+    This ensures the 'status' field matches 'workflow_state' for display consistency.
+    Also handles advancing approval level when approving with multi-level approval.
+    """
+    workflow_state = getattr(doc, "workflow_state", None)
+    current_status = getattr(doc, "status", None)
+    
+    if not workflow_state:
+        return
+    
+    # Sync status with workflow_state if different
+    if current_status != workflow_state:
+        # Use db_set to update without triggering hooks again
+        doc.db_set("status", workflow_state, update_modified=False)
+    
+    # Handle approval level advancement for multi-level approval
+    previous = getattr(doc, "_doc_before_save", None)
+    if previous:
+        prev_state = getattr(previous, "workflow_state", None)
+        # If we just got approved at a level but staying in Pending Review (multi-level)
+        if prev_state == "Pending Review" and workflow_state == "Pending Review":
+            _advance_approval_level(doc)
+
+
 def _is_workflow_transition(doc) -> bool:
     """Check if document is undergoing a workflow state transition."""
     # Check if there's a previous version to compare
@@ -73,3 +99,20 @@ def _is_approval_action(doc) -> bool:
         return True
     
     return False
+
+
+def _advance_approval_level(doc):
+    """Advance to next approval level for multi-level approval.
+    
+    Called when approval action keeps document in Pending Review (more levels to go).
+    """
+    current_level = getattr(doc, "current_approval_level", None) or 1
+    
+    # Find next level with an assigned user
+    for level in range(current_level + 1, 4):
+        user_field = f"level_{level}_user"
+        if getattr(doc, user_field, None):
+            doc.db_set("current_approval_level", level, update_modified=False)
+            return
+    
+    # No more levels - shouldn't happen if workflow conditions are correct
