@@ -25,7 +25,6 @@
     "amount",
     "column_break_totals",
     "expense_account",
-    "expense_accounts",
     "currency",
     "taxes_section",
     "is_ppn_applicable",
@@ -86,6 +85,18 @@
       "bold": 1
     },
     {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "in_standard_filter": 1,
+      "label": "🏛️ Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_primary",
+      "fieldtype": "Column Break"
+    },
+    {
       "fieldname": "branch",
       "fieldtype": "Link",
       "in_list_view": 1,
@@ -94,25 +105,6 @@
       "options": "Branch",
       "reqd": 1,
       "bold": 1
-    },
-    {
-      "fieldname": "employee",
-      "fieldtype": "Link",
-      "label": "👤 Employee",
-      "options": "Employee",
-      "description": "Employee requesting this expense"
-    },
-    {
-      "fieldname": "column_break_primary",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "company",
-      "fieldtype": "Link",
-      "in_standard_filter": 1,
-      "label": "🏛️ Company",
-      "options": "Company",
-      "reqd": 1
     },
     {
       "default": "frappe.session.user",
@@ -125,23 +117,30 @@
       "reqd": 1
     },
     {
-      "fieldname": "fiscal_year",
+      "fieldname": "employee",
       "fieldtype": "Link",
-      "label": "📆 Fiscal Year",
-      "options": "Fiscal Year",
-      "reqd": 1
-    },
-    {
-      "fieldname": "purpose_section",
-      "fieldtype": "Section Break",
-      "label": "📝 Purpose & Description"
+      "label": "👤 Employee",
+      "options": "Employee",
+      "description": "Employee requesting this expense"
     },
     {
       "fieldname": "purpose",
       "fieldtype": "Small Text",
       "label": "Purpose",
-      "reqd": 1,
-      "description": "Describe the purpose of this expense request"
+      "reqd": 1
+    },
+    {
+      "fieldname": "currency",
+      "fieldtype": "Link",
+      "label": "Currency",
+      "options": "Currency"
+    },
+    {
+      "fieldname": "fiscal_year",
+      "fieldtype": "Link",
+      "label": "📆 Fiscal Year",
+      "options": "Fiscal Year",
+      "reqd": 1
     },
     {
       "fieldname": "items_section",
@@ -153,38 +152,43 @@
       "fieldname": "items",
       "fieldtype": "Table",
       "label": "Items",
-      "options": "Branch Expense Request Item",
-      "reqd": 1
+      "options":✓ Apply PPN (VAT)",
+      "description": "Check to apply Value Added Tax"
     },
     {
-      "fieldname": "totals_section",
-      "fieldtype": "Section Break",
-      "label": "💰 Totals & Summary"
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "ppn_template",
+      "fieldtype": "Link",
+      "label": "PPN Template",
+      "mandatory_depends_on": "eval:doc.is_ppn_applicable==1",
+      "options": "Purchase Taxes and Charges Template",
+      "description": "Select the VAT template to apply"
     },
     {
-      "bold": 1,
-      "description": "Total amount of all items",
-      "fieldname": "total_amount",
-      "fieldtype": "Currency",
-      "in_list_view": 1,
-      "label": "💵 Total Amount",
-      "read_only": 1,
-      "precision": 2
-    },
-    {
-      "bold": 1,
-      "description": "Sum of item amounts",
-      "fieldname": "amount",
-      "fieldtype": "Currency",
-      "in_list_view": 1,
-      "label": "Amount",
-      "read_only": 1,
-      "precision": 2
-    },
-    {
-      "fieldname": "column_break_totals",
+      "fieldname": "column_break_tax",
       "fieldtype": "Column Break"
     },
+    {
+      "default": "0",
+      "fieldname": "is_pph_applicable",
+      "fieldtype": "Check",
+      "label": "✓ Apply PPh (Withholding Tax)",
+      "description": "Check to apply withholding tax"
+    },
+    {
+      "depends_on": "eval:doc.is_pph_applicable==1",
+      "fieldname": "pph_type",
+      "fieldtype": "Link",
+      "label": "PPh Type",
+      "options": "Tax Withholding Category",
+      "description": "Select the withholding tax category"
+    },
+    {
+      "depends_on": "eval:doc.is_pph_applicable==1",
+      "fieldname": "pph_base_amount",
+      "fieldtype": "Currency",
+      "label": "PPh Base Amount",
+      "precision": 2
     {
       "description": "Auto-filled when all items share the same account",
       "fieldname": "expense_account",
@@ -192,14 +196,6 @@
       "label": "Expense Account",
       "options": "Account",
       "read_only": 1
-    },
-    {
-      "fieldname": "expense_accounts",
-      "fieldtype": "Small Text",
-      "label": "Expense Accounts",
-      "read_only": 1,
-      "hidden": 1,
-      "no_copy": 1
     },
     {
       "fieldname": "currency",
@@ -240,54 +236,7 @@
       "fieldtype": "Check",
       "label": "✓ Apply PPh (Withholding Tax)",
       "description": "Check to apply withholding tax"
-    },
-    {
-      "depends_on": "eval:doc.is_pph_applicable==1",
-      "fieldname": "pph_type",
-      "fieldtype": "Link",
-      "label": "PPh Type",
-      "options": "Tax Withholding Category",
-      "description": "Select the withholding tax category"
-    },
-    {
-      "depends_on": "eval:doc.is_pph_applicable==1",
-      "fieldname": "pph_base_amount",
-      "fieldtype": "Currency",
-      "label": "PPh Base Amount",
-      "precision": 2
-    },
-    {
-      "collapsible": 1,
-      "fieldname": "budget_section",
-      "fieldtype": "Section Break",
-      "label": "💼 Budget Control",
-      "description": "Budget validation status and messages"
-    },
-    {
-      "default": "Not Checked",
-      "fieldname": "budget_check_status",
-      "fieldtype": "Select",
-      "in_list_view": 1,
-      "label": "📊 Budget Status",
-      "options": "Not Checked\nOK\nWarning\nOver Budget",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_budget",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "budget_check_message",
-      "fieldtype": "Small Text",
-      "label": "Budget Message",
-      "read_only": 1
-    },
-    {
-      "collapsible": 1,
-      "collapsible_depends_on": "eval:doc.is_deferred_expense==0",
-      "fieldname": "deferred_expense_section",
-      "fieldtype": "Section Break",
-      "label": "📅 Deferred Expense Configuration",
+    }, Configuration",
       "description": "Configure amortization schedule for deferred expenses"
     },
     {
@@ -313,10 +262,17 @@
       "fieldname": "deferred_periods",
       "fieldtype": "Int",
       "label": "Periods (Months)",
-      "description": "Number of months to amortize"
+      "description": "Number of months to amortize" "Sum of item amounts.",
+      "fieldname": "amount",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Total Amount",
+      "read_only": 1
     },
     {
-      "collapsible": 1,
+      "description": "Auto-filled when all items share the same account.",
+      "fieldname": "expense_account",
+      "fieldtype": "Link",
       "fieldname": "approval_status_section",
       "fieldtype": "Section Break",
       "label": "📊 Status & Workflow",
@@ -334,8 +290,7 @@
       "fieldtype": "Link",
       "label": "Workflow State",
       "options": "Workflow State",
-      "read_only": 1,
-      "hidden": 1
+      "read_only": 1
     },
     {
       "fieldname": "column_break_approval_status",
@@ -344,13 +299,13 @@
     {
       "fieldname": "approved_on",
       "fieldtype": "Datetime",
-      "label": "✅ Approved On",
+      "label": "Approved On",
       "read_only": 1
     },
     {
       "fieldname": "rejected_on",
       "fieldtype": "Datetime",
-      "label": "❌ Rejected On",
+      "label": "Rejected On",
       "read_only": 1
     },
     {
@@ -386,27 +341,76 @@
       "fieldtype": "Long Text",
       "label": "Route Snapshot",
       "read_only": 1,
-      "hidden": 1,
-      "description": "JSON snapshot of the approval route"
+      "description": "JSON snapshot of the approval route"is_deferred_expense",
+      "fieldtype": "Check",
+      "label": "Deferred Expense?"
+    },
+    {
+      "depends_on": "eval:doc.is_deferred_expense==1",
+      "fieldname": "deferred_start_date",
+      "fieldtype": "Date",
+      "label": "Deferred Start Date"
+    },
+    {
+      "depends_on": "eval:doc.is_deferred_expense==1",
+      "fieldname": "deferred_periods",
+      "fieldtype": "Int",
+      "label": "Deferred Periods (Months)"
+    },
+    {
+      "default": "Not Checked",
+      "fieldname": "budget_check_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Budget Check Status",
+      "options": "Not Checked\nOK\nWarning\nOver Budget",
+      "read_only": 1
+    },
+    {
+      "fieldname": "budget_check_message",
+      "fieldtype": "Small Text",
+      "label": "Budget Check Message",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:doc.docstatus==0",
+      "fieldname": "approval_routing_section",
+      "fieldtype": "Section Break",
+      "label": "✅ Approval Routing"
+    },
+    {
+      "default": "0",
+      "description": "Current approval level (0 means not in approval flow)",
+      "fieldname": "current_approval_level",
+      "fieldtype": "Int",
+      "label": "Current Approval Level",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_approval",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "approval_setting",
+      "fieldtype": "Link",
+      "label": "Approval Setting",
+      "options": "Branch Expense Approval Setting",
+      "read_only": 1
     },
     {
       "collapsible": 1,
       "collapsible_depends_on": "eval:!doc.level_1_user",
       "fieldname": "level_1_section",
       "fieldtype": "Section Break",
-      "label": "👤 Level 1 Approver",
-      "description": "First level approval"
+      "label": "👤 Level 1 Approver"
     },
     {
       "fieldname": "level_1_user",
       "fieldtype": "Link",
-      "label": "Approver",
+      "label": "User",
       "options": "User",
       "read_only": 1
-    },
-    {
-      "fieldname": "column_break_level_1",
-      "fieldtype": "Column Break"
     },
     {
       "fieldname": "level_1_role",
@@ -420,19 +424,14 @@
       "collapsible_depends_on": "eval:!doc.level_2_user",
       "fieldname": "level_2_section",
       "fieldtype": "Section Break",
-      "label": "👥 Level 2 Approver",
-      "description": "Second level approval"
+      "label": "👥 Level 2 Approver"
     },
     {
       "fieldname": "level_2_user",
       "fieldtype": "Link",
-      "label": "Approver",
+      "label": "User",
       "options": "User",
       "read_only": 1
-    },
-    {
-      "fieldname": "column_break_level_2",
-      "fieldtype": "Column Break"
     },
     {
       "fieldname": "level_2_role",
@@ -446,19 +445,14 @@
       "collapsible_depends_on": "eval:!doc.level_3_user",
       "fieldname": "level_3_section",
       "fieldtype": "Section Break",
-      "label": "👑 Level 3 Approver",
-      "description": "Third level approval (if required)"
+      "label": "👑 Level 3 Approver"
     },
     {
       "fieldname": "level_3_user",
       "fieldtype": "Link",
-      "label": "Approver",
+      "label": "User",
       "options": "User",
       "read_only": 1
-    },
-    {
-      "fieldname": "column_break_level_3",
-      "fieldtype": "Column Break"
     },
     {
       "fieldname": "level_3_role",
@@ -468,17 +462,43 @@
       "read_only": 1
     },
     {
-      "collapsible": 1,
-      "fieldname": "attachments_section",
-      "fieldtype": "Section Break",
-      "label": "📎 Attachments",
-      "description": "Supporting documents and files"
+      "fieldname": "approval_route_snapshot",
+      "fieldtype": "Long Text",
+      "hidden": 1,
+      "label": "Approval Route Snapshot",
+      "read_only": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "workflow_state",
+      "fieldtype": "Link",
+      "hidden": 1,
+      "label": "Workflow State",
+      "options": "Workflow State",
+      "read_only": 1
+    },
+    {
+      "fieldname": "approved_on",
+      "fieldtype": "Datetime",
+      "label": "Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Rejected On",
+      "read_only": 1
     },
     {
       "fieldname": "attachments",
-      "fieldtype": "Table MultiSelect",
-      "label": "Attachments",
-      "options": "File"
+      "fieldtype": "Attach",
+      "label": "Attachments"
     }
   ],
   "index_web_pages_for_search": 1,
