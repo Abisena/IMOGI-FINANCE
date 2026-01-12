@@ -59,7 +59,17 @@
       "state": "Draft",
       "next_state": "Pending Review",
       "allowed": "All",
-      "allow_self_approval": 0
+      "allow_self_approval": 0,
+      "condition": "frappe.db.exists('Expense Approval Setting', {'cost_center': doc.cost_center, 'is_active': 1})"
+    },
+    {
+      "doctype": "Workflow Transition",
+      "action": "Submit",
+      "state": "Draft",
+      "next_state": "Approved",
+      "allowed": "All",
+      "allow_self_approval": 1,
+      "condition": "not frappe.db.exists('Expense Approval Setting', {'cost_center': doc.cost_center, 'is_active': 1})"
     },
     {
       "doctype": "Workflow Transition",
