@@ -110,6 +110,19 @@ fixtures = [
     {"doctype": "Custom Field", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Role", "filters": {"name": ["in", ["Expense Approver", "Branch Approver"]]}},
     {"doctype": "Workflow State", "filters": {"name": ["like", "Imogi%"]}},
+    {
+        "doctype": "Workflow",
+        "filters": {
+            "document_type": [
+                "in",
+                [
+                    "Expense Request",
+                    "Internal Charge Request",
+                    "Branch Expense Request",
+                ],
+            ]
+        },
+    },
     {"doctype": "Letter Template", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Letter Template Settings", "filters": {"name": ["=", "Letter Template Settings"]}},
     {"doctype": "Tax Invoice Type", "filters": {"module": "Imogi Finance"}},
