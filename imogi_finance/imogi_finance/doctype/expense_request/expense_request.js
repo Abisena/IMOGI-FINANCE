@@ -59,6 +59,12 @@ async function syncErUpload(frm) {
   if (!frm.doc.ti_tax_invoice_upload) {
     return;
   }
+  
+  // Skip sync for submitted documents - OCR fields are read-only and already saved
+  if (frm.doc.docstatus === 1) {
+    return;
+  }
+  
   const cachedUpload = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
   const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
