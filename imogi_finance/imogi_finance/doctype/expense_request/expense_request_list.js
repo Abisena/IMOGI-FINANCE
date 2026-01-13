@@ -33,43 +33,8 @@
       });
   };
 
-  const getStatusIndicator = (doc) => {
-    if (doc.docstatus === 2) {
-      return [__("Cancelled"), "darkgrey", "docstatus,=,2"];
-    }
-
-    const status = doc.status || doc.workflow_state;
-
-    if (!status || doc.docstatus === 0) {
-      return [__("Draft"), "blue", "docstatus,=,0"];
-    }
-
-    if (status === "Approved") {
-      return [__("Approved"), "green", "status,=,Approved"];
-    }
-
-    if (status === "Pending Review") {
-      return [__("Pending Review"), "orange", "status,=,Pending Review"];
-    }
-
-    if (status === "Rejected") {
-      return [__("Rejected"), "red", "status,=,Rejected"];
-    }
-
-    if (status === "PI Created") {
-      return [__("PI Created"), "blue", "status,=,PI Created"];
-    }
-
-    if (status === "Paid") {
-      return [__("Paid"), "green", "status,=,Paid"];
-    }
-
-    return [__(status), "gray", `status,=,${status}`];
-  };
-
   frappe.listview_settings["Expense Request"] = {
-    add_fields: ["status", "workflow_state", "docstatus"],
-    get_indicator: getStatusIndicator,
+    add_fields: ["status", "docstatus"],
     onload(listview) {
       const refreshActions = () => toggleCreatePiAction(listview);
 
