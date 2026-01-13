@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Client Script",
+    "name": "Imogi Purchase Invoice Client Script",
     "dt": "Purchase Invoice",
     "view": "Form",
     "enabled": 1,
@@ -8,6 +9,7 @@
   },
   {
     "doctype": "Client Script",
+    "name": "Imogi Payment Entry Client Script",
     "dt": "Payment Entry",
     "view": "Form",
     "enabled": 1,
