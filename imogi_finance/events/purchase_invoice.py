@@ -23,7 +23,8 @@ from imogi_finance.budget_control.workflow import (
 
 
 def validate_before_submit(doc, method=None):
-    sync_tax_invoice_upload(doc, "Purchase Invoice")
+    # Sync OCR fields but don't save - document will be saved automatically after this hook
+    sync_tax_invoice_upload(doc, "Purchase Invoice", save=False)
     validate_tax_invoice_upload_link(doc, "Purchase Invoice")
     settings = get_settings()
     require_verified = cint(settings.get("enable_tax_invoice_ocr")) and cint(
