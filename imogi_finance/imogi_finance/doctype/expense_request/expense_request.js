@@ -159,13 +159,24 @@ function computeTotals(frm) {
 }
 
 function renderTotalsHtml(frm, totals) {
+  const format = (value) =>
+    frappe.format(value, { fieldtype: 'Currency', options: frm.doc.currency });
+
   const rows = [
-    ['Total Expense', totals.totalExpense],
-    ['Total Asset', totals.totalAsset],
-    ['Total PPN', totals.totalPpn],
-    ['Total PPnBM', totals.totalPpnbm],
-    ['Total PPh', totals.totalPph],
-    ['Total', totals.totalAmount],
+    ['Total Expense', format(totals.totalExpense)],
+    ['Total Asset', format(totals.totalAsset)],
+    ['Total PPN', format(totals.totalPpn)],
+    ['Total PPnBM', format(totals.totalPpnbm)],
+
+    // 🔴 PPh ditampilkan sebagai minus (VISUAL ONLY)
+    [
+      'Total PPh',
+      totals.totalPph
+        ? `<span style="color:#c0392b">- ${format(totals.totalPph)}</span>`
+        : format(0),
+    ],
+
+    ['Total', format(totals.totalAmount)],
   ];
 
   const cells = rows
@@ -173,9 +184,9 @@ function renderTotalsHtml(frm, totals) {
       ([label, value]) => `
         <tr>
           <td>${frappe.utils.escape_html(label)}</td>
-          <td class="text-right">${formatCurrency(frm, value)}</td>
+          <td class="text-right">${value}</td>
         </tr>
-      `,
+      `
     )
     .join('');
 
