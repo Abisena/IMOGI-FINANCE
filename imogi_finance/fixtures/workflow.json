@@ -1,7 +1,7 @@
 [
 	{
 		"actions": [
-			{"action": "Submit", "allowed": "Expense Request"},
+			{"action": "Submit", "allowed": "All"},
 			{"action": "Approve", "allowed": "Expense Approver"},
 			{"action": "Reject", "allowed": "Expense Approver"}
 		],
@@ -26,7 +26,7 @@
 			{
 				"action": "Submit", 
 				"allow_self_approval": 0, 
-				"allowed": "Expense Request", 
+				"allowed": "All", 
 				"state": "Draft", 
 				"next_state": "Pending Review"
 			},
