@@ -383,6 +383,7 @@ frappe.ui.form.on('Expense Request', {
     maybeRenderCancelDeleteActions(frm);
     maybeRenderPrimarySubmitButton(frm);
     updateTotalsSummary(frm);
+    const isDraft = frm.doc.docstatus === 0;
 
     const addCheckRouteButton = () => {
       if (!frm.doc.cost_center) {
@@ -501,8 +502,8 @@ frappe.ui.form.on('Expense Request', {
 
     addCheckRouteButton();
 
-    if (!frm.doc.docstatus) {
-      maybeRenderInternalChargeButton(frm);
+    if (isDraft) {
+      frm.page.clear_actions_menu();
       return;
     }
 
