@@ -217,6 +217,7 @@ def apply_budget_allocation_delta(dims: Dimensions, delta_amount: float, *, allo
         )
 
     try:
+        budget_doc.flags.ignore_validate_update_after_submit = True
         budget_doc.save(ignore_permissions=True)
     except Exception as exc:
         frappe.throw(
