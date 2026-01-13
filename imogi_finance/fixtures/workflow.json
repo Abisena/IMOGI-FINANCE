@@ -1,9 +1,9 @@
 [
 	{
 		"actions": [
-			{"action": "Submit", "allowed": "All"},
-			{"action": "Approve", "allowed": "All"},
-			{"action": "Reject", "allowed": "All"}
+			{"action": "Submit", "allowed": "Expense Request"},
+			{"action": "Approve", "allowed": "Expense Approver"},
+			{"action": "Reject", "allowed": "Expense Approver"}
 		],
 		"docstatus": 0,
 		"doctype": "Workflow",
@@ -15,7 +15,7 @@
 		"notes": "Roles are intentionally broad; approval enforcement happens in ExpenseRequest.before_workflow_action based on the dynamically resolved route. Purchase Invoice creation is now done via the 'Create Purchase Invoice' button on the form (not a workflow action). Status 'Paid' is set automatically by Payment Entry on_submit hook. Auto-approve without approver is NOT allowed - Python enforces approval route configuration.",
 		"override_status": 1,
 		"states": [
-			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Draft", "doc_status": "0", "allow_edit": "Expense Request"},
 			{"state": "Pending Review", "doc_status": "1", "allow_edit": "Expense Approver"},
 			{"state": "Approved", "doc_status": "1", "allow_edit": "Expense Approver"},
 			{"state": "Rejected", "doc_status": "1", "allow_edit": "Expense Approver"},
@@ -23,9 +23,26 @@
 			{"state": "Paid", "doc_status": "1", "allow_edit": "Expense Approver"}
 		],
 		"transitions": [
-			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Review"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Review", "next_state": "Approved", "condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"},
-			{"action": "Reject", "allowed": "All", "state": "Pending Review", "next_state": "Rejected"}
+			{
+				"action": "Submit", 
+				"allow_self_approval": 0, 
+				"allowed": "Expense Request", 
+				"state": "Draft", 
+				"next_state": "Pending Review"
+			},
+			{
+				"action": "Approve", 
+				"allowed": "Expense Approver", 
+				"state": "Pending Review", 
+				"next_state": "Approved", 
+				"condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"
+			},
+			{
+				"action": "Reject", 
+				"allowed": "Expense Approver", 
+				"state": "Pending Review", 
+				"next_state": "Rejected"
+			}
 		],
 		"workflow_state_field": "workflow_state"
 	}
