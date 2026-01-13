@@ -140,7 +140,6 @@ function computeTotals(frm) {
     0,
   );
   const totalPpn = flt(frm.doc.ti_fp_ppn || frm.doc.ppn || 0);
-    maybeRenderTaxInvoiceVerifyButton(frm);
   const totalPpnbm = flt(frm.doc.ti_fp_ppnbm || frm.doc.ppnbm || 0);
   const pphBaseTotal = itemPphTotal
     || (frm.doc.is_pph_applicable ? flt(frm.doc.pph_base_amount || 0) : 0);
@@ -334,43 +333,9 @@ function maybeRenderCancelDeleteActions(frm) {
     return;
   }
 
-  const isCancelled = frm.doc.docstatus === 2;
-  const canDelete = frm.doc.docstatus === 0 || isCancelled;
-
-  // Note: Native Cancel action is available in Actions dropdown for submitted docs
-  // No need to add custom Cancel button to avoid duplication
-
-  if (canDelete) {
-    frm.add_custom_button(__('Delete'), () => {
-      frappe.confirm(
-        __('Are you sure you want to delete this Expense Request?'),
-        async () => {
-          try {
-            await frappe.call({
-              method: 'frappe.client.delete',
-              args: {
-                doctype: frm.doc.doctype,
-                name: frm.doc.name,
-              },
-              freeze: true,
-              freeze_message: __('Deleting Expense Request...'),
-            });
-            frappe.show_alert({
-              message: __('Expense Request deleted.'),
-              indicator: 'green',
-            }, 5);
-            frappe.set_route('List', frm.doc.doctype);
-          } catch (error) {
-            frappe.msgprint({
-              title: __('Error'),
-              message: error?.message || __('Failed to delete Expense Request.'),
-              indicator: 'red',
-            });
-          }
-        }
-      );
-    }, __('Actions'));
-  }
+  // Note: Native Cancel and Delete actions are available in Menu/Actions dropdown
+  // No need to add custom buttons to avoid duplication and maintain consistency
+  // with standard Frappe UX and other doctypes like Branch Expense Request
 }
 
 frappe.ui.form.on('Expense Request', {
