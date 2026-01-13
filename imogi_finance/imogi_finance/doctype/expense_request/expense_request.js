@@ -163,30 +163,24 @@ function renderTotalsHtml(frm, totals) {
     ['Total Asset', totals.totalAsset],
     ['Total PPN', totals.totalPpn],
     ['Total PPnBM', totals.totalPpnbm],
-    ['Total PPh', totals.totalPph, { displayPrefix: '-' }],
+    ['Total PPh', totals.totalPph],
     ['Total', totals.totalAmount],
   ];
+
   const cells = rows
     .map(
-      ([label, value, options]) => {
-        let formattedValue = formatCurrency(frm, value);
-        
-        // Jika ada prefix, tambahkan prefix tepat sebelum nilai
-        if (options?.displayPrefix) {
-          formattedValue = `${options.displayPrefix} ${formattedValue}`;
-        }
-        
-        return `
+      ([label, value]) => `
         <tr>
           <td>${frappe.utils.escape_html(label)}</td>
-          <td class="text-right">${formattedValue}</td>
+          <td class="text-right">-${formatCurrency(frm, value)}</td>
         </tr>
-      `;
-      },
+      `,
     )
     .join('');
+
   return `<table class="table table-bordered table-sm"><tbody>${cells}</tbody></table>`;
 }
+
 
 function updateTotalsSummary(frm) {
   const totals = computeTotals(frm);
