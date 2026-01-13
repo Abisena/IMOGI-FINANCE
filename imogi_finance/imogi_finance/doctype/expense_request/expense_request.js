@@ -624,12 +624,13 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
       const cached = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
       let uploadStatus = cached?.verification_status;
       if (uploadStatus === undefined) {
-        uploadStatus = await frappe.db.get_value(
+        const result = await frappe.db.get_value(
           'Tax Invoice OCR Upload',
           frm.doc.ti_tax_invoice_upload,
           'verification_status'
         );
-        uploadStatus = (uploadStatus && uploadStatus.verification_status) || uploadStatus;
+        // frappe.db.get_value returns {verification_status: "..."}
+        uploadStatus = result?.verification_status || result?.message?.verification_status;
       }
       isVerified = (uploadStatus === 'Verified');
     } catch (error) {
