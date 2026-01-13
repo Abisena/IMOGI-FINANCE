@@ -159,25 +159,28 @@ function computeTotals(frm) {
 
 function renderTotalsHtml(frm, totals) {
   const rows = [
-    ['Total Expense', totals.totalExpense],
-    ['Total Asset', totals.totalAsset],
-    ['Total PPN', totals.totalPpn],
-    ['Total PPnBM', totals.totalPpnbm],
-    ['Total PPh', totals.totalPph],
-    ['Total', totals.totalAmount],
+    ['Total Expense', totals.totalExpense, false],
+    ['Total Asset', totals.totalAsset, false],
+    ['Total PPN', totals.totalPpn, false],
+    ['Total PPnBM', totals.totalPpnbm, false],
+    ['Total PPh', totals.totalPph, true], // true = tampilkan dengan minus
+    ['Total', totals.totalAmount, false],
   ];
-
   const cells = rows
     .map(
-      ([label, value]) => `
+      ([label, value, isNegative]) => {
+        const formattedValue = formatCurrency(frm, value);
+        const displayValue = isNegative ? `-&nbsp;${formattedValue}` : formattedValue;
+        
+        return `
         <tr>
           <td>${frappe.utils.escape_html(label)}</td>
-          <td class="text-right">-${formatCurrency(frm, value)}</td>
+          <td class="text-right">${displayValue}</td>
         </tr>
-      `,
+      `;
+      },
     )
     .join('');
-
   return `<table class="table table-bordered table-sm"><tbody>${cells}</tbody></table>`;
 }
 
