@@ -140,6 +140,7 @@ function computeTotals(frm) {
     0,
   );
   const totalPpn = flt(frm.doc.ti_fp_ppn || frm.doc.ppn || 0);
+    maybeRenderTaxInvoiceVerifyButton(frm);
   const totalPpnbm = flt(frm.doc.ti_fp_ppnbm || frm.doc.ppnbm || 0);
   const pphBaseTotal = itemPphTotal
     || (frm.doc.is_pph_applicable ? flt(frm.doc.pph_base_amount || 0) : 0);
@@ -622,14 +623,51 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
 
   const isPpnApplicable = Boolean(frm.doc.is_ppn_applicable);
   const gateByVerification = Boolean(ocrEnabled && requireVerified && isPpnApplicable);
-  const isVerified = frm.doc.ti_verification_status === 'Verified';
+  let isVerified = false;
+
+  // Source of truth: if upload linked, check upload; else check ER field
+  if (frm.doc.ti_tax_invoice_upload) {
+    try {
+      const cached = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
+      let uploadStatus = cached?.verification_status;
+      if (uploadStatus === undefined) {
+        uploadStatus = await frappe.db.get_value(
+          'Tax Invoice OCR Upload',
+          frm.doc.ti_tax_invoice_upload,
+          'verification_status'
+        );
+        uploadStatus = (uploadStatus && uploadStatus.verification_status) || uploadStatus;
+      }
+      isVerified = (uploadStatus === 'Verified');
+    } catch (error) {
+      // Fallback to ER field if upload check fails
+      isVerified = (frm.doc.ti_verification_status === 'Verified');
+    }
+  } else {
+    // No upload linked, use ER field
+    isVerified = (frm.doc.ti_verification_status === 'Verified');
+  }
+
   const allowButton = !gateByVerification || isVerified;
 
   if (!allowButton) {
-    frm.dashboard.add_indicator(
-      __('Please verify Tax Invoice before creating Purchase Invoice'),
-      'orange'
-    );
+    let message = __('Please verify Tax Invoice before creating Purchase Invoice');
+
+    if (gateByVerification && frm.doc.ti_tax_invoice_upload && !frm.doc.ti_verification_status) {
+      try {
+        const upload = await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
+        if (upload?.verification_status === 'Verified') {
+          message = __(
+            'Tax Invoice OCR Upload {0} is Verified, but the verification status on this Expense Request is not synced. Please verify from Tax Invoice OCR Upload and then reopen this Expense Request, or contact your System Manager.',
+            [upload.name],
+          );
+        }
+      } catch (error) {
+        // fallback to default message
+      }
+    }
+
+    frm.dashboard.add_indicator(message, 'orange');
     return;
   }
 
@@ -668,7 +706,6 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
     );
   }, __('Actions'));
 }
-
 frappe.ui.form.on('Expense Request Item', {
   amount(frm, cdt, cdn) {
     const row = locals[cdt][cdn];

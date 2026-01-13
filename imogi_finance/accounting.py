@@ -204,15 +204,34 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 frappe.throw(_("Internal Charge Request {0} must be Approved.").format(ic_name))
 
     has_tax_invoice_upload = bool(getattr(request, "ti_tax_invoice_upload", None))
-    if (
+    require_verified = (
         cint(settings.get("enable_tax_invoice_ocr"))
         and cint(settings.get("require_verification_before_create_pi_from_expense_request"))
         and bool(getattr(request, "is_ppn_applicable", 0))
-        and getattr(request, "ti_verification_status", "") != "Verified"
-    ):
-        _raise_verification_error(
-            _("Tax Invoice must be verified before creating a Purchase Invoice from this request.")
-        )
+    )
+
+    if require_verified:
+        upload_name = getattr(request, "ti_tax_invoice_upload", None)
+
+        # Source of truth: if upload linked, check upload; else check ER field
+        if upload_name:
+            upload_status = frappe.db.get_value(
+                "Tax Invoice OCR Upload", upload_name, "verification_status"
+            )
+            if upload_status != "Verified":
+                status_msg = f". Current upload status: {upload_status}" if upload_status else ""
+                _raise_verification_error(
+                    _(
+                        "Tax Invoice OCR Upload {0} must be Verified before creating a Purchase Invoice from this request{1}"
+                    ).format(upload_name, status_msg)
+                )
+        else:
+            # No upload linked, check ER field
+            er_status = getattr(request, "ti_verification_status", "") or ""
+            if er_status != "Verified":
+                _raise_verification_error(
+                    _("Tax Invoice must be verified before creating a Purchase Invoice from this request.")
+                )
 
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
