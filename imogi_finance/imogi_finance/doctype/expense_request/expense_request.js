@@ -702,7 +702,8 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
 frappe.ui.form.on('Expense Request Item', {
   amount(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
-    if (row?.is_pph_applicable) {
+    // Only auto-update pph_base_amount in draft mode
+    if (frm.doc.docstatus === 0 && row?.is_pph_applicable) {
       frappe.model.set_value(cdt, cdn, 'pph_base_amount', row.amount || 0);
     }
     updateTotalsSummary(frm);
@@ -713,7 +714,10 @@ frappe.ui.form.on('Expense Request Item', {
   is_pph_applicable(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
     const baseAmount = row?.is_pph_applicable ? (row.amount || 0) : 0;
-    frappe.model.set_value(cdt, cdn, 'pph_base_amount', baseAmount);
+    // Only auto-update pph_base_amount in draft mode
+    if (frm.doc.docstatus === 0) {
+      frappe.model.set_value(cdt, cdn, 'pph_base_amount', baseAmount);
+    }
     updateTotalsSummary(frm);
   },
 });
