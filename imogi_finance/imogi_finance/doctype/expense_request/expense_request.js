@@ -353,11 +353,6 @@ frappe.ui.form.on('Expense Request', {
     maybeRenderPrimarySubmitButton(frm);
     updateTotalsSummary(frm);
     
-    // Clear actions menu to prevent duplicate buttons on re-render
-    // This is necessary because refresh() can be called multiple times
-    // (on load, save, reload_doc, etc) and would otherwise stack buttons
-    frm.page.clear_actions_menu();
-    
     const isDraft = frm.doc.docstatus === 0;
 
     const addCheckRouteButton = () => {
