@@ -91,6 +91,8 @@
     "column_break_integration",
     "linked_payment_entry",
     "linked_asset",
+    "asset_links_section",
+    "asset_links",
 
     "section_break_hidden",
     "approval_route_snapshot",
@@ -609,8 +611,21 @@
     {
       "fieldname": "linked_asset",
       "fieldtype": "Link",
-      "label": "Asset",
+      "label": "Asset (Deprecated)",
       "options": "Asset",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "asset_links_section",
+      "fieldtype": "Section Break",
+      "label": "Linked Assets"
+    },
+    {
+      "fieldname": "asset_links",
+      "fieldtype": "Table",
+      "label": "Asset Links",
+      "options": "Expense Request Asset Link",
       "read_only": 1
     },
 

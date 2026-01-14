@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
@@ -175,11 +175,17 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         company=company, cost_center=request.cost_center, explicit_branch=getattr(request, "branch", None)
     )
 
-    request_items = getattr(request, "items", []) or []
+    # Get items based on request type - Asset requests use asset_items, Expense requests use items
+    request_type = getattr(request, "request_type", "Expense")
+    if request_type == "Asset":
+        request_items = getattr(request, "asset_items", []) or []
+    else:
+        request_items = getattr(request, "items", []) or []
+    
     if not request_items:
         frappe.throw(_("Expense Request must have at least one item to create a Purchase Invoice."))
 
-    total_amount, expense_accounts = summarize_request_items(request_items)
+    total_amount, expense_accounts = summarize_request_items(request_items, skip_invalid_items=True)
     _sync_request_amounts(request, total_amount, expense_accounts)
 
     settings = get_settings()
@@ -255,22 +261,56 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     item_wise_pph_detail = {}
 
     for idx, item in enumerate(request_items, start=1):
-        pi.append(
-            "items",
-            {
-                "item_name": getattr(item, "asset_name", None)
-                or getattr(item, "description", None)
-                or getattr(item, "expense_account", None),
-                "description": getattr(item, "asset_description", None)
-                or getattr(item, "description", None),
-                "expense_account": getattr(item, "expense_account", None),
-                "cost_center": request.cost_center,
-                "project": request.project,
-                "qty": 1,
-                "rate": getattr(item, "amount", None),
-                "amount": getattr(item, "amount", None),
-            },
-        )
+        # Determine expense account based on request type
+        if request_type == "Asset":
+            # For Asset requests, get fixed asset account from Asset Category
+            asset_category = getattr(item, "asset_category", None)
+            expense_account = None
+            if asset_category:
+                expense_account = frappe.db.get_value(
+                    "Asset Category",
+                    asset_category,
+                    "fixed_asset_account"
+                )
+            # Fallback to default if not found
+            if not expense_account:
+                expense_account = frappe.get_cached_value(
+                    "Company",
+                    company,
+                    "default_fixed_asset_account"
+                )
+        else:
+            # For Expense requests, use the expense_account from item
+            expense_account = getattr(item, "expense_account", None)
+        
+        qty = getattr(item, "qty", 1) or 1
+        item_amount = flt(getattr(item, "amount", 0))
+        
+        pi_item = {
+            "item_name": getattr(item, "asset_name", None)
+            or getattr(item, "description", None)
+            or getattr(item, "expense_account", None),
+            "description": getattr(item, "asset_description", None)
+            or getattr(item, "description", None),
+            "expense_account": expense_account,
+            "cost_center": request.cost_center,
+            "project": request.project,
+            "qty": qty,
+            "rate": item_amount / qty if qty > 0 else item_amount,
+            "amount": item_amount,
+        }
+        
+        # For Asset items, add asset-specific fields but do NOT set is_fixed_asset
+        # This prevents Frappe from auto-creating Assets. Assets will be created manually
+        # and linked via the asset_links child table in Expense Request
+        if request_type == "Asset":
+            pi_item["asset_category"] = getattr(item, "asset_category", None)
+            pi_item["imogi_asset_location"] = getattr(item, "asset_location", None)
+            # Store original asset item details for reference
+            pi_item["imogi_asset_name"] = getattr(item, "asset_name", None)
+            pi_item["imogi_asset_qty"] = qty
+        
+        pi.append("items", pi_item)
 
         if getattr(item, "is_pph_applicable", 0):
             base_amount = getattr(item, "pph_base_amount", None)

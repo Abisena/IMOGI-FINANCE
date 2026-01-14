@@ -188,10 +188,29 @@ class ExpenseRequest(Document):
 
         # Check for active downstream links
         active_links = []
-        for doctype, field in [("Payment Entry", "linked_payment_entry"), ("Purchase Invoice", "linked_purchase_invoice"), ("Asset", "linked_asset")]:
-            name = getattr(self, field, None)
-            if name and frappe.db.get_value(doctype, name, "docstatus") != 2:
-                active_links.append(f"{doctype} {name}")
+        
+        # Check Payment Entry
+        pe = getattr(self, "linked_payment_entry", None)
+        if pe and frappe.db.get_value("Payment Entry", pe, "docstatus") != 2:
+            active_links.append(f"Payment Entry {pe}")
+        
+        # Check Purchase Invoice
+        pi = getattr(self, "linked_purchase_invoice", None)
+        if pi and frappe.db.get_value("Purchase Invoice", pi, "docstatus") != 2:
+            active_links.append(f"Purchase Invoice {pi}")
+        
+        # Check Assets (from asset_links table)
+        if self.get("asset_links"):
+            for asset_link in self.asset_links:
+                asset_status = frappe.db.get_value("Asset", asset_link.asset, "docstatus")
+                if asset_status == 1:
+                    active_links.append(f"Asset {asset_link.asset}")
+        
+        # Fallback: Check legacy linked_asset field
+        elif getattr(self, "linked_asset", None):
+            asset_status = frappe.db.get_value("Asset", self.linked_asset, "docstatus")
+            if asset_status == 1:
+                active_links.append(f"Asset {self.linked_asset}")
 
         if active_links:
             frappe.throw(
