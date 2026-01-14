@@ -374,23 +374,27 @@ def on_cancel(doc, method=None):
     
     When PE is cancelled:
     1. Clear linked_payment_entry from Expense Request
-    2. Update status back to "PI Created"
+    2. Update status back to "PI Created" (or "Approved" if no PI)
     3. DO NOT cancel Assets (they're already submitted and may be in use)
     4. Assets remain linked in asset_links table for audit trail
     """
-    request = _resolve_expense_request(doc)
-    if not request:
+    request_name = _resolve_expense_request(doc)
+    if not request_name:
+        frappe.logger().info(f"[Payment Entry on_cancel] No ER linked to PE {doc.name}")
         return
 
-    updates = get_cancel_updates(request, "linked_payment_entry")
+    # Get cancel updates (clears linked_payment_entry and updates status)
+    updates = get_cancel_updates(request_name, "linked_payment_entry")
+    
+    frappe.logger().info(f"[Payment Entry on_cancel] PE {doc.name} cancelled, updating ER {request_name}")
+    frappe.logger().info(f"[Payment Entry on_cancel] New status: {updates.get('status')}")
     
     # Log info about linked assets (for audit)
-    request_doc = frappe.get_doc("Expense Request", request)
+    request_doc = frappe.get_doc("Expense Request", request_name)
     if request_doc.request_type == "Asset" and request_doc.get("asset_links"):
         asset_count = len(request_doc.asset_links)
         frappe.logger().info(
-            f"Payment Entry {doc.name} cancelled. "
-            f"Expense Request {request} has {asset_count} linked assets (not cancelled)."
+            f"[Payment Entry on_cancel] ER {request_name} has {asset_count} linked assets (not cancelled)"
         )
         frappe.msgprint(
             _("Note: {0} linked asset(s) remain active. Cancel them separately if needed.").format(asset_count),
@@ -398,7 +402,8 @@ def on_cancel(doc, method=None):
             indicator="blue"
         )
 
-    frappe.db.set_value("Expense Request", request, updates)
+    # Update Expense Request
+    frappe.db.set_value("Expense Request", request_name, updates)
 
 
 def on_trash(doc, method=None):
