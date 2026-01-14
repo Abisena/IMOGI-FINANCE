@@ -251,6 +251,7 @@ doc_events = {
         ],
         "before_submit": [
             "imogi_finance.receipt_control.payment_entry_hooks.validate_customer_receipt_link",
+            "imogi_finance.events.payment_entry.sync_expense_request_reference",
         ],
         "on_submit": [
             "imogi_finance.events.payment_entry.on_submit",

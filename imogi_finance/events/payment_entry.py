@@ -250,20 +250,23 @@ def _sync_expense_request_link(
 
 
 def sync_expense_request_reference(doc, method=None):
-    """Persist Expense Request reference from Payment Entry references."""
+    """Persist Expense Request reference from Payment Entry references.
+    
+    This runs in validate hook to auto-populate the field before save.
+    """
+    # Skip if already set manually
+    if doc.get("imogi_expense_request"):
+        return
+    
     request_name = _resolve_expense_request(doc)
     
     # Debug logging
-    frappe.logger().info(f"[Payment Entry validate] PE: {doc.name}, Resolved ER: {request_name}")
-    frappe.logger().info(f"[Payment Entry validate] Current field value: {doc.get('imogi_expense_request')}")
+    frappe.logger().info(f"[Payment Entry validate] PE: {getattr(doc, 'name', 'NEW')}, Resolved ER: {request_name}")
     frappe.logger().info(f"[Payment Entry validate] References count: {len(doc.get('references') or [])}")
     
-    if not request_name:
-        return
-    if doc.get("imogi_expense_request"):
-        return
-    doc.imogi_expense_request = request_name
-    frappe.logger().info(f"[Payment Entry validate] Set imogi_expense_request to {request_name}")
+    if request_name:
+        doc.imogi_expense_request = request_name
+        frappe.logger().info(f"[Payment Entry validate] Set imogi_expense_request to {request_name}")
 
 
 def on_change_expense_request(doc, method=None):
