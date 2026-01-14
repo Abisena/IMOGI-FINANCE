@@ -245,6 +245,9 @@ doc_events = {
         "after_insert": [
             "imogi_finance.events.payment_entry.after_insert",
         ],
+        "on_update": [
+            "imogi_finance.events.payment_entry.on_update",
+        ],
         "before_submit": [
             "imogi_finance.receipt_control.payment_entry_hooks.validate_customer_receipt_link",
         ],
@@ -392,4 +395,3 @@ after_migrate = "imogi_finance.utils.ensure_coretax_export_doctypes"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
