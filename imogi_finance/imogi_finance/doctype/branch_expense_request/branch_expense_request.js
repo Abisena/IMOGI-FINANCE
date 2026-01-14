@@ -89,6 +89,30 @@ function setExpenseAccountQuery(frm) {
 	frm.set_query("expense_account", "items", () => ({ filters }));
 }
 
+function formatApprovalTimestamps(frm) {
+	// Format and display approval/rejection timestamps for each level
+	for (let level = 1; level <= 3; level++) {
+		const userField = `level_${level}_user`;
+		const approvedField = `level_${level}_approved_on`;
+		const rejectedField = `level_${level}_rejected_on`;
+		
+		if (!frm.doc[userField]) {
+			continue; // Skip levels without approver
+		}
+		
+		// Update field descriptions to show timestamps
+		if (frm.doc[approvedField]) {
+			const formattedTime = frappe.datetime.str_to_user(frm.doc[approvedField]);
+			frm.set_df_property(approvedField, 'description', `✅ Approved at ${formattedTime}`);
+		}
+		
+		if (frm.doc[rejectedField]) {
+			const formattedTime = frappe.datetime.str_to_user(frm.doc[rejectedField]);
+			frm.set_df_property(rejectedField, 'description', `❌ Rejected at ${formattedTime}`);
+		}
+	}
+}
+
 async function setBerUploadQuery(frm) {
 	let usedUploads = [];
 	let verifiedUploads = [];
@@ -166,6 +190,7 @@ frappe.ui.form.on("Branch Expense Request", {
 	async refresh(frm) {
 		setExpenseAccountQuery(frm);
 		lockBerTaxInvoiceFields(frm);
+		formatApprovalTimestamps(frm);
 		update_totals(frm);
 		await setBerUploadQuery(frm);
 		await syncBerUpload(frm);

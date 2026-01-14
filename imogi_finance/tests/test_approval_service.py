@@ -23,8 +23,6 @@ def mock_document():
     doc.level_1_user = "approver1@example.com"
     doc.level_2_user = "approver2@example.com"
     doc.level_3_user = None
-    doc.approved_on = None
-    doc.rejected_on = None
     doc.approval_route_snapshot = None
     doc.flags = Mock()
     doc.flags.workflow_action_allowed = False
@@ -161,26 +159,22 @@ class TestOnWorkflowAction:
         mock_document.workflow_state = "Pending Review"
         mock_document.current_approval_level = 2
         mock_document.level_3_user = None  # No L3
-        mock_document.approved_on = None
         
         approval_service.on_workflow_action(mock_document, action="Approve", next_state="Approved")
         
         assert mock_document.workflow_state == "Approved"
         assert mock_document.status == "Approved"
         assert mock_document.current_approval_level == 0
-        assert mock_document.approved_on is not None
 
     def test_on_workflow_action_reject(self, approval_service, mock_document):
         """Reject should set state to Rejected."""
         mock_document.workflow_state = "Pending Review"
-        mock_document.rejected_on = None
         
         approval_service.on_workflow_action(mock_document, action="Reject", next_state="Rejected")
         
         assert mock_document.workflow_state == "Rejected"
         assert mock_document.status == "Rejected"
         assert mock_document.current_approval_level == 0
-        assert mock_document.rejected_on is not None
 
     def test_on_workflow_action_reopen(self, approval_service, mock_document):
         """Reopen should reset to Pending Review level 1 if approvers exist."""

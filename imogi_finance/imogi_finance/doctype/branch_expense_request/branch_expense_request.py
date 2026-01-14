@@ -128,15 +128,11 @@ class BranchExpenseRequest(Document):
         if action == "Approve" and next_state == "Approved":
             self.record_approval_route_snapshot()
             self.current_approval_level = 0
-            self._set_approval_audit()
         if action == "Approve" and next_state == self.PENDING_REVIEW_STATE:
             self._advance_approval_level()
 
         if action == "Reject":
             self.current_approval_level = 0
-            # Ensure approval audit fields are cleared when rejected
-            self.approved_on = None
-            self.rejected_on = now_datetime()
 
         if next_state:
             self.workflow_state = next_state
@@ -256,14 +252,6 @@ class BranchExpenseRequest(Document):
             self.flags = flags
         self.flags.deferred_amortization_schedule = schedule
 
-    def _set_approval_audit(self):
-        """Set approval timestamp when the request reaches Approved state."""
-        try:
-            self.approved_on = now_datetime()
-        except Exception:
-            # Avoid blocking workflow if timestamp setting fails for any reason.
-            pass
-
     def _sync_tax_invoice_upload(self):
         if not getattr(self, "ti_tax_invoice_upload", None):
             return
@@ -317,9 +305,7 @@ class BranchExpenseRequest(Document):
             self.status = self.STATUS_DRAFT
             self.workflow_state = None
             self.current_approval_level = 0
-            # Clear approval audit and route snapshot on copied drafts
-            self.approved_on = None
-            self.rejected_on = None
+            # Clear route snapshot on copied drafts
             self.approval_route_snapshot = None
             self.level_1_user = None
             self.level_2_user = None

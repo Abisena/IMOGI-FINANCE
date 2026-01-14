@@ -77,9 +77,6 @@
     "tab_approval",
     "approval_status_section",
     "current_approval_level",
-    "column_break_approval_status",
-    "approved_on",
-    "rejected_on",
     "approvers_section",
     "level_1_user",
     "column_break_approver_2",
@@ -504,22 +501,6 @@
       "read_only": 1
     },
     {
-      "fieldname": "column_break_approval_status",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "approved_on",
-      "fieldtype": "Datetime",
-      "label": "Approved On",
-      "read_only": 1
-    },
-    {
-      "fieldname": "rejected_on",
-      "fieldtype": "Datetime",
-      "label": "Rejected On",
-      "read_only": 1
-    },
-    {
       "fieldname": "approvers_section",
       "fieldtype": "Section Break",
       "label": "Daftar Approver"
@@ -529,6 +510,18 @@
       "fieldtype": "Link",
       "label": "Level 1 - Approver",
       "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_1_approved_on",
+      "fieldtype": "Datetime",
+      "label": "Level 1 - Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_1_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Level 1 - Rejected On",
       "read_only": 1
     },
     {
@@ -543,6 +536,18 @@
       "read_only": 1
     },
     {
+      "fieldname": "level_2_approved_on",
+      "fieldtype": "Datetime",
+      "label": "Level 2 - Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_2_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Level 2 - Rejected On",
+      "read_only": 1
+    },
+    {
       "fieldname": "column_break_approver_3",
       "fieldtype": "Column Break"
     },
@@ -551,6 +556,18 @@
       "fieldtype": "Link",
       "label": "Level 3 - Approver",
       "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_approved_on",
+      "fieldtype": "Datetime",
+      "label": "Level 3 - Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "Level 3 - Rejected On",
       "read_only": 1
     },
 

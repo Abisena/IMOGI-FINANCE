@@ -514,18 +514,6 @@
         <span class="detail-value">{{ doc.approval_setting }}</span>
       </div>
       {% endif %}
-      {% if doc.approved_on %}
-      <div class="detail-item">
-        <span class="detail-label">{{ _("Approved On") }}:</span>
-        <span class="detail-value">{{ frappe.utils.format_datetime(doc.approved_on) }}</span>
-      </div>
-      {% endif %}
-      {% if doc.rejected_on %}
-      <div class="detail-item">
-        <span class="detail-label">{{ _("Rejected On") }}:</span>
-        <span class="detail-value">{{ frappe.utils.format_datetime(doc.rejected_on) }}</span>
-      </div>
-      {% endif %}
       {% if doc.current_approval_level %}
       <div class="detail-item">
         <span class="detail-label">{{ _("Current Level") }}:</span>

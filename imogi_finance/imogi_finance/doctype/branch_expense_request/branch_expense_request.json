@@ -46,9 +46,6 @@
     "approval_status_section",
     "status",
     "workflow_state",
-    "column_break_approval_status",
-    "approved_on",
-    "rejected_on",
     "approval_routing_section",
     "current_approval_level",
     "approval_setting",
@@ -338,22 +335,6 @@
       "hidden": 1
     },
     {
-      "fieldname": "column_break_approval_status",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "approved_on",
-      "fieldtype": "Datetime",
-      "label": "✅ Approved On",
-      "read_only": 1
-    },
-    {
-      "fieldname": "rejected_on",
-      "fieldtype": "Datetime",
-      "label": "❌ Rejected On",
-      "read_only": 1
-    },
-    {
       "collapsible": 1,
       "collapsible_depends_on": "eval:doc.docstatus==0",
       "fieldname": "approval_routing_section",
@@ -405,6 +386,18 @@
       "read_only": 1
     },
     {
+      "fieldname": "level_1_approved_on",
+      "fieldtype": "Datetime",
+      "label": "✅ Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_1_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "❌ Rejected On",
+      "read_only": 1
+    },
+    {
       "fieldname": "column_break_level_1",
       "fieldtype": "Column Break"
     },
@@ -431,6 +424,18 @@
       "read_only": 1
     },
     {
+      "fieldname": "level_2_approved_on",
+      "fieldtype": "Datetime",
+      "label": "✅ Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_2_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "❌ Rejected On",
+      "read_only": 1
+    },
+    {
       "fieldname": "column_break_level_2",
       "fieldtype": "Column Break"
     },
@@ -454,6 +459,18 @@
       "fieldtype": "Link",
       "label": "Approver",
       "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_approved_on",
+      "fieldtype": "Datetime",
+      "label": "✅ Approved On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_rejected_on",
+      "fieldtype": "Datetime",
+      "label": "❌ Rejected On",
       "read_only": 1
     },
     {

@@ -91,6 +91,30 @@ function hideErOcrStatus(frm) {
   }
 }
 
+function formatApprovalTimestamps(frm) {
+  // Format and display approval/rejection timestamps for each level
+  for (let level = 1; level <= 3; level++) {
+    const userField = `level_${level}_user`;
+    const approvedField = `level_${level}_approved_on`;
+    const rejectedField = `level_${level}_rejected_on`;
+    
+    if (!frm.doc[userField]) {
+      continue; // Skip levels without approver
+    }
+    
+    // Update field descriptions to show timestamps
+    if (frm.doc[approvedField]) {
+      const formattedTime = frappe.datetime.str_to_user(frm.doc[approvedField]);
+      frm.set_df_property(approvedField, 'description', `✅ Approved at ${formattedTime}`);
+    }
+    
+    if (frm.doc[rejectedField]) {
+      const formattedTime = frappe.datetime.str_to_user(frm.doc[rejectedField]);
+      frm.set_df_property(rejectedField, 'description', `❌ Rejected at ${formattedTime}`);
+    }
+  }
+}
+
 function setExpenseAccountQuery(frm) {
   const filters = { root_type: 'Expense', is_group: 0 };
   frm.set_query('expense_account', () => ({ filters }));
@@ -365,6 +389,7 @@ frappe.ui.form.on('Expense Request', {
     lockErTaxInvoiceFields(frm);
     setExpenseAccountQuery(frm);
     toggleAssetItemsBehavior(frm);
+    formatApprovalTimestamps(frm);
     frm.dashboard.clear_headline();
     await setErUploadQuery(frm);
     await syncErUpload(frm);

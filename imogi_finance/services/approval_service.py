@@ -102,12 +102,10 @@ class ApprovalService:
                 else:
                     # All levels approved, move to Approved
                     self._set_state(doc, "Approved", level=0)
-                    self._set_audit_timestamp(doc, "approved_on")
             return
 
         if action == "Reject":
             self._set_state(doc, "Rejected", level=0)
-            self._set_audit_timestamp(doc, "rejected_on")
             return
 
         if action == "Reopen":
@@ -237,16 +235,6 @@ class ApprovalService:
         setattr(doc, self.status_field, state)
         setattr(doc, self.current_level_field, level)
         self._set_flags(doc, workflow_allowed=True)
-
-    def _set_audit_timestamp(self, doc: Document, field: str) -> None:
-        """Set audit timestamp (approved_on, rejected_on, etc.)."""
-        timestamp = now_datetime()
-        try:
-            setattr(doc, field, timestamp)
-            if getattr(doc, "docstatus", 0) == 1 and hasattr(doc, "db_set"):
-                doc.db_set(field, timestamp, update_modified=False)
-        except Exception:
-            pass
 
     def _set_flags(self, doc: Document, workflow_allowed: bool = False) -> None:
         """Set flags to allow status changes."""
