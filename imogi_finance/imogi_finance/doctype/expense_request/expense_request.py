@@ -447,7 +447,7 @@ class ExpenseRequest(Document):
             setting = get_active_setting_meta(self.cost_center)
             approval_amount = self.amount
             if getattr(self, "request_type", None) == "Asset":
-                approval_amount = self.total_amount
+                approval_amount = getattr(self, "total_amount", None) or self.amount
             route = get_approval_route(
                 self.cost_center,
                 self._get_expense_accounts(),
