@@ -263,15 +263,23 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     for idx, item in enumerate(request_items, start=1):
         # Determine expense account based on request type
         if request_type == "Asset":
-            # For Asset requests, get fixed asset account from Asset Category
+            # For Asset requests, get fixed asset account from Asset Category Account
             asset_category = getattr(item, "asset_category", None)
             expense_account = None
             if asset_category:
-                expense_account = frappe.db.get_value(
-                    "Asset Category",
-                    asset_category,
-                    "fixed_asset_account"
+                # Query the Asset Category Account child table for fixed_asset_account
+                accounts = frappe.get_all(
+                    "Asset Category Account",
+                    filters={
+                        "parent": asset_category,
+                        "company_name": company
+                    },
+                    fields=["fixed_asset_account"],
+                    limit=1
                 )
+                if accounts and accounts[0].get("fixed_asset_account"):
+                    expense_account = accounts[0]["fixed_asset_account"]
+            
             # Fallback to default if not found
             if not expense_account:
                 expense_account = frappe.get_cached_value(
