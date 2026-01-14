@@ -80,7 +80,11 @@ def _sync_expense_request_link(
     doc, request_name: str | None, *, allowed_statuses: frozenset[str] | set[str] | None = None
 ):
     if not request_name:
+        frappe.logger().info(f"[_sync_expense_request_link] No request_name for PE: {doc.name}")
         return None
+    
+    frappe.logger().info(f"[_sync_expense_request_link] Syncing PE {doc.name} to ER {request_name}")
+    
     _ensure_expense_request_reference(doc, request_name)
 
     request = get_approved_expense_request(
@@ -94,6 +98,9 @@ def _sync_expense_request_link(
         request.name,
         {"linked_payment_entry": doc.name},
     )
+    
+    frappe.logger().info(f"[_sync_expense_request_link] Successfully linked PE {doc.name} to ER {request_name}")
+    
     return request
 
 
@@ -143,6 +150,11 @@ def on_change_expense_request(doc, method=None):
 def after_insert(doc, method=None):
     """Link Payment Entry to Expense Request immediately on draft creation."""
     request_name = _resolve_expense_request(doc)
+    
+    # Debug logging
+    frappe.logger().info(f"[Payment Entry after_insert] PE: {doc.name}, Resolved ER: {request_name}")
+    frappe.logger().info(f"[Payment Entry after_insert] References: {doc.get('references')}")
+    
     _sync_expense_request_link(doc, request_name)
 
 
@@ -151,6 +163,11 @@ def on_update(doc, method=None):
     if doc.get("docstatus") == 2:
         return
     request_name = _resolve_expense_request(doc)
+    
+    # Debug logging
+    frappe.logger().info(f"[Payment Entry on_update] PE: {doc.name}, Resolved ER: {request_name}")
+    frappe.logger().info(f"[Payment Entry on_update] Current ER field: {doc.get('imogi_expense_request')}")
+    
     if not request_name:
         return
     _sync_expense_request_link(doc, request_name)
