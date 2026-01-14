@@ -619,14 +619,16 @@
     {
       "fieldname": "asset_links_section",
       "fieldtype": "Section Break",
-      "label": "Linked Assets"
+      "label": "Linked Assets",
+      "depends_on": "eval:doc.request_type==='Asset'"
     },
     {
       "fieldname": "asset_links",
       "fieldtype": "Table",
       "label": "Asset Links",
       "options": "Expense Request Asset Link",
-      "read_only": 1
+      "read_only": 1,
+      "depends_on": "eval:doc.request_type==='Asset'"
     },
 
     {

@@ -10,6 +10,33 @@ from imogi_finance.events.utils import (
 )
 
 
+@frappe.whitelist()
+def manual_create_assets_from_expense_request(expense_request_name: str):
+    """Manual trigger to create assets from Expense Request.
+    
+    Use this if assets were not auto-created when Payment Entry was submitted.
+    """
+    request = frappe.get_doc("Expense Request", expense_request_name)
+    
+    if request.request_type != "Asset":
+        frappe.throw(_("This is not an Asset type request"))
+    
+    if not request.linked_purchase_invoice:
+        frappe.throw(_("No Purchase Invoice linked to this request"))
+    
+    # Check if Payment Entry exists and is submitted
+    pi_name = request.linked_purchase_invoice
+    pi = frappe.get_doc("Purchase Invoice", pi_name)
+    
+    if pi.outstanding_amount > 0:
+        frappe.throw(_("Purchase Invoice has not been fully paid yet. Outstanding: {0}").format(pi.outstanding_amount))
+    
+    # Trigger asset creation
+    _auto_create_assets_from_expense_request(request)
+    
+    return {"success": True, "message": "Assets created successfully"}
+
+
 def _auto_create_assets_from_expense_request(request):
     """Auto-create Asset documents from paid Expense Request.
     
