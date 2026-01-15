@@ -218,11 +218,15 @@ def _require_internal_charge_ready(expense_request, settings):
 def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     settings = settings or utils.get_settings()
     company = utils.resolve_company_from_cost_center(getattr(expense_request, "cost_center", None))
-    fiscal_year = getattr(expense_request, "fiscal_year", None)
+    # FIX: Expense Request doesn't have fiscal_year field, need to resolve it
+    fiscal_year = utils.resolve_fiscal_year(getattr(expense_request, "fiscal_year", None))
 
     total_amount, account_totals = _get_account_totals(getattr(expense_request, "items", []) or [])
     if not account_totals:
+        frappe.logger().warning(f"_build_allocation_slices: No account totals for {getattr(expense_request, 'name', 'Unknown')}")
         return []
+    
+    frappe.logger().info(f"_build_allocation_slices for {getattr(expense_request, 'name', 'Unknown')}: total={total_amount}, accounts={list(account_totals.keys())}")
 
     slices = []
 
@@ -237,6 +241,8 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
                 branch=getattr(expense_request, "branch", None),
             )
             slices.append((dims, float(amount)))
+        
+        frappe.logger().info(f"_build_allocation_slices: Created {len(slices)} slices for direct allocation")
         return slices
 
     ic_doc = ic_doc or _load_internal_charge_request(getattr(expense_request, "internal_charge_request", None))
@@ -316,12 +322,14 @@ def _reverse_reservations(expense_request):
 def reserve_budget_for_request(expense_request, *, trigger_action: str | None = None, next_state: str | None = None):
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
+        frappe.logger().info(f"reserve_budget_for_request: Budget lock disabled for {getattr(expense_request, 'name', 'Unknown')}")
         return
 
     target_state = settings.get("lock_on_workflow_state") or "Approved"
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
     if status != target_state and workflow_state != target_state:
+        frappe.logger().info(f"reserve_budget_for_request: Status {status}/{workflow_state} not matching target {target_state}")
         return
 
     ic_doc = None
@@ -330,7 +338,10 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
     slices = _build_allocation_slices(expense_request, settings=settings, ic_doc=ic_doc)
     if not slices:
+        frappe.logger().warning(f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}")
         return
+
+    frappe.logger().info(f"reserve_budget_for_request: Processing {len(slices)} slices for {getattr(expense_request, 'name', 'Unknown')}")
 
     controller_role = _require_budget_controller_role(settings)
     reviewer = _get_session_user() or controller_role
@@ -355,15 +366,24 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             any_overrun = True
 
     for dims, amount in slices:
-        ledger.post_entry(
-            "RESERVATION",
-            dims,
-            float(amount or 0),
-            "OUT",
-            ref_doctype="Expense Request",
-            ref_name=getattr(expense_request, "name", None),
-            remarks=_("Budget reservation for Expense Request"),
-        )
+        try:
+            entry_name = ledger.post_entry(
+                "RESERVATION",
+                dims,
+                float(amount or 0),
+                "OUT",
+                ref_doctype="Expense Request",
+                ref_name=getattr(expense_request, "name", None),
+                remarks=_("Budget reservation for Expense Request"),
+            )
+            frappe.logger().info(f"reserve_budget_for_request: Created reservation {entry_name}")
+        except Exception as e:
+            frappe.logger().error(f"reserve_budget_for_request: Failed to create reservation: {str(e)}")
+            frappe.log_error(
+                title=f"Budget Reservation Failed for {getattr(expense_request, 'name', None)}",
+                message=f"Error creating reservation entry: {str(e)}\\n\\n{frappe.get_traceback()}"
+            )
+            raise
 
     lock_status = "Overrun Allowed" if any_overrun else "Locked"
     if getattr(expense_request, "budget_lock_status", None) != lock_status:
@@ -375,6 +395,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             "Approved",
             reason=_("Budget {0} during reservation.").format("overrun allowed" if any_overrun else "locked"),
         )
+    frappe.logger().info(f"reserve_budget_for_request: Completed for {getattr(expense_request, 'name', None)} with status {lock_status}")
 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):
@@ -446,20 +467,24 @@ def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
     settings = utils.get_settings()
     enforce_mode = (settings.get("enforce_mode") or "Both").lower()
     if not settings.get("enable_budget_lock"):
+        frappe.logger().info(f"consume_budget_for_purchase_invoice: Budget lock disabled")
         return
 
     if enforce_mode not in {"both", "pi submit only"}:
+        frappe.logger().info(f"consume_budget_for_purchase_invoice: Enforce mode {enforce_mode} not applicable")
         return
 
     request = expense_request
     if request is None:
         er_name = getattr(purchase_invoice, "imogi_expense_request", None) or getattr(purchase_invoice, "expense_request", None)
         if not er_name:
+            frappe.logger().warning(f"consume_budget_for_purchase_invoice: No expense request linked to PI {getattr(purchase_invoice, 'name', 'Unknown')}")
             return
 
         try:
             request = frappe.get_doc("Expense Request", er_name)
-        except Exception:
+        except Exception as e:
+            frappe.logger().error(f"consume_budget_for_purchase_invoice: Failed to load ER {er_name}: {str(e)}")
             request = None
 
     if not request:
@@ -467,22 +492,37 @@ def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
 
     existing = _get_entries_for_ref("Purchase Invoice", getattr(purchase_invoice, "name", None), "CONSUMPTION")
     if existing:
+        frappe.logger().info(f"consume_budget_for_purchase_invoice: Consumption entries already exist for PI {getattr(purchase_invoice, 'name', None)}")
         return
 
     slices = _build_allocation_slices(request, settings=settings)
     if not slices:
+        frappe.logger().warning(f"consume_budget_for_purchase_invoice: No allocation slices for ER {getattr(request, 'name', 'Unknown')}")
+        # BUG FIX: Don't update status if no entries created!
         return
 
+    frappe.logger().info(f"consume_budget_for_purchase_invoice: Creating {len(slices)} consumption entries for PI {getattr(purchase_invoice, 'name', None)}")
+
     for dims, amount in slices:
-        ledger.post_entry(
-            "CONSUMPTION",
-            dims,
-            float(amount or 0),
-            "IN",
-            ref_doctype="Purchase Invoice",
-            ref_name=getattr(purchase_invoice, "name", None),
-            remarks=_("Budget consumption on Purchase Invoice submit"),
-        )
+        try:
+            entry_name = ledger.post_entry(
+                "CONSUMPTION",
+                dims,
+                float(amount or 0),
+                "IN",
+                ref_doctype="Purchase Invoice",
+                ref_name=getattr(purchase_invoice, "name", None),
+                remarks=_("Budget consumption on Purchase Invoice submit"),
+            )
+            frappe.logger().info(f"consume_budget_for_purchase_invoice: Created entry {entry_name} for {dims.cost_center}/{dims.account} amount={amount}")
+        except Exception as e:
+            frappe.logger().error(f"consume_budget_for_purchase_invoice: Failed to create entry: {str(e)}")
+            frappe.log_error(
+                title=f"Budget Consumption Failed for PI {getattr(purchase_invoice, 'name', None)}",
+                message=f"Error creating consumption entry: {str(e)}\\n\\n{frappe.get_traceback()}"
+            )
+            # Re-raise to prevent status update
+            raise
 
     if hasattr(request, "db_set"):
         request.db_set("budget_lock_status", "Consumed")
@@ -492,6 +532,7 @@ def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
         "Completed",
         reason=_("Budget consumed by Purchase Invoice {0}.").format(getattr(purchase_invoice, "name", None)),
     )
+    frappe.logger().info(f"consume_budget_for_purchase_invoice: Updated ER {getattr(request, 'name', None)} status to Consumed/Completed")
 
 
 def reverse_consumption_for_purchase_invoice(purchase_invoice, expense_request=None):

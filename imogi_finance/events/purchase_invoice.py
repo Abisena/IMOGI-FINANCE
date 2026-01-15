@@ -92,7 +92,22 @@ def on_submit(doc, method=None):
         request.name,
         {"status": "PI Created", "workflow_state": "PI Created", "pending_purchase_invoice": None},
     )
-    consume_budget_for_purchase_invoice(doc, expense_request=request)
+    
+    # Budget consumption MUST succeed or PI submit fails
+    try:
+        consume_budget_for_purchase_invoice(doc, expense_request=request)
+    except frappe.ValidationError:
+        raise
+    except Exception as e:
+        frappe.log_error(
+            title=f"Budget Consumption Failed for PI {doc.name}",
+            message=f"Error: {str(e)}\n\n{frappe.get_traceback()}"
+        )
+        frappe.throw(
+            _("Budget consumption failed. Purchase Invoice cannot be submitted. Error: {0}").format(str(e)),
+            title=_("Budget Control Error")
+        )
+    
     maybe_post_internal_charge_je(doc, expense_request=request)
 
 
@@ -105,19 +120,43 @@ def on_cancel(doc, method=None):
     """Handle Purchase Invoice cancellation.
     
     When PI is cancelled:
-    1. Clear linked_purchase_invoice from Expense Request
-    2. Update status appropriately
+    1. Check for active Payment Entry (must be cancelled first)
+    2. Reverse budget consumption
+    3. Clear linked_purchase_invoice from Expense Request
+    4. Update status appropriately
     """
-    request = doc.get("imogi_expense_request")
-    if not request:
+    request_name = doc.get("imogi_expense_request")
+    
+    # Check for active Payment Entry
+    if request_name:
+        pe = frappe.db.get_value("Expense Request", request_name, "linked_payment_entry")
+        if pe and frappe.db.get_value("Payment Entry", pe, "docstatus") == 1:
+            frappe.throw(
+                _("Cannot cancel Purchase Invoice. Payment Entry {0} must be cancelled first.").format(pe),
+                title=_("Active Payment Exists")
+            )
+    
+    # Reverse budget consumption - MUST succeed or cancel fails
+    try:
         reverse_consumption_for_purchase_invoice(doc)
+    except Exception as e:
+        frappe.log_error(
+            title=f"Budget Reversal Failed for PI {doc.name}",
+            message=f"Error: {str(e)}\n\n{frappe.get_traceback()}"
+        )
+        frappe.throw(
+            _("Failed to reverse budget consumption. Purchase Invoice cannot be cancelled. Error: {0}").format(str(e)),
+            title=_("Budget Reversal Error")
+        )
+    
+    # Update Expense Request status
+    if not request_name:
         return
 
-    updates = get_cancel_updates(request, "linked_purchase_invoice")
+    updates = get_cancel_updates(request_name, "linked_purchase_invoice")
     updates["pending_purchase_invoice"] = None
 
-    frappe.db.set_value("Expense Request", request, updates)
-    reverse_consumption_for_purchase_invoice(doc)
+    frappe.db.set_value("Expense Request", request_name, updates)
 
 
 def on_trash(doc, method=None):

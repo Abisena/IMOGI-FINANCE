@@ -147,11 +147,22 @@ class ExpenseRequest(Document):
     def on_submit(self):
         """Post-submit: sync budget (if enabled) and record in activity."""
         # Budget control: lock/reserve budget if configured
+        # If budget control is enabled and fails, the entire submit MUST fail
         try:
             handle_expense_request_workflow(self, "Submit", getattr(self, "workflow_state"))
-        except Exception:
-            # Budget module not critical - don't block
-            pass
+        except frappe.ValidationError:
+            # Re-raise validation errors (e.g., budget exceeded)
+            raise
+        except Exception as e:
+            # Log unexpected errors and fail the transaction
+            frappe.log_error(
+                title=f"Budget Control Critical Error for {self.name}",
+                message=f"Failed to handle budget workflow on submit: {str(e)}\n\n{frappe.get_traceback()}"
+            )
+            frappe.throw(
+                _("Budget control operation failed. Transaction cannot be completed. Error: {0}").format(str(e)),
+                title=_("Budget Control Error")
+            )
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow actions using ApprovalService + route validation."""
@@ -169,9 +180,19 @@ class ExpenseRequest(Document):
         if action in ("Approve", "Reject", "Reopen"):
             try:
                 handle_expense_request_workflow(self, action, getattr(self, "workflow_state"))
-            except Exception:
-                # Budget module errors don't block workflow
-                pass
+            except frappe.ValidationError:
+                # Re-raise validation errors
+                raise
+            except Exception as e:
+                # Log unexpected errors and fail the workflow action
+                frappe.log_error(
+                    title=f"Budget Control Critical Error for {self.name}",
+                    message=f"Failed to handle budget workflow on {action}: {str(e)}\n\n{frappe.get_traceback()}"
+                )
+                frappe.throw(
+                    _("Budget control operation failed. Workflow action cannot be completed. Error: {0}").format(str(e)),
+                    title=_("Budget Control Error")
+                )
 
     def on_update_after_submit(self):
         """Post-save: guard status changes to prevent bypass."""
@@ -206,10 +227,35 @@ class ExpenseRequest(Document):
 
     def on_cancel(self):
         """Clean up: release budget reservations."""
+        # Check for active downstream links - MUST be cancelled first
+        active_links = []
+        
+        pe = getattr(self, "linked_payment_entry", None)
+        if pe and frappe.db.get_value("Payment Entry", pe, "docstatus") == 1:
+            active_links.append(f"Payment Entry {pe}")
+        
+        pi = getattr(self, "linked_purchase_invoice", None)
+        if pi and frappe.db.get_value("Purchase Invoice", pi, "docstatus") == 1:
+            active_links.append(f"Purchase Invoice {pi}")
+        
+        if active_links:
+            frappe.throw(
+                _("Cannot cancel Expense Request. Please cancel these documents first: {0}").format(", ".join(active_links)),
+                title=_("Active Links Exist")
+            )
+        
+        # Release budget reservations - MUST succeed or cancel fails
         try:
             release_budget_for_request(self, reason="Cancel")
-        except Exception:
-            pass
+        except Exception as e:
+            frappe.log_error(
+                title=f"Budget Release Error for {self.name}",
+                message=f"Error releasing budget: {str(e)}\n\n{frappe.get_traceback()}"
+            )
+            frappe.throw(
+                _("Failed to release budget. Cancel operation cannot proceed. Error: {0}").format(str(e)),
+                title=_("Budget Release Error")
+            )
 
     def on_trash(self):
         """Clean up OCR links and monitoring records before deletion.
