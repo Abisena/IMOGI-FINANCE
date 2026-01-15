@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 
 from imogi_finance.budget_control import service, utils
+from imogi_finance import budget_approval
 
 try:
     from frappe.model.document import Document
@@ -18,13 +19,64 @@ except Exception:  # pragma: no cover - fallback for test stubs
 
 
 class AdditionalBudgetRequest(Document):
-    """Request to top-up budget allocation."""
+    """Request to top-up budget allocation with multi-level approval."""
 
     def validate(self):
         if getattr(self, "amount", 0) is None or float(self.amount) <= 0:
             frappe.throw(_("Amount must be greater than zero."))
 
-    def on_submit(self):
+    def before_submit(self):
+        """Resolve approval route before submission."""
+        cost_center = getattr(self, "cost_center", None)
+        if not cost_center:
+            frappe.throw(_("Cost Center is required"))
+        
+        # Resolve approval route
+        route = budget_approval.get_budget_approval_route(cost_center)
+        
+        # Store approval route
+        self.approval_setting = route["approval_setting"]
+        self.level_1_user = route["level_1_user"]
+        self.level_2_user = route.get("level_2_user")
+        self.level_3_user = route.get("level_3_user")
+        
+        # Initialize approval level
+        self.current_approval_level = 1
+        
+        # Set initial status
+        self.status = "Pending Approval"
+
+    def before_workflow_action(self, action, **kwargs):
+        """Validate approver before workflow action."""
+        if action == "Submit":
+            return
+        
+        budget_approval.validate_approver_permission(self, action)
+
+    def on_workflow_action(self, action, **kwargs):
+        """Handle workflow state transitions."""
+        next_state = kwargs.get("next_state")
+        
+        if action == "Submit":
+            self.workflow_state = "Pending Approval"
+            self.status = "Pending Approval"
+            return
+        
+        if action == "Approve":
+            budget_approval.advance_approval_level(self)
+            
+            # Execute budget supplement only when fully approved
+            if self.status == "Approved":
+                self._execute_budget_supplement()
+            return
+        
+        if action == "Reject":
+            self.status = "Rejected"
+            self.workflow_state = "Rejected"
+            self.current_approval_level = 0
+
+    def _execute_budget_supplement(self):
+        """Execute budget supplement after full approval."""
         settings = utils.get_settings()
         if not settings.get("enable_additional_budget"):
             return
@@ -43,7 +95,3 @@ class AdditionalBudgetRequest(Document):
             ref_doctype="Additional Budget Request",
             ref_name=getattr(self, "name", None),
         )
-
-        current_status = getattr(self, "status", None)
-        if not current_status or current_status in {"Draft", "Pending Approval"}:
-            self.status = "Approved"

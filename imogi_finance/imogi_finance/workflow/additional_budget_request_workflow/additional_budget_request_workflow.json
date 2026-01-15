@@ -1,0 +1,69 @@
+{
+  "doctype": "Workflow",
+  "name": "Additional Budget Request Workflow",
+  "workflow_name": "Additional Budget Request Workflow",
+  "document_type": "Additional Budget Request",
+  "is_active": 1,
+  "module": "Imogi Finance",
+  "notes": "Multi-level approval workflow for additional budget requests. Approval levels are determined by Budget Approval Setting per cost center. No amount validation - only hierarchical approval levels.",
+  "override_status": 1,
+  "workflow_state_field": "workflow_state",
+  "states": [
+    {
+      "state": "Draft",
+      "doc_status": "0",
+      "allow_edit": "All"
+    },
+    {
+      "state": "Pending Approval",
+      "doc_status": "1",
+      "allow_edit": "Budget Approver"
+    },
+    {
+      "state": "Approved",
+      "doc_status": "1",
+      "allow_edit": "Budget Approver"
+    },
+    {
+      "state": "Rejected",
+      "doc_status": "1",
+      "allow_edit": "Budget Approver"
+    }
+  ],
+  "transitions": [
+    {
+      "state": "Draft",
+      "action": "Submit",
+      "next_state": "Pending Approval",
+      "allowed": "All",
+      "allow_self_approval": 0
+    },
+    {
+      "state": "Pending Approval",
+      "action": "Approve",
+      "next_state": "Approved",
+      "allowed": "All",
+      "condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"
+    },
+    {
+      "state": "Pending Approval",
+      "action": "Reject",
+      "next_state": "Rejected",
+      "allowed": "All"
+    }
+  ],
+  "actions": [
+    {
+      "action": "Submit",
+      "allowed": "All"
+    },
+    {
+      "action": "Approve",
+      "allowed": "All"
+    },
+    {
+      "action": "Reject",
+      "allowed": "All"
+    }
+  ]
+}

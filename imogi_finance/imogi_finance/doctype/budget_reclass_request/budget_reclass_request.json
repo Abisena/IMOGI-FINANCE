@@ -11,6 +11,7 @@
   "autoname": "BCR-.YYYY.-.#####",
   "field_order": [
     "status",
+    "workflow_state",
 
     "tab_main",
     "basic_section",
@@ -32,6 +33,25 @@
     "column_break_details",
     "attachments",
 
+    "tab_approval",
+    "approval_info_section",
+    "approval_setting",
+    "current_approval_level",
+    "column_break_approval",
+    "level_1_user",
+    "level_2_user",
+    "level_3_user",
+
+    "approval_tracking_section",
+    "level_1_approved_by",
+    "level_1_approved_at",
+    "column_break_tracking_1",
+    "level_2_approved_by",
+    "level_2_approved_at",
+    "column_break_tracking_2",
+    "level_3_approved_by",
+    "level_3_approved_at",
+
     "section_break_hidden",
     "naming_series"
   ],
@@ -46,6 +66,15 @@
       "in_list_view": 1,
       "in_standard_filter": 1,
       "bold": 1
+    },
+    {
+      "fieldname": "workflow_state",
+      "label": "Workflow State",
+      "fieldtype": "Link",
+      "options": "Workflow State",
+      "hidden": 1,
+      "read_only": 1,
+      "no_copy": 1
     },
 
     {
@@ -159,6 +188,111 @@
       "label": "Dokumen Pendukung",
       "fieldtype": "Attach",
       "description": "Upload dokumen pendukung jika ada"
+    },
+
+    {
+      "fieldname": "tab_approval",
+      "fieldtype": "Tab Break",
+      "label": "Approval Tracking"
+    },
+    {
+      "fieldname": "approval_info_section",
+      "fieldtype": "Section Break",
+      "label": "Route Approval"
+    },
+    {
+      "fieldname": "approval_setting",
+      "label": "Approval Setting",
+      "fieldtype": "Link",
+      "options": "Budget Approval Setting",
+      "read_only": 1
+    },
+    {
+      "fieldname": "current_approval_level",
+      "label": "Current Level",
+      "fieldtype": "Int",
+      "read_only": 1,
+      "default": "0"
+    },
+    {
+      "fieldname": "column_break_approval",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "level_1_user",
+      "label": "Level 1 Approver",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_2_user",
+      "label": "Level 2 Approver",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_user",
+      "label": "Level 3 Approver",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+
+    {
+      "fieldname": "approval_tracking_section",
+      "fieldtype": "Section Break",
+      "label": "Approval History",
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:doc.level_1_approved_by"
+    },
+    {
+      "fieldname": "level_1_approved_by",
+      "label": "Level 1 Approved By",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_1_approved_at",
+      "label": "Level 1 Approved At",
+      "fieldtype": "Datetime",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_tracking_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "level_2_approved_by",
+      "label": "Level 2 Approved By",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_2_approved_at",
+      "label": "Level 2 Approved At",
+      "fieldtype": "Datetime",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_tracking_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "level_3_approved_by",
+      "label": "Level 3 Approved By",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "level_3_approved_at",
+      "label": "Level 3 Approved At",
+      "fieldtype": "Datetime",
+      "read_only": 1
     },
 
     {
