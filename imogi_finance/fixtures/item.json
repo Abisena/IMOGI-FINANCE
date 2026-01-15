@@ -1,9 +1,10 @@
 [
   {
     "doctype": "Item",
+    "name": "ASSET-ENTRY",
     "item_code": "ASSET-ENTRY",
     "item_name": "Asset Entry",
-    "item_group": "All Item Groups",
+    "item_group": "Fixed Assets",
     "stock_uom": "Unit",
     "is_stock_item": 0,
     "is_fixed_asset": 1,
