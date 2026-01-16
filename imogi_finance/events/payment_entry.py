@@ -54,11 +54,15 @@ def _ensure_expense_request_reference(doc, request_name: str | None) -> None:
 def _validate_expense_request_link(doc, request, request_name: str) -> None:
     linked_payment_entry = getattr(request, "linked_payment_entry", None)
     if linked_payment_entry and linked_payment_entry != doc.name:
-        frappe.throw(
-            _("Expense Request already linked to Payment Entry {0}").format(
-                linked_payment_entry
+        # Check if the linked PE is cancelled - if so, allow new PE
+        old_pe_docstatus = frappe.db.get_value("Payment Entry", linked_payment_entry, "docstatus")
+        if old_pe_docstatus == 1:  # Still submitted
+            frappe.throw(
+                _("Expense Request already linked to Payment Entry {0}").format(
+                    linked_payment_entry
+                )
             )
-        )
+        # Old PE is cancelled/draft, allow new PE to be linked
 
     existing_payment_entry = frappe.db.exists(
         "Payment Entry",
