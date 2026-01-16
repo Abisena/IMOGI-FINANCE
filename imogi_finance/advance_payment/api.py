@@ -414,18 +414,6 @@ def get_reference_allocations(reference_doctype: str, reference_name: str) -> li
             record["allocated_by_name"] = user.get("full_name") if user else record.allocated_by
     
     return allocations
-        total = frappe.db.sql(
-                """
-                SELECT SUM(ref.allocated_amount)
-                FROM `tabAdvance Payment Reference` ref
-                JOIN `tabAdvance Payment Entry` ape ON ape.name = ref.parent
-                WHERE ref.invoice_doctype = %s
-                    AND ref.invoice_name = %s
-                    AND ape.docstatus < 2
-                """,
-                (reference_doctype, reference_name),
-        )
-        return flt(total[0][0]) if total else 0.0
 
 
 def get_reference_currency(document) -> str | None:

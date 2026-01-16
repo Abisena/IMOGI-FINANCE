@@ -18,6 +18,7 @@
     "currency",
     "column_break_basic_1",
     "cost_center",
+    "allocation_mode",
     "project",
     "supplier_section",
     "supplier",
@@ -55,6 +56,23 @@
     "tax_invoice_number",
     "tax_invoice_date",
     "tax_invoice_attachment",
+    "ti_tax_invoice_section",
+    "ti_tax_invoice_upload",
+    "ti_ocr_data_section",
+    "ti_fp_no",
+    "ti_fp_date",
+    "ti_fp_npwp",
+    "ti_column_break_ocr",
+    "ti_fp_dpp",
+    "ti_fp_ppn",
+    "ti_fp_ppnbm",
+    "ti_verification_section",
+    "ti_fp_ppn_type",
+    "ti_verification_status",
+    "ti_column_break_verify",
+    "ti_duplicate_flag",
+    "ti_npwp_match",
+    "ti_verification_notes",
     "pph_section",
     "is_pph_applicable",
     "pph_type",
@@ -64,6 +82,8 @@
     "tab_approval",
     "approval_status_section",
     "current_approval_level",
+    "budget_lock_status",
+    "budget_workflow_state",
     "approvers_section",
     "level_1_user",
     "level_1_approved_on",
@@ -83,6 +103,8 @@
     "pending_purchase_invoice",
     "column_break_integration",
     "linked_payment_entry",
+    "internal_charge_request",
+    "prevent_pi_if_not_ready",
 
     "section_break_hidden",
     "approval_route_snapshot",
@@ -160,6 +182,13 @@
       "label": "Cost Center",
       "options": "Cost Center",
       "reqd": 1
+    },
+    {
+      "fieldname": "allocation_mode",
+      "fieldtype": "Select",
+      "label": "Allocation Mode",
+      "options": "Direct\nAllocated via Internal Charge",
+      "default": "Direct"
     },
     {
       "fieldname": "project",
@@ -369,6 +398,122 @@
       "description": "Upload file faktur pajak (PDF/Image)"
     },
     {
+      "collapsible": 1,
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "ti_tax_invoice_section",
+      "fieldtype": "Section Break",
+      "label": "Tax Invoice OCR"
+    },
+    {
+      "allow_on_submit": 1,
+      "depends_on": "eval:doc.is_ppn_applicable==1",
+      "fieldname": "ti_tax_invoice_upload",
+      "fieldtype": "Link",
+      "label": "Tax Invoice OCR Upload",
+      "options": "Tax Invoice OCR Upload"
+    },
+    {
+      "depends_on": "eval:doc.ti_tax_invoice_upload",
+      "fieldname": "ti_ocr_data_section",
+      "fieldtype": "Section Break",
+      "label": "Data Hasil OCR"
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_no",
+      "fieldtype": "Data",
+      "label": "No Faktur Pajak (OCR)",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_date",
+      "fieldtype": "Date",
+      "label": "Tanggal Faktur (OCR)",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_npwp",
+      "fieldtype": "Data",
+      "label": "NPWP (OCR)",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ti_column_break_ocr",
+      "fieldtype": "Column Break"
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_dpp",
+      "fieldtype": "Currency",
+      "label": "DPP (OCR)",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_ppn",
+      "fieldtype": "Currency",
+      "label": "PPN (OCR)",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_fp_ppnbm",
+      "fieldtype": "Currency",
+      "label": "PPnBM (OCR)",
+      "read_only": 1
+    },
+    {
+      "depends_on": "eval:doc.ti_tax_invoice_upload",
+      "fieldname": "ti_verification_section",
+      "fieldtype": "Section Break",
+      "label": "Verifikasi OCR"
+    },
+    {
+      "allow_on_submit": 1,
+      "default": "Standard",
+      "fieldname": "ti_fp_ppn_type",
+      "fieldtype": "Select",
+      "label": "Tipe PPN",
+      "options": "Standard\nZero Rated\nExempt/Not PPN",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "default": "Needs Review",
+      "fieldname": "ti_verification_status",
+      "fieldtype": "Select",
+      "label": "Status Verifikasi",
+      "options": "Needs Review\nVerified\nRejected",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ti_column_break_verify",
+      "fieldtype": "Column Break"
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_duplicate_flag",
+      "fieldtype": "Check",
+      "label": "Duplicate Tax Invoice",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_npwp_match",
+      "fieldtype": "Check",
+      "label": "NPWP Match",
+      "read_only": 1
+    },
+    {
+      "allow_on_submit": 1,
+      "fieldname": "ti_verification_notes",
+      "fieldtype": "Small Text",
+      "label": "Catatan Verifikasi",
+      "read_only": 1
+    },
+    {
       "fieldname": "pph_section",
       "fieldtype": "Section Break",
       "label": "PPh (Pajak Penghasilan)"
@@ -414,6 +559,21 @@
       "fieldname": "current_approval_level",
       "fieldtype": "Int",
       "label": "Level Approval Saat Ini",
+      "read_only": 1
+    },
+    {
+      "fieldname": "budget_lock_status",
+      "fieldtype": "Select",
+      "label": "Budget Lock Status",
+      "options": "Not Locked\nLocked\nReleased\nConsumed\nOverrun Allowed",
+      "read_only": 1
+    },
+    {
+      "fieldname": "budget_workflow_state",
+      "fieldtype": "Select",
+      "label": "Budget Workflow State",
+      "options": "Draft\nSubmitted\nUnder Review\nApproved\nRejected\nCompleted",
+      "default": "Draft",
       "read_only": 1
     },
     {
@@ -521,6 +681,20 @@
       "label": "Payment Entry",
       "options": "Payment Entry",
       "read_only": 1
+    },
+    {
+      "fieldname": "internal_charge_request",
+      "fieldtype": "Link",
+      "label": "Internal Charge Request",
+      "options": "Internal Charge Request",
+      "read_only": 1
+    },
+    {
+      "fieldname": "prevent_pi_if_not_ready",
+      "fieldtype": "Check",
+      "label": "Prevent PI if Not Ready",
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "section_break_hidden",
