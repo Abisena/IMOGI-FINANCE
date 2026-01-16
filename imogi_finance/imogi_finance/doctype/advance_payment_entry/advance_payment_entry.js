@@ -14,15 +14,16 @@ frappe.ui.form.on("Advance Payment Entry", {
 
     recalculate_totals(frm) {
         const allowUpdates = frm.doc.docstatus === 0;
-        const allocated = (frm.doc.references || []).reduce((acc, row) => acc + frappe.utils.flt(row.allocated_amount), 0);
-        const unallocated = frappe.utils.flt(frm.doc.advance_amount) - allocated;
+        const flt = (frappe.utils && frappe.utils.flt) || window.flt || ((value) => parseFloat(value) || 0);
+        const allocated = (frm.doc.references || []).reduce((acc, row) => acc + flt(row.allocated_amount), 0);
+        const unallocated = flt(frm.doc.advance_amount) - allocated;
 
         if (allowUpdates) {
             frm.set_value("allocated_amount", allocated);
             frm.set_value("unallocated_amount", unallocated);
-            frm.set_value("base_advance_amount", frappe.utils.flt(frm.doc.advance_amount) * frappe.utils.flt(frm.doc.exchange_rate || 1));
-            frm.set_value("base_allocated_amount", allocated * frappe.utils.flt(frm.doc.exchange_rate || 1));
-            frm.set_value("base_unallocated_amount", frappe.utils.flt(frm.doc.base_advance_amount) - frappe.utils.flt(frm.doc.base_allocated_amount));
+            frm.set_value("base_advance_amount", flt(frm.doc.advance_amount) * flt(frm.doc.exchange_rate || 1));
+            frm.set_value("base_allocated_amount", allocated * flt(frm.doc.exchange_rate || 1));
+            frm.set_value("base_unallocated_amount", flt(frm.doc.base_advance_amount) - flt(frm.doc.base_allocated_amount));
         }
 
         if (allowUpdates) {

@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class CoretaxColumnMapping(Document):
+class CoreTaxColumnMapping(Document):
     """Child table for CoreTax column mapping configuration.
     
     Maps document fields or computed values to CoreTax export columns.

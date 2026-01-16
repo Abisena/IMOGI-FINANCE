@@ -386,7 +386,7 @@ scheduler_events = {
 # before_tests = "imogi_finance.install.before_tests"
 
 # Run fixture sanitization first to avoid malformed rows during migrate,
-# then ensure Coretax export doctypes are present.
+# then ensure CoreTax export doctypes are present.
 before_migrate = [
     "imogi_finance.fixtures.sanitize_fixture_files",
     "imogi_finance.utils.ensure_coretax_export_doctypes",

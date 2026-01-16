@@ -10,7 +10,7 @@ from frappe.model.document import Document
 from imogi_finance import tax_operations
 
 
-class CoretaxExportSettings(Document):
+class CoreTaxExportSettings(Document):
     """Configurable column mappings for CoreTax exports."""
 
     def validate(self):

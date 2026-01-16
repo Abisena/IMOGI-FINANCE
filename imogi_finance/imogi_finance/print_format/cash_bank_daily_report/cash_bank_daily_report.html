@@ -1,4 +1,4 @@
-{% set bundle = frappe.parse_json(doc.snapshot_json or '{}') %}
+{% set bundle = frappe.safe_eval(doc.snapshot_json or '{}') if doc.snapshot_json else {} %}
 {% set consolidated = bundle.get('consolidated') or {} %}
 {% set branches = bundle.get('branches') or [] %}
 {% set signers = bundle.get('signers') or {} %}

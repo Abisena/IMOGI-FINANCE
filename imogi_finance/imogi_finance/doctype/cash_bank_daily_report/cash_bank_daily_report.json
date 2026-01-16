@@ -96,7 +96,8 @@
       "fieldtype": "Code",
       "label": "Snapshot JSON",
       "options": "JSON",
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "section_preview",
