@@ -1,4 +1,4 @@
-{% set bundle = (doc.snapshot_json | fromjson) if doc.snapshot_json else {} %}
+{% set bundle = doc.snapshot_data or {} %}
 {% set consolidated = bundle.get('consolidated') or {} %}
 {% set branches = bundle.get('branches') or [] %}
 {% set signers = bundle.get('signers') or {} %}

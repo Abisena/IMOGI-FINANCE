@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import List, Optional
 
 import frappe
@@ -15,6 +16,24 @@ class CashBankDailyReport(Document):
     and a JSON snapshot of the generated report so it can be printed or
     re-opened later without recomputing everything.
     """
+    
+    @property
+    def snapshot_data(self) -> dict:
+        """Parse and return snapshot JSON as dictionary.
+        
+        This property is used in print formats to access the parsed data
+        without needing custom Jinja filters.
+        
+        Returns:
+            dict: Parsed snapshot data with keys: consolidated, branches, signers
+        """
+        if not self.snapshot_json:
+            return {}
+        
+        try:
+            return json.loads(self.snapshot_json)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
 
     def validate(self):
         # Global "view only" switch from Finance Control Settings
