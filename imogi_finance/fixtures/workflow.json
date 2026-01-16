@@ -52,7 +52,8 @@
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved"},
+			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
+			{"action": "Approve", "allowed": "All", "state": "Approved", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],
 		"workflow_state_field": "workflow_state"
@@ -80,7 +81,8 @@
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved"},
+			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
+			{"action": "Approve", "allowed": "All", "state": "Approved", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],
 		"workflow_state_field": "workflow_state"

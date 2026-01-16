@@ -47,6 +47,7 @@ from imogi_finance.api.payroll_sync import is_payroll_installed
 # include js in doctype views
 doctype_js = {
     "Bank Transaction": "public/js/bank_transaction.js",
+    "Payment Entry": "public/js/payment_entry.js",
     "Purchase Invoice": [
         "public/js/purchase_invoice_tax_invoice.js",
         "public/js/advance_payment_allocation.js",
