@@ -42,7 +42,7 @@ def resolve_dims(
     settings = utils.get_settings()
     dimension_mode = settings.get("dimension_mode") or "Native (Cost Center + Account)"
     resolved_company = company or utils.resolve_company_from_cost_center(cost_center)
-    resolved_fy = utils.resolve_fiscal_year(fiscal_year)
+    resolved_fy = utils.resolve_fiscal_year(fiscal_year, company=resolved_company)
 
     project_value = project if utils.allow_project(dimension_mode) else None
     branch_value = branch if utils.allow_branch(dimension_mode) else None

@@ -24,7 +24,7 @@
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Review"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Review", "next_state": "Approved", "condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"},
+			{"action": "Approve", "allowed": "All", "state": "Pending Review", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Review", "next_state": "Rejected"}
 		],
 		"workflow_state_field": "workflow_state"
@@ -46,13 +46,13 @@
 		"override_status": 1,
 		"states": [
 			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
-			{"state": "Pending Approval", "doc_status": "1", "allow_edit": "Budget Approver"},
-			{"state": "Approved", "doc_status": "1", "allow_edit": "Budget Approver"},
-			{"state": "Rejected", "doc_status": "1", "allow_edit": "Budget Approver"}
+			{"state": "Pending Approval", "doc_status": "1", "allow_edit": "All"},
+			{"state": "Approved", "doc_status": "1", "allow_edit": "All"},
+			{"state": "Rejected", "doc_status": "1", "allow_edit": "All"}
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved", "condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"},
+			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],
 		"workflow_state_field": "workflow_state"
@@ -74,13 +74,13 @@
 		"override_status": 1,
 		"states": [
 			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
-			{"state": "Pending Approval", "doc_status": "1", "allow_edit": "Budget Approver"},
-			{"state": "Approved", "doc_status": "1", "allow_edit": "Budget Approver"},
-			{"state": "Rejected", "doc_status": "1", "allow_edit": "Budget Approver"}
+			{"state": "Pending Approval", "doc_status": "1", "allow_edit": "All"},
+			{"state": "Approved", "doc_status": "1", "allow_edit": "All"},
+			{"state": "Rejected", "doc_status": "1", "allow_edit": "All"}
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved", "condition": "not (((doc.get('current_approval_level') or 1) == 1 and (doc.get('level_2_user') or doc.get('level_3_user'))) or ((doc.get('current_approval_level') or 1) == 2 and doc.get('level_3_user')))"},
+			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],
 		"workflow_state_field": "workflow_state"

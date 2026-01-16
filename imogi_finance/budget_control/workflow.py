@@ -219,13 +219,14 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     settings = settings or utils.get_settings()
     company = utils.resolve_company_from_cost_center(getattr(expense_request, "cost_center", None))
     # FIX: Expense Request doesn't have fiscal_year field, need to resolve it
-    fiscal_year = utils.resolve_fiscal_year(getattr(expense_request, "fiscal_year", None))
+    fiscal_year = utils.resolve_fiscal_year(getattr(expense_request, "fiscal_year", None), company=company)
     
     # Validate fiscal year is found
     if not fiscal_year:
         frappe.throw(
-            _("Fiscal Year could not be determined for Expense Request {0}. Please set a default Fiscal Year in System Settings or User Defaults.").format(
-                getattr(expense_request, "name", "Unknown")
+            _("Fiscal Year could not be determined for Expense Request {0}. Please set a default Fiscal Year for Company {1} or in User Defaults.").format(
+                getattr(expense_request, "name", "Unknown"),
+                company or "(unknown)"
             ),
             title=_("Fiscal Year Required")
         )
@@ -778,7 +779,7 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
 
     total, expense_accounts = accounting.summarize_request_items(getattr(request, "items", []) or [])
     company = utils.resolve_company_from_cost_center(getattr(request, "cost_center", None))
-    fiscal_year = utils.resolve_fiscal_year(getattr(request, "fiscal_year", None))
+    fiscal_year = utils.resolve_fiscal_year(getattr(request, "fiscal_year", None), company=company)
 
     ic = frappe.new_doc("Internal Charge Request")
     ic.expense_request = request.name

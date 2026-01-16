@@ -109,10 +109,23 @@ def resolve_company_from_cost_center(cost_center: str | None) -> str | None:
         return None
 
 
-def resolve_fiscal_year(fiscal_year: str | None) -> str | None:
+def resolve_fiscal_year(fiscal_year: str | None, company: str | None = None) -> str | None:
+    """Resolve fiscal year from various sources.
+    
+    Fiscal Year is a DocType with fields: name, year_start_date, year_end_date, disabled
+    
+    Priority order:
+    1. Provided fiscal_year parameter
+    2. User defaults (frappe.defaults.get_user_default)
+    3. Global defaults (frappe.defaults.get_global_default)
+    4. Company's default fiscal year (if available)
+    5. Get fiscal year that covers current date using ERPNext's get_fiscal_year()
+    6. Get any active (not disabled) fiscal year
+    """
     if fiscal_year:
         return fiscal_year
 
+    # Try user defaults
     defaults = getattr(frappe, "defaults", None)
     if defaults and hasattr(defaults, "get_user_default"):
         try:
@@ -122,6 +135,7 @@ def resolve_fiscal_year(fiscal_year: str | None) -> str | None:
         except Exception:
             pass
 
+    # Try global defaults
     if defaults and hasattr(defaults, "get_global_default"):
         try:
             value = defaults.get_global_default("fiscal_year")
@@ -130,29 +144,41 @@ def resolve_fiscal_year(fiscal_year: str | None) -> str | None:
         except Exception:
             pass
 
-    if getattr(frappe, "db", None):
+    # Try company's default fiscal year if field exists
+    if company and getattr(frappe, "db", None):
         try:
-            value = frappe.db.get_single_value("System Settings", "fiscal_year")
-            if value:
-                return value
+            if frappe.db.has_column("Company", "default_fiscal_year"):
+                value = frappe.db.get_value("Company", company, "default_fiscal_year")
+                if value:
+                    return value
         except Exception:
             pass
-
+    
+    # Try to get fiscal year from current date using ERPNext's built-in function
+    if getattr(frappe, "db", None):
         try:
-            value = frappe.db.get_single_value("System Settings", "current_fiscal_year")
-            if value:
-                return value
+            from erpnext.accounts.utils import get_fiscal_year
+            from frappe.utils import nowdate, getdate
+            
+            # Get fiscal year for current date and company
+            fy = get_fiscal_year(date=getdate(nowdate()), company=company, as_dict=False)
+            if fy:
+                # get_fiscal_year returns tuple (fiscal_year_name, start_date, end_date)
+                return fy[0] if isinstance(fy, (list, tuple)) else fy
         except Exception:
             pass
         
-        # Last resort: try to get fiscal year from current date using ERPNext's built-in function
+        # Last resort: get any active fiscal year from Fiscal Year DocType
         try:
-            get_fiscal_year = getattr(frappe.utils, "get_fiscal_year", None)
-            if callable(get_fiscal_year):
-                from frappe.utils import nowdate
-                result = get_fiscal_year(nowdate(), as_dict=True)
-                if result and result.get("name"):
-                    return result.get("name")
+            fiscal_years = frappe.get_all(
+                "Fiscal Year",
+                filters={"disabled": 0},
+                fields=["name"],
+                order_by="year_start_date desc",
+                limit=1
+            )
+            if fiscal_years:
+                return fiscal_years[0].name
         except Exception:
             pass
 
