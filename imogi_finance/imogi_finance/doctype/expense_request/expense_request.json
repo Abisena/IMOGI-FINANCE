@@ -235,8 +235,11 @@
       "default": "Direct",
       "fieldname": "allocation_mode",
       "fieldtype": "Select",
-      "label": "Mode",
-      "options": "Direct\nAllocated via Internal Charge"
+      "label": "Budget Allocation Mode",
+      "options": "Direct\nAllocated via Internal Charge",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "description": "Direct: allocate to source cost center. Internal Charge: split across multiple cost centers"
     },
 
     {
@@ -634,11 +637,12 @@
     {
       "fieldname": "internal_charge_request",
       "fieldtype": "Link",
-      "label": "Internal Charge",
+      "label": "Internal Charge Request",
       "options": "Internal Charge Request",
       "read_only": 1,
       "depends_on": "eval:doc.allocation_mode=='Allocated via Internal Charge'",
       "bold": 1,
+      "in_list_view": 1,
       "description": "Link to Internal Charge Request for budget allocation across cost centers"
     },
 
