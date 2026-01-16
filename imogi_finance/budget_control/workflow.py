@@ -329,16 +329,47 @@ def _reverse_reservations(expense_request):
 
 
 def reserve_budget_for_request(expense_request, *, trigger_action: str | None = None, next_state: str | None = None):
+    """Reserve budget for an expense request.
+    
+    Args:
+        expense_request: Can be either:
+            - An Expense Request doc object
+            - A string name of an Expense Request document
+        trigger_action: Optional action that triggered this (for logging)
+        next_state: Optional next state (for logging)
+    """
+    # If string name provided, load the document
+    if isinstance(expense_request, str):
+        frappe.logger().info(f"reserve_budget_for_request: Loading doc {expense_request}")
+        try:
+            expense_request = frappe.get_doc("Expense Request", expense_request)
+        except Exception as e:
+            frappe.logger().error(f"reserve_budget_for_request: Failed to load {expense_request}: {str(e)}")
+            frappe.throw(_("Failed to load Expense Request {0}: {1}").format(expense_request, str(e)))
+    
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
         frappe.logger().info(f"reserve_budget_for_request: Budget lock disabled for {getattr(expense_request, 'name', 'Unknown')}")
+        frappe.msgprint(_("Budget lock is disabled in Budget Control Settings"), indicator="orange")
         return
 
     target_state = settings.get("lock_on_workflow_state") or "Approved"
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
+    
+    frappe.logger().info(
+        f"reserve_budget_for_request: {getattr(expense_request, 'name', 'Unknown')} "
+        f"- status={status}, workflow={workflow_state}, target={target_state}"
+    )
+    
     if status != target_state and workflow_state != target_state:
         frappe.logger().info(f"reserve_budget_for_request: Status {status}/{workflow_state} not matching target {target_state}")
+        frappe.msgprint(
+            _("Document status ({0}/{1}) does not match target state ({2}). Budget reservation skipped.").format(
+                status, workflow_state, target_state
+            ),
+            indicator="yellow"
+        )
         return
 
     ic_doc = None
@@ -348,6 +379,10 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
     slices = _build_allocation_slices(expense_request, settings=settings, ic_doc=ic_doc)
     if not slices:
         frappe.logger().warning(f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}")
+        frappe.msgprint(
+            _("No budget allocation slices could be created. Please check expense items and accounts."),
+            indicator="red"
+        )
         return
 
     frappe.logger().info(f"reserve_budget_for_request: Processing {len(slices)} slices for {getattr(expense_request, 'name', 'Unknown')}")
@@ -368,12 +403,17 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
     any_overrun = False
     for dims, amount in slices:
         result = service.check_budget_available(dims, float(amount or 0))
+        frappe.logger().info(
+            f"reserve_budget_for_request: Budget check for {dims.cost_center}/{dims.account}: "
+            f"amount={amount}, available={result.get('available')}, ok={result.get('ok')}"
+        )
         if not result.ok and not allow_overrun:
             frappe.throw(result.message)
 
         if not result.ok:
             any_overrun = True
 
+    entries_created = []
     for dims, amount in slices:
         try:
             entry_name = ledger.post_entry(
@@ -385,12 +425,16 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
                 ref_name=getattr(expense_request, "name", None),
                 remarks=_("Budget reservation for Expense Request"),
             )
-            frappe.logger().info(f"reserve_budget_for_request: Created reservation {entry_name}")
+            if entry_name:
+                entries_created.append(entry_name)
+                frappe.logger().info(f"reserve_budget_for_request: ✅ Created reservation {entry_name}")
+            else:
+                frappe.logger().warning(f"reserve_budget_for_request: ⚠️ No entry created for {dims.cost_center}/{dims.account}")
         except Exception as e:
-            frappe.logger().error(f"reserve_budget_for_request: Failed to create reservation: {str(e)}")
+            frappe.logger().error(f"reserve_budget_for_request: ❌ Failed to create reservation: {str(e)}")
             frappe.log_error(
                 title=f"Budget Reservation Failed for {getattr(expense_request, 'name', None)}",
-                message=f"Error creating reservation entry: {str(e)}\\n\\n{frappe.get_traceback()}"
+                message=f"Error creating reservation entry: {str(e)}\n\n{frappe.get_traceback()}"
             )
             raise
 
@@ -404,7 +448,21 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             "Approved",
             reason=_("Budget {0} during reservation.").format("overrun allowed" if any_overrun else "locked"),
         )
-    frappe.logger().info(f"reserve_budget_for_request: Completed for {getattr(expense_request, 'name', None)} with status {lock_status}")
+    
+    frappe.logger().info(
+        f"reserve_budget_for_request: ✅ Completed for {getattr(expense_request, 'name', None)} "
+        f"with status {lock_status}. Created {len(entries_created)} entries: {', '.join(entries_created)}"
+    )
+    
+    # Show success message to user
+    if entries_created:
+        frappe.msgprint(
+            _("Budget Control Entries created successfully: {0}").format(", ".join(entries_created)),
+            indicator="green",
+            alert=True
+        )
+    
+    return entries_created
 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):

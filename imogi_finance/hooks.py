@@ -223,9 +223,11 @@ doc_events = {
         ],
         "on_update": [
             "imogi_finance.events.expense_request.sync_status_with_workflow",
+            "imogi_finance.events.expense_request.handle_budget_workflow",
         ],
         "on_update_after_submit": [
             "imogi_finance.events.expense_request.sync_status_with_workflow",
+            "imogi_finance.events.expense_request.handle_budget_workflow",
         ],
         "on_submit": [
             "imogi_finance.events.metadata_fields.set_submit_on",

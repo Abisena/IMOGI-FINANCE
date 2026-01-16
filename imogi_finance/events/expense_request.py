@@ -83,6 +83,61 @@ def sync_status_with_workflow(doc, method=None):
                 _record_rejection_timestamp(doc, current_level)
 
 
+def handle_budget_workflow(doc, method=None):
+    """Handle budget reservation/release when workflow state changes.
+    
+    This is triggered on_update and on_update_after_submit hooks.
+    Calls reserve_budget_for_request when document is approved.
+    Calls release_budget_for_request when document is rejected or cancelled.
+    """
+    # Only proceed if workflow state changed
+    previous = getattr(doc, "_doc_before_save", None)
+    if not previous:
+        return
+    
+    workflow_state = getattr(doc, "workflow_state", None)
+    prev_state = getattr(previous, "workflow_state", None)
+    
+    if workflow_state == prev_state:
+        return
+    
+    # Log the transition for debugging
+    frappe.logger().info(
+        f"handle_budget_workflow: {doc.name} - {prev_state} -> {workflow_state}"
+    )
+    
+    try:
+        # Import here to avoid circular dependency
+        from imogi_finance.budget_control import workflow as budget_workflow
+        
+        # Reserve budget when approved
+        if workflow_state == "Approved":
+            frappe.logger().info(f"handle_budget_workflow: Calling reserve_budget for {doc.name}")
+            budget_workflow.reserve_budget_for_request(doc)
+            frappe.logger().info(f"handle_budget_workflow: Completed reserve_budget for {doc.name}")
+        
+        # Release budget when rejected or cancelled
+        elif workflow_state == "Rejected":
+            frappe.logger().info(f"handle_budget_workflow: Calling release_budget for {doc.name}")
+            budget_workflow.release_budget_for_request(doc, reason="Reject")
+            frappe.logger().info(f"handle_budget_workflow: Completed release_budget for {doc.name}")
+            
+    except Exception as e:
+        # Log error but don't block the workflow
+        frappe.logger().error(
+            f"handle_budget_workflow: Error for {doc.name}: {str(e)}\n{frappe.get_traceback()}"
+        )
+        frappe.log_error(
+            title=f"Budget Workflow Error - {doc.name}",
+            message=f"Workflow State: {prev_state} -> {workflow_state}\n\nError: {str(e)}\n\n{frappe.get_traceback()}"
+        )
+        # Re-raise to make error visible to user
+        frappe.throw(
+            _("Error in budget workflow: {0}").format(str(e)),
+            title=_("Budget Workflow Error")
+        )
+
+
 def _record_approval_timestamp(doc, level: int):
     """Record approval timestamp for a specific level."""
     timestamp_field = f"level_{level}_approved_on"
