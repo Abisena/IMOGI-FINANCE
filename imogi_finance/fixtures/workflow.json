@@ -52,7 +52,6 @@
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
 			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],
@@ -81,7 +80,6 @@
 		],
 		"transitions": [
 			{"action": "Submit", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
-			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Pending Approval"},
 			{"action": "Approve", "allowed": "All", "state": "Pending Approval", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "All", "state": "Pending Approval", "next_state": "Rejected"}
 		],

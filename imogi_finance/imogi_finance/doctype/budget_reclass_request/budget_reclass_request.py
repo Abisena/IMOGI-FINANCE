@@ -67,13 +67,20 @@ class BudgetReclassRequest(Document):
             # Advance approval level and get next state
             next_state = budget_approval.advance_approval_level(self)
             
-            # Force workflow_state - override_status=1 will auto-sync status field
+            # Manually set workflow_state - will override Frappe's default transition
             if hasattr(self, "db_set"):
                 self.db_set("workflow_state", next_state, update_modified=False)
+                # Reload doc to get updated workflow_state
+                self.reload()
             
             # Execute budget reclass only when fully approved
             if next_state == "Approved":
                 self._execute_budget_reclass()
+            
+            # Return False to prevent Frappe from executing default transition
+            # This allows us to control intermediate states (Pending→Pending or Pending→Approved)
+            if next_state == "Pending Approval":
+                return False
             
             return
         
