@@ -205,49 +205,27 @@ class ExpenseRequest(Document):
         approval_service.guard_status_changes(self)
 
     def before_cancel(self):
-        """Validate permissions and downstream links before cancel."""
+        """Validate permissions before cancel.
+        
+        Note: We don't check downstream links (PE, PI) because:
+        1. They are endpoint documents - can be cancelled freely
+        2. Frappe's "Cancel All Linked Docs" needs to work smoothly
+        3. Audit trail is preserved through cancelled documents
+        
+        If manual cancellation is needed, user should cancel in reverse order:
+        Payment Entry → Purchase Invoice → Expense Request
+        """
         allowed_roles = {roles.SYSTEM_MANAGER, roles.EXPENSE_APPROVER}
         current_roles = set(frappe.get_roles())
         if not (current_roles & allowed_roles):
             frappe.throw(_("Only System Manager or Expense Approver can cancel."), title=_("Not Allowed"))
 
-        # Check for active downstream links
-        active_links = []
-        
-        # Check Payment Entry
-        pe = getattr(self, "linked_payment_entry", None)
-        if pe and frappe.db.get_value("Payment Entry", pe, "docstatus") != 2:
-            active_links.append(f"Payment Entry {pe}")
-        
-        # Check Purchase Invoice
-        pi = getattr(self, "linked_purchase_invoice", None)
-        if pi and frappe.db.get_value("Purchase Invoice", pi, "docstatus") != 2:
-            active_links.append(f"Purchase Invoice {pi}")
-        
-        if active_links:
-            frappe.throw(
-                _("Cannot cancel while linked to: {0}. Cancel them first.").format(", ".join(active_links)),
-                title=_("Active Links Exist"),
-            )
-
     def on_cancel(self):
-        """Clean up: release budget reservations."""
-        # Check for active downstream links - MUST be cancelled first
-        active_links = []
+        """Clean up: release budget reservations.
         
-        pe = getattr(self, "linked_payment_entry", None)
-        if pe and frappe.db.get_value("Payment Entry", pe, "docstatus") == 1:
-            active_links.append(f"Payment Entry {pe}")
-        
-        pi = getattr(self, "linked_purchase_invoice", None)
-        if pi and frappe.db.get_value("Purchase Invoice", pi, "docstatus") == 1:
-            active_links.append(f"Purchase Invoice {pi}")
-        
-        if active_links:
-            frappe.throw(
-                _("Cannot cancel Expense Request. Please cancel these documents first: {0}").format(", ".join(active_links)),
-                title=_("Active Links Exist")
-            )
+        No need to check links here - already checked in before_cancel.
+        Just do cleanup tasks.
+        """
         
         # Release budget reservations - MUST succeed or cancel fails
         try:
