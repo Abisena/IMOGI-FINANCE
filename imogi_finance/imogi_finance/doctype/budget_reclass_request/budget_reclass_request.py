@@ -91,8 +91,8 @@ class BudgetReclassRequest(Document):
 			fiscal_year=self.fiscal_year,
 			cost_center=self.from_cost_center,
 			account=self.from_account,
-			project=self.project,
-			branch=self.branch,
+			project=getattr(self, "project", None),
+			branch=getattr(self, "branch", None),
 		)
 		
 		to_dims = service.resolve_dims(
@@ -100,8 +100,8 @@ class BudgetReclassRequest(Document):
 			fiscal_year=self.fiscal_year,
 			cost_center=self.to_cost_center,
 			account=self.to_account,
-			project=self.project,
-			branch=self.branch,
+			project=getattr(self, "project", None),
+			branch=getattr(self, "branch", None),
 		)
 
 		# Check override permission

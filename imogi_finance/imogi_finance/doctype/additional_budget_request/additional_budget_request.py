@@ -87,8 +87,8 @@ class AdditionalBudgetRequest(Document):
 			fiscal_year=self.fiscal_year,
 			cost_center=self.cost_center,
 			account=self.account,
-			project=self.project,
-			branch=self.branch,
+			project=getattr(self, "project", None),
+			branch=getattr(self, "branch", None),
 		)
 		
 		service.record_supplement(
