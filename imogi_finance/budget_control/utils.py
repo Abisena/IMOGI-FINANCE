@@ -88,6 +88,12 @@ def get_settings():
     return settings
 
 
+@frappe.whitelist()
+def get_settings_for_ui():
+    """Whitelisted version of get_settings for browser console access."""
+    return get_settings()
+
+
 def is_feature_enabled(flag: str) -> bool:
     settings = get_settings()
     return bool(settings.get(flag, 0))

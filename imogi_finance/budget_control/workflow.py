@@ -755,6 +755,15 @@ def maybe_post_internal_charge_je(purchase_invoice, expense_request=None):
 
 
 @frappe.whitelist()
+def reserve_budget_for_request_api(expense_request):
+    """Whitelisted API wrapper for reserve_budget_for_request.
+    
+    This can be called from browser console or client-side JavaScript.
+    """
+    return reserve_budget_for_request(expense_request)
+
+
+@frappe.whitelist()
 def create_internal_charge_from_expense_request(er_name: str) -> str:
     settings = utils.get_settings()
     if not settings.get("enable_internal_charge"):

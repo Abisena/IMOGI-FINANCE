@@ -40,7 +40,7 @@ window.check_bce_exists = function(expense_request_name) {
 // ============================================================================
 window.check_budget_settings = function() {
     frappe.call({
-        method: 'imogi_finance.budget_control.utils.get_settings',
+        method: 'imogi_finance.budget_control.utils.get_settings_for_ui',
         callback: function(r) {
             console.log('=== Budget Control Settings ===');
             if (r.message) {
@@ -50,27 +50,14 @@ window.check_budget_settings = function() {
                 console.log('Allow Budget Overrun Role:', r.message.allow_budget_overrun_role);
                 console.log('Enable Budget Reclass:', r.message.enable_budget_reclass);
                 console.log('Enable Additional Budget:', r.message.enable_additional_budget);
-                console.log('\nFull Settings:', r.message);
+                console.log('Enforce Mode:', r.message.enforce_mode);
+                console.log('\n✅ Settings loaded successfully');
             } else {
                 console.log('❌ Budget Control Setting not found!');
             }
         },
         error: function(r) {
             console.error('❌ Error loading settings:', r);
-            console.log('⚠️ Trying alternative method...');
-            
-            // Alternative: Try via frappe.db.get_single_value
-            frappe.db.get_single_value('Budget Control Setting', 'enable_budget_lock')
-                .then(enable_budget_lock => {
-                    console.log('Enable Budget Lock:', enable_budget_lock);
-                    return frappe.db.get_single_value('Budget Control Setting', 'lock_on_workflow_state');
-                })
-                .then(lock_on_workflow_state => {
-                    console.log('Lock on Workflow State:', lock_on_workflow_state);
-                })
-                .catch(err => {
-                    console.error('❌ All methods failed:', err);
-                });
         }
     });
 }
@@ -125,7 +112,7 @@ window.trigger_reserve_budget = function(expense_request_name) {
     console.log('⏳ Please wait...');
     
     frappe.call({
-        method: 'imogi_finance.budget_control.workflow.reserve_budget_for_request',
+        method: 'imogi_finance.budget_control.workflow.reserve_budget_for_request_api',
         args: {
             expense_request: docname
         },
@@ -133,9 +120,9 @@ window.trigger_reserve_budget = function(expense_request_name) {
         freeze_message: __('Creating Budget Control Entry...'),
         callback: function(r) {
             console.log('\n=== Reserve Budget Result ===');
-            if (r.message) {
+            if (r.message && r.message.length > 0) {
                 console.log('✅ Success! Created entries:', r.message);
-                console.table(r.message);
+                console.table(r.message.map(name => ({entry: name})));
                 
                 // Reload document to show updated fields
                 if (cur_frm && cur_frm.doc.name === docname) {
@@ -145,7 +132,11 @@ window.trigger_reserve_budget = function(expense_request_name) {
             } else if (r.exc) {
                 console.error('❌ Error:', r.exc);
             } else {
-                console.log('⚠️ Completed but no entries returned (check server logs)');
+                console.log('⚠️ Completed but no entries returned');
+                console.log('Possible reasons:');
+                console.log('- Budget lock disabled');
+                console.log('- Document not in target state');
+                console.log('- No budget configured');
             }
             
             // Check if entries were created
@@ -161,6 +152,7 @@ window.trigger_reserve_budget = function(expense_request_name) {
             console.log('2. Document status is not "Approved"');
             console.log('3. No items with expense accounts');
             console.log('4. Fiscal year not found');
+            console.log('5. Insufficient budget available');
             console.log('\nRun debug_budget_control() to investigate');
         }
     });
@@ -248,6 +240,85 @@ window.reload_doc = function() {
 }
 
 // ============================================================================
+// 8. CHECK IF HOOKS ARE WORKING
+// ============================================================================
+window.check_hooks = function() {
+    console.log('=== Checking Event Hooks ===');
+    
+    frappe.call({
+        method: 'frappe.client.get_list',
+        args: {
+            doctype: 'Error Log',
+            filters: {
+                error: ['like', '%handle_budget_workflow%']
+            },
+            fields: ['name', 'creation', 'error'],
+            order_by: 'creation desc',
+            limit: 5
+        },
+        callback: function(r) {
+            if (r.message && r.message.length > 0) {
+                console.log('⚠️ Found errors related to budget workflow:');
+                console.table(r.message);
+            } else {
+                console.log('✅ No errors found for budget workflow hooks');
+            }
+        }
+    });
+    
+    console.log('\n💡 To verify hooks are active:');
+    console.log('1. Edit and save ER → Check browser console for log messages');
+    console.log('2. Or check: Setup > System Console > View Logs');
+}
+
+// ============================================================================
+// 9. SIMULATE APPROVAL (FOR TESTING)
+// ============================================================================
+window.simulate_approval = function() {
+    if (!cur_frm || cur_frm.doctype !== 'Expense Request') {
+        console.error('Please open an Expense Request first!');
+        return;
+    }
+    
+    console.log('⚠️ SIMULATING APPROVAL WORKFLOW');
+    console.log('This will manually call handle_budget_workflow');
+    console.log('');
+    
+    const doc = cur_frm.doc;
+    
+    if (doc.workflow_state !== 'Approved') {
+        console.error('❌ Document must be in Approved state first!');
+        console.log('Current state:', doc.workflow_state);
+        return;
+    }
+    
+    console.log('🔄 Calling handle_budget_workflow...');
+    
+    frappe.call({
+        method: 'imogi_finance.events.expense_request.handle_budget_workflow',
+        args: {
+            doc: doc,
+            method: 'on_update_after_submit'
+        },
+        freeze: true,
+        callback: function(r) {
+            console.log('✅ Hook called!');
+            if (r.message) {
+                console.log('Result:', r.message);
+            }
+            
+            setTimeout(() => {
+                cur_frm.reload_doc();
+                window.check_bce_exists(doc.name);
+            }, 1000);
+        },
+        error: function(r) {
+            console.error('❌ Error:', r);
+        }
+    });
+}
+
+// ============================================================================
 // INSTRUCTIONS
 // ============================================================================
 console.log('==============================================');
@@ -262,12 +333,17 @@ console.log('4. trigger_reserve_budget()  - Manual trigger reserve budget');
 console.log('5. check_budget_exists()     - Cek apakah Budget document ada');
 console.log('6. debug_budget_control()    - Jalankan semua checks');
 console.log('7. reload_doc()              - Reload document');
+console.log('8. check_hooks()             - Check if hooks are working');
+console.log('9. simulate_approval()       - Simulate approval workflow (for testing)');
 console.log('');
 console.log('Quick Start:');
 console.log('1. Buka Expense Request yang sudah Approved');
 console.log('2. Run: debug_budget_control()');
 console.log('3. Lihat hasil di console');
 console.log('');
-console.log('Manual Trigger:');
+console.log('Manual Trigger (RECOMMENDED):');
+console.log('trigger_reserve_budget()');
+console.log('');
+console.log('Or for specific document:');
 console.log('trigger_reserve_budget("ER-2026-000027")');
 console.log('==============================================');
