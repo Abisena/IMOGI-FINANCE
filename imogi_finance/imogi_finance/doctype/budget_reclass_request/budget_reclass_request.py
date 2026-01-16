@@ -50,13 +50,6 @@ class BudgetReclassRequest(Document):
         # Set initial status
         self.status = "Pending Approval"
 
-    def before_workflow_action(self, action, **kwargs):
-        """Validate approver before workflow action."""
-        if action == "Submit":
-            return
-        
-        budget_approval.validate_approver_permission(self, action)
-
     def on_workflow_action(self, action, **kwargs):
         """Handle workflow state transitions."""
         if action == "Submit":
@@ -65,6 +58,10 @@ class BudgetReclassRequest(Document):
             return
         
         if action == "Approve":
+            # Validate approver permission
+            budget_approval.validate_approver_permission(self, action)
+            
+            # Advance approval level
             budget_approval.advance_approval_level(self)
             
             # Execute budget reclass only when fully approved
@@ -75,6 +72,9 @@ class BudgetReclassRequest(Document):
             return
         
         if action == "Reject":
+            # Validate approver permission
+            budget_approval.validate_approver_permission(self, action)
+            
             self.status = "Rejected"
             self.workflow_state = "Rejected"
             self.current_approval_level = 0
