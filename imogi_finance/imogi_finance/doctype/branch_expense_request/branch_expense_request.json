@@ -39,11 +39,6 @@
     "budget_check_status",
     "column_break_budget",
     "budget_check_message",
-    "deferred_expense_section",
-    "is_deferred_expense",
-    "column_break_deferred",
-    "deferred_start_date",
-    "deferred_periods",
     "approval_status_section",
     "status",
     "workflow_state",
@@ -290,39 +285,6 @@
       "fieldtype": "Small Text",
       "label": "Budget Message",
       "read_only": 1
-    },
-    {
-      "collapsible": 1,
-      "collapsible_depends_on": "eval:doc.is_deferred_expense==0",
-      "fieldname": "deferred_expense_section",
-      "fieldtype": "Section Break",
-      "label": "📅 Deferred Expense Configuration",
-      "description": "Configure amortization schedule for deferred expenses"
-    },
-    {
-      "default": "0",
-      "fieldname": "is_deferred_expense",
-      "fieldtype": "Check",
-      "label": "✓ Enable Deferred Expense",
-      "description": "Check to spread this expense over multiple periods"
-    },
-    {
-      "fieldname": "column_break_deferred",
-      "fieldtype": "Column Break"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_start_date",
-      "fieldtype": "Date",
-      "label": "Start Date",
-      "description": "First date of amortization"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_periods",
-      "fieldtype": "Int",
-      "label": "Periods (Months)",
-      "description": "Number of months to amortize"
     },
     {
       "collapsible": 1,

@@ -316,38 +316,7 @@ async function setErUploadQuery(frm) {
 }
 
 function maybeAddDeferredExpenseActions(frm) {
-  if (!frm.doc.is_deferred_expense) {
-    return;
-  }
-
-  frm.add_custom_button(__('Show Amortization Schedule'), async () => {
-    if (!frm.doc.deferred_start_date) {
-      frappe.msgprint(__('Deferred Start Date is required to generate the amortization schedule.'));
-      return;
-    }
-
-    if (!frm.doc.deferred_periods || frm.doc.deferred_periods <= 0) {
-      frappe.msgprint(__('Deferred Periods must be greater than zero to generate the amortization schedule.'));
-      return;
-    }
-
-    const { message } = await frappe.call({
-      method: 'imogi_finance.services.deferred_expense.generate_amortization_schedule',
-      args: {
-        amount: frm.doc.amount,
-        periods: frm.doc.deferred_periods,
-        start_date: frm.doc.deferred_start_date,
-      },
-    });
-
-    const schedule = message || [];
-    const pretty = Array.isArray(schedule) ? JSON.stringify(schedule, null, 2) : String(schedule);
-    frappe.msgprint({
-      title: __('Amortization Schedule'),
-      message: `<pre style="white-space: pre-wrap;">${pretty}</pre>`,
-      indicator: 'blue',
-    });
-  }, __('Actions'));
+  // Deprecated: replaced by per-item deferred actions.
 }
 
 function maybeRenderCancelDeleteActions(frm) {
@@ -360,6 +329,110 @@ function maybeRenderCancelDeleteActions(frm) {
   // with standard Frappe UX and other doctypes like Branch Expense Request
 }
 
+async function loadDeferrableAccounts(frm) {
+  if (frm.deferrableAccountsLoaded) {
+    return;
+  }
+
+  try {
+    const { message } = await frappe.call({
+      method: 'imogi_finance.api.get_deferrable_accounts',
+    });
+
+    const accounts = message?.accounts || [];
+    frm.deferrableAccountMap = accounts.reduce((acc, row) => {
+      if (row.prepaid_account) {
+        acc[row.prepaid_account] = row;
+      }
+      return acc;
+    }, {});
+    frm.deferrableAccountsLoaded = true;
+  } catch (error) {
+    console.error('Failed to load deferrable accounts', error);
+  }
+}
+
+async function setDeferredExpenseQueries(frm) {
+  await loadDeferrableAccounts(frm);
+
+  const accountNames = Object.keys(frm.deferrableAccountMap || {});
+  frm.set_query('prepaid_account', 'items', () => ({
+    filters: {
+      name: ['in', accountNames.length ? accountNames : ['']],
+    },
+  }));
+}
+
+async function showDeferredScheduleForItem(row) {
+  if (!row.deferred_start_date) {
+    frappe.msgprint(__('Deferred Start Date is required to generate the amortization schedule.'));
+    return;
+  }
+
+  if (!row.deferred_periods || row.deferred_periods <= 0) {
+    frappe.msgprint(__('Deferred Periods must be greater than zero to generate the amortization schedule.'));
+    return;
+  }
+
+  const { message } = await frappe.call({
+    method: 'imogi_finance.services.deferred_expense.generate_amortization_schedule',
+    args: {
+      amount: row.amount,
+      periods: row.deferred_periods,
+      start_date: row.deferred_start_date,
+    },
+  });
+
+  const schedule = message || [];
+  const pretty = Array.isArray(schedule) ? JSON.stringify(schedule, null, 2) : String(schedule);
+  frappe.msgprint({
+    title: __('Amortization Schedule'),
+    message: `<pre style="white-space: pre-wrap;">${pretty}</pre>`,
+    indicator: 'blue',
+  });
+}
+
+function addDeferredExpenseItemActions(frm) {
+  const grid = frm.fields_dict.items?.grid;
+  if (!grid) {
+    return;
+  }
+
+  grid.grid_rows.forEach((row) => {
+    if (!row?.doc?.is_deferred_expense) {
+      return;
+    }
+
+    const hasAction = row.__hasDeferredAction;
+    if (hasAction) {
+      return;
+    }
+
+    const addButton = row.add_custom_button || row.grid_form?.add_custom_button;
+    if (typeof addButton !== 'function') {
+      return;
+    }
+
+    addButton.call(row, __('Show Amortization Schedule'), () => showDeferredScheduleForItem(row.doc));
+    row.__hasDeferredAction = true;
+  });
+}
+
+function updateDeferredExpenseIndicators(frm) {
+  const grid = frm.fields_dict.items?.grid;
+  if (!grid) {
+    return;
+  }
+
+  grid.grid_rows.forEach((row) => {
+    const indicator = row.$row?.find('.grid-static-col[data-fieldname=\"is_deferred_expense\"] .static-text');
+    if (!indicator?.length) {
+      return;
+    }
+    indicator.text(row.doc?.is_deferred_expense ? '📅' : '');
+  });
+}
+
 frappe.ui.form.on('Expense Request', {
   async refresh(frm) {
     hideErOcrStatus(frm);
@@ -370,7 +443,9 @@ frappe.ui.form.on('Expense Request', {
     await setErUploadQuery(frm);
     await syncErUpload(frm);
     await setPphRate(frm);
-    maybeAddDeferredExpenseActions(frm);
+    await setDeferredExpenseQueries(frm);
+    addDeferredExpenseItemActions(frm);
+    updateDeferredExpenseIndicators(frm);
     maybeRenderCancelDeleteActions(frm);
     maybeRenderPrimarySubmitButton(frm);
     updateTotalsSummary(frm);
@@ -529,6 +604,13 @@ frappe.ui.form.on('Expense Request', {
     // Tax Invoice OCR actions are intentionally managed from the OCR Upload doctype.
   },
   items_add(frm) {
+    addDeferredExpenseItemActions(frm);
+    updateDeferredExpenseIndicators(frm);
+  },
+  items_remove(frm) {
+    updateDeferredExpenseIndicators(frm);
+  },
+  items_add(frm) {
     updateTotalsSummary(frm);
   },
   items_remove(frm) {
@@ -553,6 +635,34 @@ frappe.ui.form.on('Expense Request', {
 
   async ti_tax_invoice_upload(frm) {
     await syncErUpload(frm);
+  },
+});
+
+frappe.ui.form.on('Expense Request Item', {
+  async prepaid_account(frm, cdt, cdn) {
+    await loadDeferrableAccounts(frm);
+    const row = frappe.get_doc(cdt, cdn);
+    const mapping = frm.deferrableAccountMap?.[row.prepaid_account];
+    if (!mapping) {
+      return;
+    }
+
+    if (mapping.expense_account && row.expense_account !== mapping.expense_account) {
+      frappe.model.set_value(cdt, cdn, 'expense_account', mapping.expense_account);
+    }
+    if (mapping.default_periods && !row.deferred_periods) {
+      frappe.model.set_value(cdt, cdn, 'deferred_periods', mapping.default_periods);
+    }
+  },
+  is_deferred_expense(frm) {
+    addDeferredExpenseItemActions(frm);
+    updateDeferredExpenseIndicators(frm);
+  },
+  deferred_start_date(frm) {
+    addDeferredExpenseItemActions(frm);
+  },
+  deferred_periods(frm) {
+    addDeferredExpenseItemActions(frm);
   },
 });
 

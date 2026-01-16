@@ -379,10 +379,11 @@
     <thead>
       <tr>
         <th width="25%">{{ _("Description") }}</th>
-        <th width="15%" class="text-right">{{ _("Cost Center") }}</th>
-        <th width="15%" class="text-right">{{ _("Expense Account") }}</th>
+        <th width="12%" class="text-right">{{ _("Cost Center") }}</th>
+        <th width="12%" class="text-right">{{ _("Expense Account") }}</th>
         <th width="10%" class="text-right">{{ _("Project") }}</th>
-        <th width="8%" class="text-right">{{ _("Qty") }}</th>
+        <th width="12%">{{ _("Deferred") }}</th>
+        <th width="7%" class="text-right">{{ _("Qty") }}</th>
         <th width="10%" class="text-right">{{ _("Rate") }}</th>
         <th width="12%" class="text-right">{{ _("Amount") }}</th>
       </tr>
@@ -394,6 +395,13 @@
         <td class="text-right">{{ row.cost_center }}</td>
         <td class="text-right">{{ row.expense_account }}</td>
         <td class="text-right">{{ row.project }}</td>
+        <td>
+          {% if row.is_deferred_expense %}
+            📅 {{ row.prepaid_account }} ({{ row.deferred_periods }}m)
+          {% else %}
+            -
+          {% endif %}
+        </td>
         <td class="text-right">{{ frappe.utils.flt(row.qty or 0, 2) }}</td>
         <td class="text-right">{{ frappe.utils.fmt_money(row.rate or 0, currency=doc.currency) }}</td>
         <td class="text-right">{{ frappe.utils.fmt_money(row.amount or 0, currency=doc.currency) }}</td>
@@ -402,7 +410,7 @@
     </tbody>
     <tfoot>
       <tr>
-        <th colspan="6" class="text-right">{{ _("TOTAL AMOUNT") }}</th>
+        <th colspan="7" class="text-right">{{ _("TOTAL AMOUNT") }}</th>
         <th class="text-right">{{ frappe.utils.fmt_money(doc.total_amount or 0, currency=doc.currency) }}</th>
       </tr>
     </tfoot>
@@ -467,35 +475,6 @@
         <span class="detail-label">{{ _("Message") }}:</span>
         <span class="detail-value">{{ doc.budget_check_message }}</span>
       </div>
-      {% endif %}
-    </div>
-
-    <!-- Deferred Expense -->
-    <div class="detail-card">
-      <h3>{{ _("Deferred Expense") }}</h3>
-      <div class="detail-item">
-        <span class="detail-label">{{ _("Is Deferred") }}:</span>
-        <span class="detail-value">
-          {% if doc.is_deferred_expense %}
-          <span class="badge-yes">{{ _("YES") }}</span>
-          {% else %}
-          <span class="badge-no">{{ _("NO") }}</span>
-          {% endif %}
-        </span>
-      </div>
-      {% if doc.is_deferred_expense %}
-        {% if doc.deferred_start_date %}
-        <div class="detail-item">
-          <span class="detail-label">{{ _("Start Date") }}:</span>
-          <span class="detail-value">{{ frappe.utils.formatdate(doc.deferred_start_date) }}</span>
-        </div>
-        {% endif %}
-        {% if doc.deferred_periods %}
-        <div class="detail-item">
-          <span class="detail-label">{{ _("Periods (Months)") }}:</span>
-          <span class="detail-value">{{ doc.deferred_periods }}</span>
-        </div>
-        {% endif %}
       {% endif %}
     </div>
 

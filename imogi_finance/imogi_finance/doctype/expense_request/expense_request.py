@@ -16,6 +16,7 @@ from imogi_finance.budget_control.workflow import handle_expense_request_workflo
 from imogi_finance.services.approval_route_service import ApprovalRouteService
 from imogi_finance.services.approval_service import ApprovalService
 from imogi_finance.services.deferred_expense import generate_amortization_schedule
+from ..expense_deferred_settings.expense_deferred_settings import get_deferrable_account_map
 from imogi_finance.tax_invoice_ocr import sync_tax_invoice_upload, validate_tax_invoice_upload_link
 from imogi_finance.tax_invoice_fields import get_upload_link_field
 from imogi_finance.validators.finance_validator import FinanceValidator
@@ -365,22 +366,40 @@ class ExpenseRequest(Document):
 
     def validate_deferred_expense(self):
         """Validate deferred expense configuration."""
-        if not getattr(self, "is_deferred_expense", 0):
+        settings, deferrable_accounts = get_deferrable_account_map()
+        if not getattr(settings, "enable_deferred_expense", 1):
+            if any(getattr(item, "is_deferred_expense", 0) for item in self.get("items", [])):
+                frappe.throw(_("Deferred Expense is disabled in settings."))
             return
 
-        if not getattr(self, "deferred_start_date", None):
-            frappe.throw(_("Deferred Start Date required."))
+        valid_prepaid_accounts = sorted(deferrable_accounts)
+        for item in self.get("items", []):
+            if not getattr(item, "is_deferred_expense", 0):
+                continue
 
-        periods = getattr(self, "deferred_periods", None)
-        if not periods or periods <= 0:
-            frappe.throw(_("Deferred Periods must be > 0."))
+            if not getattr(item, "prepaid_account", None):
+                frappe.throw(_("Prepaid Account is required for deferred expense items."))
 
-        schedule = generate_amortization_schedule(
-            flt(self.amount), periods, self.deferred_start_date
-        )
-        if not hasattr(self, "flags"):
-            self.flags = type("Flags", (), {})()
-        self.flags.deferred_amortization_schedule = schedule
+            if item.prepaid_account not in deferrable_accounts:
+                frappe.throw(
+                    _("Prepaid Account {0} is not in deferrable accounts. Valid accounts: {1}").format(
+                        item.prepaid_account, ", ".join(valid_prepaid_accounts) or _("None")
+                    )
+                )
+
+            if not getattr(item, "deferred_start_date", None):
+                frappe.throw(_("Deferred Start Date required for deferred expense items."))
+
+            periods = getattr(item, "deferred_periods", None)
+            if not periods or periods <= 0:
+                frappe.throw(_("Deferred Periods must be > 0 for deferred expense items."))
+
+            schedule = generate_amortization_schedule(
+                flt(item.amount), periods, item.deferred_start_date
+            )
+            if not hasattr(item, "flags"):
+                item.flags = type("Flags", (), {})()
+            item.flags.deferred_amortization_schedule = schedule
 
     def _sync_tax_invoice_upload(self):
         """Sync tax invoice OCR data if configured."""
