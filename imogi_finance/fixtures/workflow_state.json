@@ -100,6 +100,18 @@
     "name": "Partially Approved",
     "workflow_state_name": "Partially Approved",
     "style": "Warning"
+  },
+  {
+    "doctype": "Workflow State",
+    "name": "Generated",
+    "workflow_state_name": "Generated",
+    "style": "Info"
+  },
+  {
+    "doctype": "Workflow State",
+    "name": "Printed",
+    "workflow_state_name": "Printed",
+    "style": "Success"
   }
 ]
 

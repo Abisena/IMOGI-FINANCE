@@ -7,6 +7,7 @@
   "doctype": "DocType",
   "editable_grid": 0,
   "engine": "InnoDB",
+  "is_submittable": 1,
   "field_order": [
     "report_date",
     "branches",
@@ -24,8 +25,17 @@
     "outflow",
     "closing_balance",
     "snapshot_json",
+    "section_print_tracking",
+    "reprint_count",
+    "first_printed_at",
+    "first_printed_by",
+    "column_break_reprint",
+    "last_reprinted_at",
+    "last_reprinted_by",
+    "print_history",
     "section_preview",
     "preview_html",
+    "amended_from",
     "created_by_user",
     "submit_on"
   ],
@@ -140,6 +150,65 @@
       "hidden": 1
     },
     {
+      "fieldname": "section_print_tracking",
+      "fieldtype": "Section Break",
+      "label": "Print Tracking",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "reprint_count",
+      "fieldtype": "Int",
+      "label": "Reprint Count",
+      "read_only": 1,
+      "default": 0,
+      "description": "Number of times this report has been reprinted"
+    },
+    {
+      "fieldname": "first_printed_at",
+      "fieldtype": "Datetime",
+      "label": "First Printed At",
+      "read_only": 1,
+      "no_copy": 1,
+      "description": "Timestamp when report was first printed"
+    },
+    {
+      "fieldname": "first_printed_by",
+      "fieldtype": "Link",
+      "label": "First Printed By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "column_break_reprint",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "last_reprinted_at",
+      "fieldtype": "Datetime",
+      "label": "Last Reprinted At",
+      "read_only": 1,
+      "no_copy": 1,
+      "description": "Timestamp of most recent reprint"
+    },
+    {
+      "fieldname": "last_reprinted_by",
+      "fieldtype": "Link",
+      "label": "Last Reprinted By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "print_history",
+      "fieldtype": "Code",
+      "label": "Print History",
+      "options": "JSON",
+      "read_only": 1,
+      "hidden": 1,
+      "description": "JSON array of all print/reprint events"
+    },
+    {
       "fieldname": "section_preview",
       "fieldtype": "Section Break",
       "label": "Preview"
@@ -148,6 +217,15 @@
       "fieldname": "preview_html",
       "fieldtype": "HTML",
       "label": "Daily Report Preview"
+    },
+    {
+      "fieldname": "amended_from",
+      "fieldtype": "Link",
+      "label": "Amended From",
+      "no_copy": 1,
+      "options": "Cash Bank Daily Report",
+      "print_hide": 1,
+      "read_only": 1
     },
     {
       "fieldname": "created_by_user",

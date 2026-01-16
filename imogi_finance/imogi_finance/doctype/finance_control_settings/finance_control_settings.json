@@ -26,7 +26,6 @@
     "default_branch",
     "enforce_branch_on_links",
     "section_reporting",
-    "daily_report_preparer",
     "daily_report_approver",
     "daily_report_acknowledger",
     "daily_report_view_only",
@@ -145,13 +144,8 @@
     {
       "fieldname": "section_reporting",
       "fieldtype": "Section Break",
-      "label": "Reporting Signers"
-    },
-    {
-      "fieldname": "daily_report_preparer",
-      "fieldtype": "Link",
-      "label": "Daily Report Prepared By",
-      "options": "User"
+      "label": "Reporting Signers",
+      "description": "Prepared By is auto-filled from report creator. Configure approver and acknowledger here."
     },
     {
       "fieldname": "daily_report_approver",

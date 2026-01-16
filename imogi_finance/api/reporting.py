@@ -43,32 +43,36 @@ def _get_settings():
     return {}
 
 
-def _extract_signers_from_settings(doc, bank_account: str | None = None) -> dict:
+def _extract_signers_from_settings(doc, bank_account: str | None = None, cash_account: str | None = None) -> dict:
     """Return signer mapping, allowing per-account overrides.
 
     Priority:
     1) Per-account rule from Finance Control Settings.daily_report_signer_rules
     2) Global defaults on the same settings doc.
+    
+    Note: prepared_by should be filled from report creator, not from settings.
     """
 
     if not doc:
         return {}
 
     base = {
-        "prepared_by": getattr(doc, "daily_report_preparer", None),
+        "prepared_by": None,  # Will be filled from report creator
         "approved_by": getattr(doc, "daily_report_approver", None),
         "acknowledged_by": getattr(doc, "daily_report_acknowledger", None),
     }
 
-    if not bank_account:
+    # Use whichever account is provided
+    account = bank_account or cash_account
+    if not account:
         return base
 
     # Look for a matching rule in the child table (if present)
     rules = getattr(doc, "daily_report_signer_rules", []) or []
     for row in rules:
-        if getattr(row, "bank_account", None) == bank_account:
+        if getattr(row, "account", None) == account:
             overrides = {
-                "prepared_by": getattr(row, "prepared_by", None) or base.get("prepared_by"),
+                "prepared_by": None,  # Will be filled from report creator
                 "approved_by": getattr(row, "approved_by", None) or base.get("approved_by"),
                 "acknowledged_by": getattr(row, "acknowledged_by", None)
                 or base.get("acknowledged_by"),
@@ -81,7 +85,12 @@ def _extract_signers_from_settings(doc, bank_account: str | None = None) -> dict
 @frappe.whitelist()
 def preview_daily_report(branches=None, report_date=None, bank_account=None, cash_account=None):
     settings = _get_settings()
-    signers = resolve_signers(_extract_signers_from_settings(settings, bank_account))
+    signers_config = _extract_signers_from_settings(settings, bank_account=bank_account, cash_account=cash_account)
+    
+    # Auto-fill prepared_by from current user (report creator)
+    signers_config["prepared_by"] = frappe.session.user
+    
+    signers = resolve_signers(signers_config)
     report_date_obj = date.fromisoformat(report_date) if report_date else None
     branch_filter = branches or None
     bank_filter = bank_account or None
@@ -106,7 +115,7 @@ def preview_daily_report(branches=None, report_date=None, bank_account=None, cas
 @frappe.whitelist()
 def get_dashboard_snapshot(branches=None, report_date=None, bank_account=None, cash_account=None):
     settings = _get_settings()
-    signers = resolve_signers(_extract_signers_from_settings(settings, bank_account))
+    signers = resolve_signers(_extract_signers_from_settings(settings, bank_account=bank_account, cash_account=cash_account))
     report_date_obj = date.fromisoformat(report_date) if report_date else None
     branch_filter = branches or None
     bank_filter = bank_account or None

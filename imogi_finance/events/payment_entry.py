@@ -238,11 +238,29 @@ def on_submit(doc, method=None):
 def on_cancel(doc, method=None):
     """Handle Payment Entry cancellation.
     
+    IMPORTANT: Payment Entries linked to PRINTED Cash/Bank Daily Reports 
+    should NOT be cancelled. Use reverse_payment_entry() instead to create 
+    a reversal entry at today's date.
+    
     When PE is cancelled:
-    1. Clear linked_payment_entry from Expense Request
-    2. Update status back to "PI Created" (or "Approved" if no PI)
+    1. Check if linked to any printed daily reports
+    2. If yes, BLOCK cancellation and suggest reversal
+    3. If no, proceed with normal cancellation
+    4. Clear linked_payment_entry from Expense Request
+    5. Update status back to "PI Created" (or "Approved" if no PI)
     """
     request_name = _resolve_expense_request(doc)
+    
+    # Check if this PE is part of any printed daily reports
+    if _check_linked_to_printed_report(doc):
+        frappe.throw(
+            frappe._(
+                "Cannot cancel Payment Entry {0} because it is included in a printed Cash/Bank Daily Report. "
+                "Use the 'Reverse Payment Entry' button instead to create a reversal entry at today's date."
+            ).format(doc.name),
+            title=_("Cancellation Blocked")
+        )
+    
     if not request_name:
         frappe.logger().info(f"[Payment Entry on_cancel] No ER linked to PE {doc.name}")
         return
@@ -255,6 +273,146 @@ def on_cancel(doc, method=None):
     
     # Update Expense Request
     frappe.db.set_value("Expense Request", request_name, updates)
+
+
+def _check_linked_to_printed_report(payment_entry) -> bool:
+    """Check if Payment Entry is included in any printed (submitted) Cash/Bank Daily Reports.
+    
+    For Cash Account mode (GL Entry):
+    - Check GL Entry posting_date and match with submitted reports
+    
+    For Bank Account mode (Bank Transaction):
+    - Check Bank Transaction date and match with submitted reports
+    
+    Returns True if linked to submitted report (docstatus=1).
+    """
+    if not getattr(frappe, "db", None):
+        return False
+    
+    # Get posting date from Payment Entry
+    posting_date = getattr(payment_entry, "posting_date", None)
+    if not posting_date:
+        return False
+    
+    # Check for submitted (printed) reports on this date
+    # For cash accounts (via GL Entry)
+    printed_reports = frappe.get_all(
+        "Cash Bank Daily Report",
+        filters={
+            "report_date": posting_date,
+            "docstatus": 1  # Submitted = Printed
+        },
+        fields=["name", "cash_account", "bank_account"]
+    )
+    
+    if not printed_reports:
+        return False
+    
+    # Check if PE's account matches any printed report's account
+    pe_account = getattr(payment_entry, "paid_from", None) or getattr(payment_entry, "paid_to", None)
+    
+    for report in printed_reports:
+        if report.get("cash_account") == pe_account or report.get("bank_account") == pe_account:
+            return True
+    
+    return False
+
+
+@frappe.whitelist()
+def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = None):
+    """Create a reversal Payment Entry at today's date (or specified date).
+    
+    This is the proper way to reverse a Payment Entry that's already included
+    in a printed Cash/Bank Daily Report, instead of cancelling it.
+    
+    The reversal entry:
+    - Mirrors all amounts and accounts (flipped direction)
+    - Posts at reversal_date (default: today)
+    - Links back to original PE in remarks
+    - Updates Expense Request status back to "PI Created"
+    
+    Args:
+        payment_entry_name: Name of Payment Entry to reverse
+        reversal_date: Date for reversal entry (default: today)
+    
+    Returns:
+        dict: Created reversal Payment Entry
+    """
+    from datetime import date as date_class
+    
+    # Get original PE
+    original_pe = frappe.get_doc("Payment Entry", payment_entry_name)
+    
+    if original_pe.docstatus != 1:
+        frappe.throw(frappe._("Can only reverse submitted Payment Entries"))
+    
+    # Default reversal date to today
+    if not reversal_date:
+        reversal_date = frappe.utils.today()
+    
+    # Create reversal PE
+    reversal_pe = frappe.get_doc({
+        "doctype": "Payment Entry",
+        "posting_date": reversal_date,
+        "payment_type": original_pe.payment_type,
+        "company": original_pe.company,
+        # Flip accounts
+        "paid_from": original_pe.paid_to,  # Reversed
+        "paid_to": original_pe.paid_from,  # Reversed
+        "paid_amount": original_pe.paid_amount,
+        "received_amount": original_pe.received_amount,
+        "source_exchange_rate": original_pe.source_exchange_rate,
+        "target_exchange_rate": original_pe.target_exchange_rate,
+        "mode_of_payment": original_pe.mode_of_payment,
+        "party_type": original_pe.party_type,
+        "party": original_pe.party,
+        "branch": original_pe.branch if hasattr(original_pe, "branch") else None,
+        "remarks": frappe._(
+            "Reversal of Payment Entry {0} (original date: {1})"
+        ).format(
+            original_pe.name,
+            frappe.utils.format_date(original_pe.posting_date)
+        ),
+        # Copy references if any
+        "references": [
+            {
+                "reference_doctype": ref.reference_doctype,
+                "reference_name": ref.reference_name,
+                "total_amount": ref.total_amount,
+                "outstanding_amount": ref.outstanding_amount,
+                "allocated_amount": -ref.allocated_amount  # Negative to reverse
+            }
+            for ref in (original_pe.references or [])
+        ] if original_pe.get("references") else [],
+        # Mark as reversal
+        "is_reversal": 1,
+        "reversed_entry": original_pe.name
+    })
+    
+    reversal_pe.insert()
+    
+    frappe.msgprint(
+        frappe._(
+            "Reversal Payment Entry {0} created for date {1}. "
+            "Please review and submit it."
+        ).format(reversal_pe.name, frappe.utils.format_date(reversal_date)),
+        indicator="green",
+        title=_("Reversal Created")
+    )
+    
+    # Update original PE to mark it as reversed
+    frappe.db.set_value("Payment Entry", payment_entry_name, {
+        "is_reversed": 1,
+        "reversal_entry": reversal_pe.name
+    })
+    
+    # Update Expense Request status back to PI Created
+    request_name = _resolve_expense_request(original_pe)
+    if request_name:
+        updates = get_cancel_updates(request_name, "linked_payment_entry")
+        frappe.db.set_value("Expense Request", request_name, updates)
+    
+    return reversal_pe.as_dict()
 
 
 def on_trash(doc, method=None):

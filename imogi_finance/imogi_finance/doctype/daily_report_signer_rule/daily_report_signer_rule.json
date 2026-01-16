@@ -6,26 +6,19 @@
   "editable_grid": 1,
   "engine": "InnoDB",
   "field_order": [
-    "bank_account",
-    "prepared_by",
+    "account",
     "approved_by",
     "acknowledged_by"
   ],
   "fields": [
     {
-      "fieldname": "bank_account",
+      "fieldname": "account",
       "fieldtype": "Link",
       "label": "Bank / Cash Account",
-      "options": "Bank Account",
+      "options": "Account",
       "in_list_view": 1,
-      "reqd": 1
-    },
-    {
-      "fieldname": "prepared_by",
-      "fieldtype": "Link",
-      "label": "Prepared By",
-      "options": "User",
-      "in_list_view": 1
+      "reqd": 1,
+      "description": "Supports both Bank Account and Cash Account. Prepared By auto-filled from report creator."
     },
     {
       "fieldname": "approved_by",

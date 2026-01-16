@@ -118,5 +118,38 @@
 			{"action": "Cancel", "allowed": "Accounts Manager", "state": "Posted", "next_state": "Cancelled"}
 		],
 		"workflow_state_field": "workflow_state"
+	},
+	{
+		"actions": [
+			{"action": "Generate", "allowed": "All"},
+			{"action": "Regenerate", "allowed": "All"},
+			{"action": "Approve", "allowed": "All"},
+			{"action": "Reject", "allowed": "All"},
+			{"action": "Print & Lock", "allowed": "All"}
+		],
+		"docstatus": 0,
+		"doctype": "Workflow",
+		"document_type": "Cash Bank Daily Report",
+		"is_active": 1,
+		"module": "Imogi Finance",
+		"name": "Cash Bank Daily Report Workflow",
+		"workflow_name": "Cash Bank Daily Report Workflow",
+		"notes": "Cash Bank Daily Report workflow with dynamic approver validation. Approver is determined by Finance Control Settings (daily_report_approver field or per-account rules in daily_report_signer_rules). Validation enforced in Python before_workflow_action hook. Generated state allows regenerating snapshot. Print & Lock submits the document (docstatus=1), making it immutable. Supports multiple reprints with tracking.",
+		"override_status": 1,
+		"states": [
+			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Generated", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Approved", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Printed", "doc_status": "1", "allow_edit": null},
+			{"state": "Cancelled", "doc_status": "2", "allow_edit": null}
+		],
+		"transitions": [
+			{"action": "Generate", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Generated"},
+			{"action": "Regenerate", "allow_self_approval": 1, "allowed": "All", "state": "Generated", "next_state": "Generated"},
+			{"action": "Approve", "allow_self_approval": 0, "allowed": "All", "state": "Generated", "next_state": "Approved"},
+			{"action": "Reject", "allow_self_approval": 1, "allowed": "All", "state": "Generated", "next_state": "Draft"},
+			{"action": "Print & Lock", "allow_self_approval": 1, "allowed": "All", "state": "Approved", "next_state": "Printed"}
+		],
+		"workflow_state_field": "workflow_state"
 	}
 ]

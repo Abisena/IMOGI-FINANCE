@@ -1,6 +1,7 @@
 frappe.ui.form.on('Cash Bank Daily Report', {
   refresh(frm) {
-    if (!frm.is_new()) {
+    // Regenerate button - only if not submitted
+    if (!frm.is_new() && frm.doc.docstatus === 0) {
       frm.add_custom_button(__('Regenerate Snapshot'), () => {
         frappe.call({
           method: 'imogi_finance.imogi_finance.doctype.cash_bank_daily_report.cash_bank_daily_report.regenerate',
@@ -9,17 +10,51 @@ frappe.ui.form.on('Cash Bank Daily Report', {
           freeze_message: __('Regenerating daily report...'),
           callback(r) {
             if (r.message) {
-              frm.set_value('snapshot_json', r.message.snapshot_json);
-              frm.set_value('status', r.message.status);
-              frm.set_value('opening_balance', r.message.opening_balance);
-              frm.set_value('inflow', r.message.inflow);
-              frm.set_value('outflow', r.message.outflow);
-              frm.set_value('closing_balance', r.message.closing_balance);
+              frm.reload_doc();
             }
-            frm.reload_doc();
           },
         });
-      });
+      }, __('Actions'));
+    }
+    
+    // Reprint button - only if submitted (docstatus=1)
+    if (!frm.is_new() && frm.doc.docstatus === 1) {
+      frm.add_custom_button(__('Reprint'), () => {
+        frappe.call({
+          method: 'imogi_finance.imogi_finance.doctype.cash_bank_daily_report.cash_bank_daily_report.reprint',
+          args: { name: frm.doc.name },
+          freeze: true,
+          freeze_message: __('Recording reprint...'),
+          callback(r) {
+            if (r.message) {
+              frm.reload_doc();
+              // Open print view after recording reprint
+              setTimeout(() => {
+                frm.print_doc();
+              }, 500);
+            }
+          },
+        });
+      }, __('Print')).addClass('btn-primary');
+    }
+    
+    // Show print tracking info
+    if (frm.doc.docstatus === 1) {
+      let indicator_text = '';
+      if (frm.doc.reprint_count > 0) {
+        indicator_text = __('Report Printed: {0} | Reprints: {1} | Last: {2}', [
+          frappe.datetime.str_to_user(frm.doc.first_printed_at || ''),
+          frm.doc.reprint_count,
+          frappe.datetime.str_to_user(frm.doc.last_reprinted_at || '')
+        ]);
+        frm.dashboard.add_indicator(indicator_text, 'orange');
+      } else {
+        indicator_text = __('Report Printed: {0} by {1}', [
+          frappe.datetime.str_to_user(frm.doc.first_printed_at || ''),
+          frm.doc.first_printed_by || ''
+        ]);
+        frm.dashboard.add_indicator(indicator_text, 'green');
+      }
     }
 
     // Show mode indicator
