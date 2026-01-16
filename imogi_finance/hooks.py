@@ -128,6 +128,11 @@ fixtures = [
     {"doctype": "Tax Invoice Type", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Workspace", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Client Script", "filters": {"dt": ["in", ["Purchase Invoice", "Payment Entry"]]}},
+    # DocTypes for deferred expense and tax export functionality
+    {"doctype": "Expense Deferred Settings"},
+    {"doctype": "CoreTax Export Settings"},
+    {"doctype": "CoreTax Column Mapping"},
+    {"doctype": "Tax Profile PPh Account"},
     "fixtures/item.json",
 ]
 

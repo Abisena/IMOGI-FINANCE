@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -14,22 +15,35 @@ class ExpenseDeferredSettings(Document):
     
     def validate_default_prepaid_account(self):
         """Validate that default prepaid account is an asset account"""
-        if self.default_prepaid_account:
-            account = frappe.db.get_value(
-                "Account", 
-                self.default_prepaid_account, 
-                ["root_type", "is_group"], 
-                as_dict=1
+        if not self.default_prepaid_account:
+            return
+            
+        account = frappe.db.get_value(
+            "Account", 
+            self.default_prepaid_account, 
+            ["root_type", "is_group"], 
+            as_dict=1
+        )
+        if not account:
+            frappe.throw(
+                _("Default Prepaid Account {0} does not exist").format(
+                    frappe.bold(self.default_prepaid_account)
+                )
             )
-            if account:
-                if account.is_group:
-                    frappe.throw(
-                        f"Default Prepaid Account {self.default_prepaid_account} cannot be a group account"
-                    )
-                if account.root_type != "Asset":
-                    frappe.throw(
-                        f"Default Prepaid Account {self.default_prepaid_account} must be an Asset account"
-                    )
+        
+        if account.is_group:
+            frappe.throw(
+                _("Default Prepaid Account {0} cannot be a group account").format(
+                    frappe.bold(self.default_prepaid_account)
+                )
+            )
+        if account.root_type != "Asset":
+            frappe.throw(
+                _("Default Prepaid Account {0} must be an Asset account, but is {1}").format(
+                    frappe.bold(self.default_prepaid_account),
+                    frappe.bold(account.root_type)
+                )
+            )
     
     def validate_deferrable_accounts(self):
         """Validate deferrable accounts configuration"""
@@ -39,12 +53,17 @@ class ExpenseDeferredSettings(Document):
         seen_accounts = set()
         for idx, row in enumerate(self.deferrable_accounts, start=1):
             if not row.prepaid_account:
-                frappe.throw(f"Row {idx}: Prepaid Account is required")
+                frappe.throw(
+                    _("Row {0}: Prepaid Account is required").format(idx)
+                )
             
             # Check for duplicate prepaid accounts
             if row.prepaid_account in seen_accounts:
                 frappe.throw(
-                    f"Row {idx}: Duplicate Prepaid Account {row.prepaid_account}"
+                    _("Row {0}: Duplicate Prepaid Account {1}").format(
+                        idx,
+                        frappe.bold(row.prepaid_account)
+                    )
                 )
             seen_accounts.add(row.prepaid_account)
             
@@ -55,15 +74,29 @@ class ExpenseDeferredSettings(Document):
                 ["root_type", "is_group"], 
                 as_dict=1
             )
-            if account:
-                if account.is_group:
-                    frappe.throw(
-                        f"Row {idx}: Prepaid Account {row.prepaid_account} cannot be a group account"
+            if not account:
+                frappe.throw(
+                    _("Row {0}: Prepaid Account {1} does not exist").format(
+                        idx,
+                        frappe.bold(row.prepaid_account)
                     )
-                if account.root_type != "Asset":
-                    frappe.throw(
-                        f"Row {idx}: Prepaid Account {row.prepaid_account} must be an Asset account"
+                )
+            
+            if account.is_group:
+                frappe.throw(
+                    _("Row {0}: Prepaid Account {1} cannot be a group account").format(
+                        idx,
+                        frappe.bold(row.prepaid_account)
                     )
+                )
+            if account.root_type != "Asset":
+                frappe.throw(
+                    _("Row {0}: Prepaid Account {1} must be an Asset account, but is {2}").format(
+                        idx,
+                        frappe.bold(row.prepaid_account),
+                        frappe.bold(account.root_type)
+                    )
+                )
 
 
 def get_settings():
