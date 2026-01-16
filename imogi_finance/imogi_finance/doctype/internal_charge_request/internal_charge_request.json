@@ -52,7 +52,7 @@
       "fieldtype": "Link",
       "options": "Company",
       "reqd": 1,
-      "fetch_from": "expense_request.company",
+      "fetch_from": "source_cost_center.company",
       "read_only": 1
     },
     {
@@ -148,7 +148,7 @@
     {
       "fieldname": "approved_on",
       "label": "Approved On",
-      "fieldtype": "DateTime",
+      "fieldtype": "Datetime",
       "read_only": 1,
       "hidden": 1
     },
