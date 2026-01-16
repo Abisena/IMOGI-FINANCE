@@ -13,6 +13,7 @@ def execute(filters=None):
 
     columns = [
         {"label": _("Posting Date"), "fieldname": "posting_date", "fieldtype": "Date", "width": 110},
+        {"label": _("Reference"), "fieldname": "name", "fieldtype": "Link", "options": "Sales Invoice", "width": 140},
         {"label": _("Customer"), "fieldname": "customer", "fieldtype": "Link", "options": "Customer", "width": 150},
         {"label": _("Buyer NPWP"), "fieldname": "out_fp_npwp", "fieldtype": "Data", "width": 140},
         {"label": _("Tax Invoice No"), "fieldname": "out_fp_no", "fieldtype": "Data", "width": 160},
