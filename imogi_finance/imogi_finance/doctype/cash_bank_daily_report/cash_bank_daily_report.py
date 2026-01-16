@@ -150,6 +150,55 @@ class CashBankDailyReport(Document):
         report_date_str = (
             self.report_date if isinstance(self.report_date, str) else self.report_date.isoformat()
         )
+        
+        # Check if previous report exists
+        from datetime import timedelta
+        from imogi_finance.reporting.data import get_previous_report_closing_balances
+        
+        if isinstance(self.report_date, str):
+            from datetime import date as date_class
+            report_date_obj = date_class.fromisoformat(self.report_date)
+        else:
+            report_date_obj = self.report_date
+        
+        prev_balances = None
+        if self.bank_account:
+            prev_balances = get_previous_report_closing_balances(
+                report_date_obj, bank_account=self.bank_account
+            )
+        elif self.cash_account:
+            prev_balances = get_previous_report_closing_balances(
+                report_date_obj, cash_account=self.cash_account
+            )
+        
+        if prev_balances:
+            self.opening_source = "Previous Report"
+        else:
+            self.opening_source = "Calculated from Transactions"
+            # Show info message for Bank Account (required sequential)
+            if self.bank_account:
+                # Check for gaps in reporting
+                from imogi_finance.reporting.data import check_reporting_gaps
+                missing = check_reporting_gaps(
+                    report_date_obj, bank_account=self.bank_account, days_back=7
+                )
+                if missing:
+                    frappe.msgprint(
+                        frappe._(
+                            "⚠️ No previous report found. Missing reports for dates: {0}. "
+                            "Opening balance calculated from all transactions instead of previous closing."
+                        ).format(", ".join(missing[:3]) + ("..." if len(missing) > 3 else "")),
+                        indicator="orange",
+                        alert=True
+                    )
+                else:
+                    frappe.msgprint(
+                        frappe._(
+                            "No previous report found for {0}. Opening balance calculated from all transactions."
+                        ).format(frappe.utils.format_date(report_date_obj - timedelta(days=1))),
+                        indicator="blue",
+                        alert=True
+                    )
 
         payload = reporting_api.preview_daily_report(
             branches=branches,
@@ -161,6 +210,14 @@ class CashBankDailyReport(Document):
         # Store full JSON snapshot for print formats / APIs
         self.snapshot_json = frappe.as_json(payload)
         self.status = "Generated"
+        
+        # Set report type based on account selection
+        if self.cash_account:
+            self.report_type = "Cash Ledger (GL Entry)"
+        elif self.bank_account:
+            self.report_type = "Bank Transaction"
+        else:
+            self.report_type = ""
 
         # Also copy consolidated totals into top-level currency fields (if present)
         consolidated = (payload or {}).get("consolidated") or {}
@@ -168,6 +225,26 @@ class CashBankDailyReport(Document):
         self.inflow = consolidated.get("inflow") or 0
         self.outflow = consolidated.get("outflow") or 0
         self.closing_balance = consolidated.get("closing_balance") or 0
+        
+        # Validate balance calculation
+        expected_closing = self.opening_balance + self.inflow - self.outflow
+        tolerance = 0.01  # 1 cent tolerance for rounding
+        
+        if abs(self.closing_balance - expected_closing) <= tolerance:
+            self.balance_status = "Balanced"
+        else:
+            self.balance_status = "Mismatch"
+            frappe.msgprint(
+                frappe._(
+                    "Warning: Balance mismatch detected. Expected closing: {0}, Actual: {1}. "
+                    "Please review the transactions."
+                ).format(
+                    frappe.format(expected_closing, {"fieldtype": "Currency"}),
+                    frappe.format(self.closing_balance, {"fieldtype": "Currency"})
+                ),
+                indicator="orange",
+                alert=True
+            )
 
 
 @frappe.whitelist()

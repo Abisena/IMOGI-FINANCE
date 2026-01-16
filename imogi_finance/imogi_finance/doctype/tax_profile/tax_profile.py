@@ -42,6 +42,7 @@ class TaxProfile(Document):
         self._validate_unique_company()
         self._require_core_accounts()
         self._validate_accounts()
+        self._validate_pb1_mappings()
 
     def _validate_unique_company(self):
         if not self.company:
@@ -93,3 +94,46 @@ class TaxProfile(Document):
                     ", ".join(sorted(set(duplicates)))
                 )
             )
+    def _validate_pb1_mappings(self):
+        """Validate PB1 account mappings if multi-branch is enabled."""
+        if not getattr(self, "enable_pb1_multi_branch", 0):
+            return
+        
+        if not getattr(self, "pb1_account_mappings", None):
+            # Multi-branch enabled but no mappings - will fallback to default
+            return
+        
+        # Check for duplicate branches
+        branches_seen = set()
+        for mapping in self.pb1_account_mappings or []:
+            branch = getattr(mapping, "branch", None)
+            if not branch:
+                continue
+            
+            if branch in branches_seen:
+                self._safe_throw(
+                    _("Branch {0} appears multiple times in PB1 Account Mapping.").format(branch),
+                    title=_("Duplicate Branch Mapping")
+                )
+            branches_seen.add(branch)
+    
+    def get_pb1_account(self, branch: str = None) -> str:
+        """Get PB1 payable account based on branch mapping or fallback to default.
+        
+        Args:
+            branch: Branch name to look up specific PB1 account
+            
+        Returns:
+            str: PB1 payable account name
+        """
+        # If multi-branch not enabled or no branch specified, return default
+        if not getattr(self, "enable_pb1_multi_branch", 0) or not branch:
+            return getattr(self, "pb1_payable_account", None)
+        
+        # Check for branch-specific mapping
+        for mapping in (self.pb1_account_mappings or []):
+            if getattr(mapping, "branch", None) == branch:
+                return getattr(mapping, "pb1_payable_account", None)
+        
+        # Fallback to default account
+        return getattr(self, "pb1_payable_account", None)

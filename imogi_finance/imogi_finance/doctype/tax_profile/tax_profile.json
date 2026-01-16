@@ -14,6 +14,9 @@
     "ppn_payable_account",
     "pb1_payable_account",
     "bpjs_payable_account",
+    "pb1_multi_branch_section",
+    "enable_pb1_multi_branch",
+    "pb1_account_mappings",
     "pph_section",
     "pph_accounts",
     "tolerance_idr",
@@ -67,6 +70,27 @@
       "label": "BPJS Payable Account",
       "options": "Account",
       "reqd": 1
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "pb1_multi_branch_section",
+      "fieldtype": "Section Break",
+      "label": "PB1 Multi-Branch Configuration"
+    },
+    {
+      "default": "0",
+      "description": "Enable branch-specific PB1 payable accounts for multi-branch operations",
+      "fieldname": "enable_pb1_multi_branch",
+      "fieldtype": "Check",
+      "label": "Enable PB1 Multi-Branch Accounts"
+    },
+    {
+      "depends_on": "eval:doc.enable_pb1_multi_branch",
+      "description": "Define PB1 payable accounts per branch. If not defined, will fallback to default PB1 Payable Account.",
+      "fieldname": "pb1_account_mappings",
+      "fieldtype": "Table",
+      "label": "PB1 Account Mappings",
+      "options": "Tax Profile PB1 Account"
     },
     {
       "collapsible": 1,

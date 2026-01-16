@@ -24,6 +24,23 @@ frappe.ui.form.on('Cash Bank Daily Report', {
 
     // Show mode indicator
     show_report_mode_indicator(frm);
+    
+    // Show balance validation warning if mismatch
+    if (frm.doc.balance_status === 'Mismatch') {
+      frm.dashboard.set_headline_alert(
+        __('Balance Mismatch Detected!') + ' — ' + 
+        __('Opening + Inflow - Outflow does not equal Closing Balance. Please review transactions.'),
+        'red'
+      );
+    }
+    
+    // Show warning if manual override is used
+    if (frm.doc.manual_opening_override) {
+      frm.dashboard.add_indicator(
+        __('Manual Opening Balance Override Active - Use with Caution'),
+        'orange'
+      );
+    }
 
     // Render read-only preview from snapshot_json
     render_daily_report_preview(frm);
@@ -46,6 +63,19 @@ function show_report_mode_indicator(frm) {
   if (!frm.dashboard) return;
   
   frm.dashboard.clear_headline();
+  
+  // Show opening source warning if calculated from transactions
+  if (frm.doc.opening_source === 'Calculated from Transactions' && frm.doc.bank_account) {
+    frm.dashboard.add_indicator(
+      __('Opening Balance: Calculated from all transactions (no previous report found)'),
+      'orange'
+    );
+  } else if (frm.doc.opening_source === 'Previous Report') {
+    frm.dashboard.add_indicator(
+      __('Opening Balance: From previous day closing balance'),
+      'green'
+    );
+  }
   
   if (frm.doc.cash_account) {
     frm.dashboard.set_headline_alert(
@@ -86,13 +116,30 @@ function render_daily_report_preview(frm) {
 
   const consolidated = data.consolidated || {};
   const branches = data.branches || [];
+  
+  // Check balance consistency
+  const opening = consolidated.opening_balance || 0;
+  const inflow = consolidated.inflow || 0;
+  const outflow = consolidated.outflow || 0;
+  const closing = consolidated.closing_balance || 0;
+  const expectedClosing = opening + inflow - outflow;
+  const tolerance = 0.01;
+  const isBalanced = Math.abs(closing - expectedClosing) <= tolerance;
 
   let html = '';
   
+  // Determine report type
+  const isCash = !!frm.doc.cash_account;
+  const isBank = !!frm.doc.bank_account;
+  const reportTypeClass = isCash ? 'cash' : 'bank';
+  const reportTypeColor = isCash ? '#10b981' : '#3b82f6';
+  const reportTypeLabel = isCash ? 'CASH LEDGER (GL Entry)' : 'BANK TRANSACTION';
+  
   // Modern Summary Cards
   html += '<style>';
-  html += '.report-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }';
-  html += '.report-card h3 { margin: 0 0 15px 0; font-size: 16px; font-weight: 600; opacity: 0.9; }';
+  html += '.report-card { background: linear-gradient(135deg, ' + reportTypeColor + ' 0%, #667eea 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }';
+  html += '.report-card h3 { margin: 0 0 10px 0; font-size: 16px; font-weight: 600; opacity: 0.9; }';
+  html += '.report-type-badge { display: inline-block; background: rgba(255,255,255,0.3); padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-bottom: 10px; }';
   html += '.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }';
   html += '.summary-box { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #667eea; }';
   html += '.summary-box.opening { border-left-color: #3b82f6; }';
@@ -120,6 +167,36 @@ function render_daily_report_preview(frm) {
   html += '.no-data { text-align: center; padding: 30px; color: #9ca3af; font-size: 13px; }';
   html += '</style>';
 
+  // Header with report type badge
+  html += '<div class="report-card">';
+  html += '<div class="report-type-badge">' + reportTypeLabel + '</div>';
+  html += '<h3>Daily Report Summary</h3>';
+  html += '<div style="opacity: 0.9; font-size: 13px;">';
+  html += frappe.format(frm.doc.report_date, {fieldtype: 'Date'});
+  if (frm.doc.bank_account) {
+    html += ' &middot; ' + frm.doc.bank_account;
+  } else if (frm.doc.cash_account) {
+    html += ' &middot; ' + frm.doc.cash_account;
+  }
+  if (frm.doc.opening_source) {
+    const sourceIcon = frm.doc.opening_source === 'Previous Report' ? '✅' : '⚠️';
+    html += '<br><small style="opacity: 0.8;">' + sourceIcon + ' Opening: ' + frm.doc.opening_source + '</small>';
+  }
+  html += '</div>';
+  html += '</div>';
+  
+  // Balance validation alert
+  if (!isBalanced) {
+    html += '<div style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">';
+    html += '<div style="font-weight: 600; color: #991b1b; margin-bottom: 4px;"><i class="fa fa-exclamation-triangle"></i> Balance Mismatch Detected</div>';
+    html += '<div style="font-size: 12px; color: #7f1d1d;">';
+    html += 'Expected Closing: ' + format_currency(expectedClosing) + ' &middot; ';
+    html += 'Actual Closing: ' + format_currency(closing) + ' &middot; ';
+    html += 'Difference: ' + format_currency(Math.abs(closing - expectedClosing));
+    html += '</div>';
+    html += '</div>';
+  }
+  
   // Summary Cards with modern design
   html += '<div class="summary-grid">';
   html += '<div class="summary-box opening">';

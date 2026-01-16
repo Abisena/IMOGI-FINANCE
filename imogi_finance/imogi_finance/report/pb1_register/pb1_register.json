@@ -13,6 +13,12 @@
       "reqd": 1
     },
     {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
       "fieldname": "from_date",
       "fieldtype": "Date",
       "label": "From Date"

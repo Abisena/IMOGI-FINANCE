@@ -139,6 +139,15 @@ def _summarize_branch(
             outflow += abs(amount)
 
     closing_balance = opening_balance + inflow - outflow
+    
+    # Validate balance calculation
+    expected_closing = opening_balance + inflow - outflow
+    if abs(closing_balance - expected_closing) > 0.01:  # Allow 1 cent rounding tolerance
+        frappe.log_error(
+            f"Balance mismatch for {branch}: expected {expected_closing}, got {closing_balance}",
+            "Daily Report Balance Validation"
+        )
+    
     return BranchReport(
         branch=branch,
         opening_balance=opening_balance,

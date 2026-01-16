@@ -54,8 +54,13 @@ class TaxPaymentBatch(Document):
         profile = frappe.get_cached_doc("Tax Profile", self.tax_profile)
         if self.tax_type == "PPN" and profile.get("ppn_payable_account"):
             self.payable_account = profile.ppn_payable_account
-        elif self.tax_type == "PB1" and profile.get("pb1_payable_account"):
-            self.payable_account = profile.pb1_payable_account
+        elif self.tax_type == "PB1":
+            # Use branch-specific PB1 account if available
+            branch = getattr(self, "branch", None)
+            if branch and hasattr(profile, "get_pb1_account"):
+                self.payable_account = profile.get_pb1_account(branch)
+            elif profile.get("pb1_payable_account"):
+                self.payable_account = profile.pb1_payable_account
         elif self.tax_type == "BPJS" and profile.get("bpjs_payable_account"):
             self.payable_account = profile.bpjs_payable_account
         elif self.tax_type == "PPh" and self.pph_type:

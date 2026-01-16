@@ -134,15 +134,39 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
     pph_accounts = [row.payable_account for row in getattr(profile, "pph_accounts", []) or [] if row.payable_account]
     pph_total = _get_gl_total(company, pph_accounts, date_from, date_to)
 
-    pb1_account = getattr(profile, "pb1_payable_account", None)
-    pb1_total = _get_gl_total(company, [pb1_account], date_from, date_to) if pb1_account else 0.0
+    # Handle PB1 multi-branch or single account
+    pb1_total = 0.0
+    pb1_breakdown = {}
+    
+    if getattr(profile, "enable_pb1_multi_branch", 0) and getattr(profile, "pb1_account_mappings", None):
+        # Multi-branch: calculate per branch and aggregate
+        for mapping in profile.pb1_account_mappings or []:
+            branch = getattr(mapping, "branch", None)
+            pb1_account = getattr(mapping, "pb1_payable_account", None)
+            if branch and pb1_account:
+                branch_total = _get_gl_total(company, [pb1_account], date_from, date_to)
+                pb1_breakdown[branch] = branch_total
+                pb1_total += branch_total
+        
+        # Add default account if exists and not covered by mappings
+        default_account = getattr(profile, "pb1_payable_account", None)
+        if default_account:
+            mapped_accounts = {getattr(m, "pb1_payable_account", None) for m in profile.pb1_account_mappings or []}
+            if default_account not in mapped_accounts:
+                default_total = _get_gl_total(company, [default_account], date_from, date_to)
+                pb1_breakdown["_default"] = default_total
+                pb1_total += default_total
+    else:
+        # Single account (backward compatible)
+        pb1_account = getattr(profile, "pb1_payable_account", None)
+        pb1_total = _get_gl_total(company, [pb1_account], date_from, date_to) if pb1_account else 0.0
 
     bpjs_account = getattr(profile, "bpjs_payable_account", None)
     bpjs_total = _get_gl_total(company, [bpjs_account], date_from, date_to) if bpjs_account else 0.0
 
     vat_net = output_total - input_total
 
-    return {
+    snapshot = {
         "input_vat_total": input_total,
         "output_vat_total": output_total,
         "vat_net": vat_net,
@@ -156,6 +180,12 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
             "profile": profile.name,
         },
     }
+    
+    # Add pb1_breakdown if multi-branch
+    if pb1_breakdown:
+        snapshot["pb1_breakdown"] = pb1_breakdown
+    
+    return snapshot
 
 
 def _get_tax_invoice_fields(doctype: str) -> set[str]:

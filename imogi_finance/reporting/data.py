@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from importlib import util as importlib_util
 from typing import Iterable, Mapping, Sequence
 
@@ -211,28 +211,94 @@ def derive_opening_balances(
     return dict(openings)
 
 
+def get_previous_report_closing_balances(
+    report_date: date,
+    bank_account: str | None = None,
+    cash_account: str | None = None,
+) -> dict[str, float] | None:
+    """Get closing balances from the previous day's report (if exists).
+    
+    Returns:
+        dict[str, float]: Branch -> closing_balance mapping, or None if no previous report
+    """
+    if not getattr(frappe, "db", None):
+        return None
+    
+    try:
+        previous_date = report_date - timedelta(days=1)
+        
+        # Search for yesterday's report
+        filters = {"report_date": previous_date}
+        if bank_account:
+            filters["bank_account"] = bank_account
+        if cash_account:
+            filters["cash_account"] = cash_account
+        
+        prev_reports = frappe.get_all(
+            "Cash Bank Daily Report",
+            filters=filters,
+            fields=["name", "snapshot_json"],
+            limit=1
+        )
+        
+        if not prev_reports:
+            return None
+        
+        snapshot_json = prev_reports[0].get("snapshot_json")
+        if not snapshot_json:
+            return None
+        
+        import json
+        snapshot = json.loads(snapshot_json)
+        branches = snapshot.get("branches") or []
+        
+        # Extract closing balances per branch
+        balances = {}
+        for br in branches:
+            branch_name = br.get("branch")
+            closing = _as_amount(br.get("closing_balance"))
+            if branch_name:
+                balances[branch_name] = closing
+        
+        return balances
+    except Exception as e:
+        frappe.log_error(f"Error fetching previous report: {e}", "Previous Report Lookup")
+        return None
+
+
 def load_daily_inputs(
     report_date: date | None,
     branches: Sequence[str] | None = None,
     bank_accounts: Sequence[str] | None = None,
     cash_accounts: Sequence[str] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, float]]:
-    """Return (transactions_for_day, opening_balances) for daily reporting."""
+    """Return (transactions_for_day, opening_balances) for daily reporting.
+    
+    Opening balances are derived from:
+    1. Previous day's report closing balances (preferred)
+    2. Cumulative transactions before report_date (fallback)
+    """
 
     resolved_date = report_date or date.today()
     cash_filter = _coerce_list(cash_accounts)
+    bank_filter = _coerce_list(bank_accounts)
+    
     if cash_filter:
         all_transactions = fetch_cash_ledger_entries(
             resolved_date,
             branches=branches,
             cash_accounts=cash_filter,
         )
+        account_for_lookup = cash_filter[0] if cash_filter else None
+        is_cash = True
     else:
         all_transactions = fetch_bank_transactions(
             resolved_date,
             branches=branches,
             bank_accounts=bank_accounts,
         )
+        account_for_lookup = bank_filter[0] if bank_filter else None
+        is_cash = False
 
     day_transactions: list[dict[str, object]] = []
     for tx in all_transactions:
@@ -241,5 +307,56 @@ def load_daily_inputs(
             continue
         day_transactions.append(tx)
 
-    openings = derive_opening_balances(all_transactions, report_date=resolved_date)
+    # Try to get opening balances from previous report first
+    openings = None
+    if is_cash:
+        openings = get_previous_report_closing_balances(
+            resolved_date, cash_account=account_for_lookup
+        )
+    else:
+        openings = get_previous_report_closing_balances(
+            resolved_date, bank_account=account_for_lookup
+        )
+    
+    # Fallback: calculate from all transactions if no previous report
+    if openings is None:
+        openings = derive_opening_balances(all_transactions, report_date=resolved_date)
+        # Log that we're using fallback calculation
+        if getattr(frappe, "log_error", None):
+            frappe.log_error(
+                f"No previous report found for {resolved_date}, calculating opening from transactions",
+                "Opening Balance Calculation"
+            )
+    
     return day_transactions, openings
+
+
+def check_reporting_gaps(
+    report_date: date,
+    bank_account: str | None = None,
+    cash_account: str | None = None,
+    days_back: int = 7,
+) -> list[str]:
+    """Check for missing daily reports in the past N days.
+    
+    Returns:
+        list[str]: List of dates (YYYY-MM-DD) with missing reports
+    """
+    if not getattr(frappe, "db", None):
+        return []
+    
+    missing_dates = []
+    for i in range(1, days_back + 1):
+        check_date = report_date - timedelta(days=i)
+        
+        filters = {"report_date": check_date}
+        if bank_account:
+            filters["bank_account"] = bank_account
+        if cash_account:
+            filters["cash_account"] = cash_account
+        
+        exists = frappe.db.exists("Cash Bank Daily Report", filters)
+        if not exists:
+            missing_dates.append(check_date.isoformat())
+    
+    return missing_dates

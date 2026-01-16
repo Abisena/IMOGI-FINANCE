@@ -133,6 +133,7 @@ fixtures = [
     {"doctype": "CoreTax Export Settings"},
     {"doctype": "CoreTax Column Mapping"},
     {"doctype": "Tax Profile PPh Account"},
+    {"doctype": "Tax Profile PB1 Account"},
     "fixtures/item.json",
 ]
 

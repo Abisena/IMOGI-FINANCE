@@ -13,7 +13,12 @@
     "bank_account",
     "cash_account",
     "section_snapshot",
+    "report_type",
     "status",
+    "balance_status",
+    "opening_source",
+    "column_break_opening",
+    "manual_opening_override",
     "opening_balance",
     "inflow",
     "outflow",
@@ -61,11 +66,46 @@
       "label": "Snapshot"
     },
     {
+      "fieldname": "report_type",
+      "fieldtype": "Select",
+      "label": "Report Type",
+      "options": "\nBank Transaction\nCash Ledger (GL Entry)",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
       "fieldname": "status",
       "fieldtype": "Data",
       "in_list_view": 1,
       "label": "Status",
       "read_only": 1
+    },
+    {
+      "fieldname": "balance_status",
+      "fieldtype": "Select",
+      "label": "Balance Status",
+      "options": "\nBalanced\nMismatch",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "opening_source",
+      "fieldtype": "Select",
+      "label": "Opening Balance Source",
+      "options": "\nPrevious Report\nCalculated from Transactions\nManual",
+      "read_only": 1,
+      "description": "Indicates where the opening balance came from"
+    },
+    {
+      "fieldname": "column_break_opening",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "manual_opening_override",
+      "fieldtype": "Check",
+      "label": "Override Opening Balance",
+      "description": "Check to manually set opening balance (use with caution)",
+      "default": 0
     },
     {
       "fieldname": "opening_balance",

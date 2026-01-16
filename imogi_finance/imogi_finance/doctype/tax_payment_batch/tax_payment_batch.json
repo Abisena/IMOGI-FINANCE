@@ -8,6 +8,7 @@
   "engine": "InnoDB",
   "field_order": [
     "company",
+    "branch",
     "tax_type",
     "status",
     "period_month",
@@ -42,6 +43,13 @@
       "label": "Company",
       "options": "Company",
       "reqd": 1
+    },
+    {
+      "description": "For PB1 multi-branch configuration. If specified, will use branch-specific PB1 account if configured.",
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
     },
     {
       "default": "PPN",

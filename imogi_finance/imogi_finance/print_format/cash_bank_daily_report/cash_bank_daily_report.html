@@ -1,4 +1,4 @@
-{% set bundle = frappe.safe_eval(doc.snapshot_json or '{}') if doc.snapshot_json else {} %}
+{% set bundle = (doc.snapshot_json | fromjson) if doc.snapshot_json else {} %}
 {% set consolidated = bundle.get('consolidated') or {} %}
 {% set branches = bundle.get('branches') or [] %}
 {% set signers = bundle.get('signers') or {} %}
@@ -9,6 +9,9 @@
   .cb-header { text-align: left; margin-bottom: 6px; }
   .cb-title { font-size: 12px; font-weight: 600; text-transform: uppercase; }
   .cb-subtitle { color: #555; font-size: 9px; }
+  .cb-type-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 8px; font-weight: 600; margin-left: 8px; }
+  .cb-type-badge.bank { background: #e0f2fe; color: #0369a1; }
+  .cb-type-badge.cash { background: #dcfce7; color: #15803d; }
   .cb-summary-table, .cb-branch-table, .cb-tx-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
   .cb-summary-table th, .cb-summary-table td,
   .cb-branch-table th, .cb-branch-table td,
@@ -28,7 +31,14 @@
 
 <div class="cb-container">
   <div class="cb-header">
-    <div class="cb-title">Cash / Bank Daily Report</div>
+    <div class="cb-title">
+      Cash / Bank Daily Report
+      {% if doc.cash_account %}
+        <span class="cb-type-badge cash">CASH LEDGER</span>
+      {% elif doc.bank_account %}
+        <span class="cb-type-badge bank">BANK TRANSACTION</span>
+      {% endif %}
+    </div>
     <div class="cb-subtitle">
       {{ frappe.utils.format_date(doc.report_date) }}
       {% if doc.branches %}
@@ -37,7 +47,9 @@
         · All Branches
       {% endif %}
       {% if doc.bank_account %}
-        · Account: {{ doc.bank_account }}
+        · Bank Account: {{ doc.bank_account }}
+      {% elif doc.cash_account %}
+        · Cash Account: {{ doc.cash_account }}
       {% endif %}
     </div>
   </div>
