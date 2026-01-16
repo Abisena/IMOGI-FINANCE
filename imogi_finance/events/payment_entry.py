@@ -93,6 +93,7 @@ def _sync_expense_request_link(
 
     _validate_expense_request_link(doc, request, request_name)
 
+    # Always update to latest PE (auto-update from cancelled to new PE)
     frappe.db.set_value(
         "Expense Request",
         request.name,
@@ -197,14 +198,19 @@ def on_submit(doc, method=None):
     if not request:
         return
 
-    # Validate this PE is the one linked to ER (set in after_insert)
+    # Check if ER has another ACTIVE (submitted) PE
     linked_payment_entry = getattr(request, "linked_payment_entry", None)
     if linked_payment_entry and linked_payment_entry != doc.name:
-        frappe.throw(
-            _("Expense Request already linked to a different Payment Entry {0}").format(
-                linked_payment_entry
+        # Allow if old PE is cancelled (docstatus=2)
+        old_pe_docstatus = frappe.db.get_value("Payment Entry", linked_payment_entry, "docstatus")
+        if old_pe_docstatus == 1:  # Still submitted
+            frappe.throw(
+                _("Expense Request already linked to an active Payment Entry {0}. Cancel it first.").format(
+                    linked_payment_entry
+                )
             )
-        )
+        # Old PE is cancelled/draft, proceed with linking new PE
+        frappe.logger().info(f"[PE on_submit] Old PE {linked_payment_entry} is cancelled, linking to new PE {doc.name}")
 
     has_purchase_invoice = getattr(request, "linked_purchase_invoice", None)
     if has_purchase_invoice:
@@ -238,20 +244,22 @@ def on_submit(doc, method=None):
 def on_cancel(doc, method=None):
     """Handle Payment Entry cancellation.
     
-    IMPORTANT: Payment Entries linked to PRINTED Cash/Bank Daily Reports 
-    should NOT be cancelled. Use reverse_payment_entry() instead to create 
-    a reversal entry at today's date.
+    Payment Entry is the endpoint of the payment flow and can be freely cancelled,
+    EXCEPT when already included in printed Cash/Bank Daily Reports.
+    
+    Philosophy:
+    - PE cancel does not invalidate upstream documents (ER, PI)
+    - Links remain intact for audit trail
+    - New PE can be created anytime from existing PI
+    - Only constraint: printed daily reports (accounting lock)
     
     When PE is cancelled:
     1. Check if linked to any printed daily reports
     2. If yes, BLOCK cancellation and suggest reversal
-    3. If no, proceed with normal cancellation
-    4. Clear linked_payment_entry from Expense Request
-    5. Update status back to "PI Created" (or "Approved" if no PI)
+    3. If no, allow cancellation without touching ER/PI status
     """
-    request_name = _resolve_expense_request(doc)
     
-    # Check if this PE is part of any printed daily reports
+    # ONLY constraint: Cash/Bank Daily Report lock
     if _check_linked_to_printed_report(doc):
         frappe.throw(
             frappe._(
@@ -261,18 +269,9 @@ def on_cancel(doc, method=None):
             title=_("Cancellation Blocked")
         )
     
-    if not request_name:
-        frappe.logger().info(f"[Payment Entry on_cancel] No ER linked to PE {doc.name}")
-        return
-
-    # Get cancel updates (clears linked_payment_entry and updates status)
-    updates = get_cancel_updates(request_name, "linked_payment_entry")
-    
-    frappe.logger().info(f"[Payment Entry on_cancel] PE {doc.name} cancelled, updating ER {request_name}")
-    frappe.logger().info(f"[Payment Entry on_cancel] New status: {updates.get('status')}")
-    
-    # Update Expense Request
-    frappe.db.set_value("Expense Request", request_name, updates)
+    # That's it! No need to rollback ER status or clear links
+    # ER stays "Paid", links stay intact, PI remains valid
+    frappe.logger().info(f"[Payment Entry on_cancel] PE {doc.name} cancelled successfully (ER/PI unchanged)")
 
 
 def _check_linked_to_printed_report(payment_entry) -> bool:
