@@ -12,7 +12,13 @@
     "allocated_amount",
     "remaining_amount",
     "reference_currency",
-    "reference_exchange_rate"
+    "reference_exchange_rate",
+    "column_break_tracking",
+    "allocation_date",
+    "allocated_by",
+    "reference_posting_date",
+    "reference_status",
+    "remarks"
   ],
   "fields": [
     {
@@ -57,6 +63,42 @@
       "fieldname": "reference_exchange_rate",
       "fieldtype": "Float",
       "label": "Reference Exchange Rate"
+    },
+    {
+      "fieldname": "column_break_tracking",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "Today",
+      "fieldname": "allocation_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Allocation Date",
+      "read_only": 1
+    },
+    {
+      "fieldname": "allocated_by",
+      "fieldtype": "Link",
+      "label": "Allocated By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "reference_posting_date",
+      "fieldtype": "Date",
+      "label": "Reference Posting Date",
+      "read_only": 1
+    },
+    {
+      "fieldname": "reference_status",
+      "fieldtype": "Data",
+      "label": "Reference Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "remarks",
+      "fieldtype": "Small Text",
+      "label": "Remarks"
     }
   ],
   "index_web_pages_for_search": 1,

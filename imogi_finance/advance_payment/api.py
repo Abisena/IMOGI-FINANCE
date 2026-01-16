@@ -8,7 +8,16 @@ from imogi_finance.imogi_finance.doctype.advance_payment_entry.advance_payment_e
     AdvancePaymentEntry,
 )
 
-SUPPORTED_REFERENCE_DOCTYPES = {"Purchase Invoice", "Expense Claim", "Payroll Entry"}
+SUPPORTED_REFERENCE_DOCTYPES = {
+    "Purchase Invoice",
+    "Expense Claim",
+    "Payroll Entry",
+    "Purchase Order",  # Advance payment untuk PO
+    "Sales Invoice",  # Refund/advance dari customer
+    "Journal Entry",  # Manual settlement
+    "Expense Request",  # Internal expense request
+    "Branch Expense Request",  # Branch expense
+}
 
 
 @frappe.whitelist()
@@ -162,12 +171,19 @@ def resolve_reference_party(document, party_type: str | None, party: str | None)
 
     mapping = {
         "Purchase Invoice": ("Supplier", "supplier"),
+        "Purchase Order": ("Supplier", "supplier"),
         "Expense Claim": ("Employee", "employee"),
         "Payroll Entry": ("Employee", "employee"),
+        "Expense Request": ("Employee", "employee"),
+        "Branch Expense Request": ("Employee", "employee"),
+        "Sales Invoice": ("Customer", "customer"),
+        "Journal Entry": (None, None),  # Manual, ambil dari parameter
     }
     if document.doctype in mapping:
         resolved_type, fieldname = mapping[document.doctype]
-        return resolved_type, getattr(document, fieldname, None)
+        if fieldname:
+            return resolved_type, getattr(document, fieldname, None)
+        return resolved_type, party  # Untuk Journal Entry
 
     return party_type, party
 
@@ -295,6 +311,109 @@ def get_reference_outstanding_amount(document) -> float | None:
 
 
 def get_existing_allocated_amount(reference_doctype: str, reference_name: str) -> float:
+        total = frappe.db.sql(
+            """
+            SELECT COALESCE(SUM(apr.allocated_amount), 0)
+            FROM `tabAdvance Payment Reference` apr
+            JOIN `tabAdvance Payment Entry` ape ON apr.parent = ape.name
+            WHERE apr.invoice_doctype = %s AND apr.invoice_name = %s AND ape.docstatus = 1
+            """,
+            (reference_doctype, reference_name),
+        )
+        return flt(total[0][0]) if total else 0.0
+
+
+@frappe.whitelist()
+def get_allocation_history(advance_payment_entry: str) -> list[dict]:
+    """
+    Get full allocation history with tracking details for an Advance Payment Entry.
+    
+    Returns list of allocations with:
+    - Reference document details
+    - Allocation tracking (date, user)
+    - Reference document status
+    - Timeline of allocations
+    """
+    if not frappe.db.exists("Advance Payment Entry", advance_payment_entry):
+        frappe.throw(_("Advance Payment Entry {0} not found.").format(advance_payment_entry))
+    
+    history = frappe.db.sql(
+        """
+        SELECT 
+            apr.name,
+            apr.invoice_doctype,
+            apr.invoice_name,
+            apr.allocated_amount,
+            apr.remaining_amount,
+            apr.reference_currency,
+            apr.reference_exchange_rate,
+            apr.allocation_date,
+            apr.allocated_by,
+            apr.reference_posting_date,
+            apr.reference_status,
+            apr.remarks,
+            apr.creation,
+            apr.modified
+        FROM `tabAdvance Payment Reference` apr
+        WHERE apr.parent = %s
+        ORDER BY apr.allocation_date DESC, apr.creation DESC
+        """,
+        (advance_payment_entry,),
+        as_dict=True
+    )
+    
+    # Enrich with user details
+    for record in history:
+        if record.allocated_by:
+            user = frappe.get_cached_value("User", record.allocated_by, ["full_name", "email"], as_dict=True)
+            record["allocated_by_name"] = user.get("full_name") if user else record.allocated_by
+    
+    return history
+
+
+@frappe.whitelist()
+def get_reference_allocations(reference_doctype: str, reference_name: str) -> list[dict]:
+    """
+    Get all advance allocations for a specific reference document.
+    
+    Useful untuk melihat dari mana saja advance yang dialokasikan ke dokumen tertentu.
+    """
+    if not frappe.db.exists(reference_doctype, reference_name):
+        frappe.throw(_("{0} {1} not found.").format(reference_doctype, reference_name))
+    
+    allocations = frappe.db.sql(
+        """
+        SELECT 
+            ape.name as advance_payment_entry,
+            ape.posting_date as advance_posting_date,
+            ape.party_type,
+            ape.party,
+            ape.party_name,
+            ape.currency,
+            ape.advance_amount,
+            ape.status as advance_status,
+            apr.allocated_amount,
+            apr.allocation_date,
+            apr.allocated_by,
+            apr.remarks
+        FROM `tabAdvance Payment Reference` apr
+        JOIN `tabAdvance Payment Entry` ape ON apr.parent = ape.name
+        WHERE apr.invoice_doctype = %s 
+            AND apr.invoice_name = %s 
+            AND ape.docstatus = 1
+        ORDER BY apr.allocation_date DESC
+        """,
+        (reference_doctype, reference_name),
+        as_dict=True
+    )
+    
+    # Enrich with user details
+    for record in allocations:
+        if record.allocated_by:
+            user = frappe.get_cached_value("User", record.allocated_by, ["full_name"], as_dict=True)
+            record["allocated_by_name"] = user.get("full_name") if user else record.allocated_by
+    
+    return allocations
         total = frappe.db.sql(
                 """
                 SELECT SUM(ref.allocated_amount)

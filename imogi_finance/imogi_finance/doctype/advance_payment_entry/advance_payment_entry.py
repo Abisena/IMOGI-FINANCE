@@ -40,6 +40,11 @@ class AdvancePaymentEntry(Document):
         if not invoice_doctype or not invoice_name:
             frappe.throw(_("Invoice reference is required to create an allocation."))
 
+        # Get reference document details for tracking
+        reference_doc = frappe.get_doc(invoice_doctype, invoice_name)
+        reference_posting_date = getattr(reference_doc, "posting_date", None) or frappe.utils.today()
+        reference_status = getattr(reference_doc, "status", None) or reference_doc.docstatus
+
         existing_row = next(
             (
                 row
@@ -55,6 +60,11 @@ class AdvancePaymentEntry(Document):
                 existing_row.reference_currency = reference_currency
             if reference_exchange_rate:
                 existing_row.reference_exchange_rate = reference_exchange_rate
+            # Update tracking info on re-allocation
+            existing_row.allocation_date = frappe.utils.today()
+            existing_row.allocated_by = frappe.session.user
+            existing_row.reference_posting_date = reference_posting_date
+            existing_row.reference_status = reference_status
         else:
             self.append(
                 "references",
@@ -64,6 +74,11 @@ class AdvancePaymentEntry(Document):
                     "allocated_amount": allocated_amount,
                     "reference_currency": reference_currency or self.currency,
                     "reference_exchange_rate": reference_exchange_rate or self.exchange_rate,
+                    # Tracking fields
+                    "allocation_date": frappe.utils.today(),
+                    "allocated_by": frappe.session.user,
+                    "reference_posting_date": reference_posting_date,
+                    "reference_status": reference_status,
                 },
             )
 
@@ -163,6 +178,8 @@ class AdvancePaymentEntry(Document):
             fieldname = "supplier_name"
         elif self.party_type == "Employee":
             fieldname = "employee_name"
+        elif self.party_type == "Customer":
+            fieldname = "customer_name"
 
         if fieldname:
             return frappe.db.get_value(self.party_type, self.party, fieldname) or self.party
