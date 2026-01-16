@@ -60,11 +60,6 @@
     "pph_type",
     "column_break_pph",
     "pph_base_amount",
-    "deferred_expense_section",
-    "is_deferred_expense",
-    "deferred_start_date",
-    "column_break_deferred",
-    "deferred_periods",
 
     "tab_approval",
     "approval_status_section",
@@ -401,38 +396,6 @@
       "label": "Dasar Pengenaan PPh",
       "options": "currency"
     },
-    {
-      "fieldname": "deferred_expense_section",
-      "fieldtype": "Section Break",
-      "label": "Deferred Expense",
-      "collapsible": 1,
-      "collapsible_depends_on": "eval:doc.is_deferred_expense==0"
-    },
-    {
-      "default": "0",
-      "fieldname": "is_deferred_expense",
-      "fieldtype": "Check",
-      "label": "Deferred Expense?"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_start_date",
-      "fieldtype": "Date",
-      "label": "Tanggal Mulai",
-      "mandatory_depends_on": "eval:doc.is_deferred_expense==1"
-    },
-    {
-      "fieldname": "column_break_deferred",
-      "fieldtype": "Column Break"
-    },
-    {
-      "depends_on": "eval:doc.is_deferred_expense==1",
-      "fieldname": "deferred_periods",
-      "fieldtype": "Int",
-      "label": "Periode (Bulan)",
-      "mandatory_depends_on": "eval:doc.is_deferred_expense==1"
-    },
-
     {
       "fieldname": "tab_approval",
       "fieldtype": "Tab Break",

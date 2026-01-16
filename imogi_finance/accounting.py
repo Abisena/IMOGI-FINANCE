@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import add_months, cint, flt
 
 from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
@@ -257,6 +257,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     for idx, item in enumerate(request_items, start=1):
         expense_account = getattr(item, "expense_account", None)
+        is_deferred = bool(getattr(item, "is_deferred_expense", 0))
+        prepaid_account = getattr(item, "prepaid_account", None)
+        deferred_start_date = getattr(item, "deferred_start_date", None)
+        deferred_periods = getattr(item, "deferred_periods", None)
         
         qty = getattr(item, "qty", 1) or 1
         item_amount = flt(getattr(item, "amount", 0))
@@ -267,13 +271,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             or getattr(item, "expense_account", None),
             "description": getattr(item, "asset_description", None)
             or getattr(item, "description", None),
-            "expense_account": expense_account,
+            "expense_account": prepaid_account if is_deferred else expense_account,
             "cost_center": request.cost_center,
             "project": request.project,
             "qty": qty,
             "rate": item_amount / qty if qty > 0 else item_amount,
             "amount": item_amount,
         }
+
+        if is_deferred:
+            pi_item["enable_deferred_expense"] = 1
+            pi_item["service_start_date"] = deferred_start_date
+            pi_item["service_end_date"] = add_months(deferred_start_date, deferred_periods or 0)
+            pi_item["deferred_expense_account"] = expense_account
         
         pi.append("items", pi_item)
 
