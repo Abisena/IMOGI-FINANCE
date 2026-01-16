@@ -12,7 +12,6 @@
   "field_order": [
     "status",
     "workflow_state",
-
     "tab_main",
     "basic_section",
     "company",
@@ -20,19 +19,16 @@
     "column_break_basic",
     "fiscal_year",
     "amount",
-
     "reclass_section",
     "from_cost_center",
     "from_account",
     "column_break_reclass",
     "to_cost_center",
     "to_account",
-
     "details_section",
     "reason",
     "column_break_details",
     "attachments",
-
     "tab_approval",
     "approval_info_section",
     "approval_setting",
@@ -41,7 +37,6 @@
     "level_1_user",
     "level_2_user",
     "level_3_user",
-
     "approval_tracking_section",
     "level_1_approved_by",
     "level_1_approved_at",
@@ -51,9 +46,10 @@
     "column_break_tracking_2",
     "level_3_approved_by",
     "level_3_approved_at",
-
     "section_break_hidden",
-    "naming_series"
+    "naming_series",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -76,7 +72,6 @@
       "read_only": 1,
       "no_copy": 1
     },
-
     {
       "fieldname": "tab_main",
       "fieldtype": "Tab Break",
@@ -124,7 +119,6 @@
       "bold": 1,
       "description": "Jumlah budget yang akan dipindahkan"
     },
-
     {
       "fieldname": "reclass_section",
       "fieldtype": "Section Break",
@@ -166,7 +160,6 @@
       "options": "Account",
       "reqd": 1
     },
-
     {
       "fieldname": "details_section",
       "fieldtype": "Section Break",
@@ -189,7 +182,6 @@
       "fieldtype": "Attach",
       "description": "Upload dokumen pendukung jika ada"
     },
-
     {
       "fieldname": "tab_approval",
       "fieldtype": "Tab Break",
@@ -239,7 +231,6 @@
       "options": "User",
       "read_only": 1
     },
-
     {
       "fieldname": "approval_tracking_section",
       "fieldtype": "Section Break",
@@ -294,7 +285,6 @@
       "fieldtype": "Datetime",
       "read_only": 1
     },
-
     {
       "fieldname": "section_break_hidden",
       "fieldtype": "Section Break",
@@ -308,6 +298,21 @@
       "reqd": 1,
       "default": "BCR-.YYYY.-.#####",
       "hidden": 1
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "permissions": [

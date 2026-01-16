@@ -213,29 +213,93 @@ doc_events = {
         "validate": [
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.events.expense_request.validate_workflow_action",
+            "imogi_finance.events.metadata_fields.set_created_by",
         ],
         "on_update": [
             "imogi_finance.events.expense_request.sync_status_with_workflow",
         ],
         "on_update_after_submit": [
             "imogi_finance.events.expense_request.sync_status_with_workflow",
+        ],
+        "on_submit": [
+            "imogi_finance.events.metadata_fields.set_submit_on",
         ],
     },
     "Internal Charge Request": {
+        "validate": [
+            "imogi_finance.events.metadata_fields.set_created_by",
+        ],
         "on_update": [
             "imogi_finance.events.internal_charge_request.sync_status_with_workflow",
         ],
         "on_update_after_submit": [
             "imogi_finance.events.internal_charge_request.sync_status_with_workflow",
+        ],
+        "on_submit": [
+            "imogi_finance.events.metadata_fields.set_submit_on",
         ],
     },
     "Branch Expense Request": {
+        "validate": [
+            "imogi_finance.events.metadata_fields.set_created_by",
+        ],
         "on_update": [
             "imogi_finance.events.branch_expense_request.sync_status_with_workflow",
         ],
         "on_update_after_submit": [
             "imogi_finance.events.branch_expense_request.sync_status_with_workflow",
         ],
+        "on_submit": [
+            "imogi_finance.events.metadata_fields.set_submit_on",
+        ],
+    },
+    "Additional Budget Request": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Administrative Payment Voucher": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Advance Payment Entry": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Budget Control Entry": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Budget Reclass Request": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Cash Bank Daily Report": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Customer Receipt": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Tax Invoice OCR Upload": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Tax Invoice Upload": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Tax Payment Batch": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Tax Period Closing": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+    },
+    "Transfer Application": {
+        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
     },
     "Payment Entry": {
         "validate": [

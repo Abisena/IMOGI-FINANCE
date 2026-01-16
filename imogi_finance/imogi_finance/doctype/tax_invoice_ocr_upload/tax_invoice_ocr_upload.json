@@ -34,7 +34,9 @@
     "ocr_status",
     "ocr_confidence",
     "column_break_ocr",
-    "ocr_raw_json"
+    "ocr_raw_json",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -200,6 +202,21 @@
       "label": "Data OCR Lengkap (JSON)",
       "options": "JSON",
       "read_only": 1
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "hide_toolbar": 0,

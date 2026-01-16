@@ -130,4 +130,15 @@
     </div>
   </div>
   {% endif %}
+
+  {% if doc.created_by_user or doc.submit_on %}
+  <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e5e5e5; font-size: 8px; color: #666;">
+    {% if doc.created_by_user %}
+    <div><strong>{{ _("Created By") }}:</strong> {{ doc.created_by_user }}</div>
+    {% endif %}
+    {% if doc.submit_on %}
+    <div><strong>{{ _("Submit On") }}:</strong> {{ frappe.utils.format_datetime(doc.submit_on) }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>

@@ -19,7 +19,9 @@
     "closing_balance",
     "snapshot_json",
     "section_preview",
-    "preview_html"
+    "preview_html",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -97,6 +99,21 @@
       "fieldname": "preview_html",
       "fieldtype": "HTML",
       "label": "Daily Report Preview"
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "hide_toolbar": 0,

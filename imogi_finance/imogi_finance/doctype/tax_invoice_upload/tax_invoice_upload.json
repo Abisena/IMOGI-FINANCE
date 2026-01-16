@@ -19,7 +19,9 @@
     "invoice_pdf",
     "section_sync",
     "status",
-    "sync_error"
+    "sync_error",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -99,6 +101,21 @@
       "fieldtype": "Small Text",
       "label": "Last Sync Error",
       "read_only": 1
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "hide_toolbar": 0,

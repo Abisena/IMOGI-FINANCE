@@ -32,10 +32,18 @@
     "digital_stamp_status",
     "digital_stamp_issue_datetime",
     "digital_stamp_locked",
-    "digital_stamp_logs"
+    "digital_stamp_logs",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
-    { "default": "KR-.YYYY.-.#####", "fieldname": "naming_series", "fieldtype": "Select", "label": "Naming Series", "reqd": 1 },
+    {
+      "default": "KR-.YYYY.-.#####",
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Naming Series",
+      "reqd": 1
+    },
     {
       "default": "Draft",
       "fieldname": "status",
@@ -45,11 +53,41 @@
       "in_list_view": 1,
       "read_only": 1
     },
-    { "fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "reqd": 1, "in_list_view": 1 },
-    { "fieldname": "branch", "fieldtype": "Link", "label": "Branch", "options": "Branch" },
-    { "fieldname": "posting_date", "fieldtype": "Date", "label": "Posting Date", "reqd": 1, "default": "Today", "in_list_view": 1 },
-    { "fieldname": "customer", "fieldtype": "Link", "label": "Customer", "options": "Customer", "reqd": 1, "in_list_view": 1 },
-    { "fieldname": "customer_reference_no", "fieldtype": "Data", "label": "Customer Reference No" },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "branch",
+      "fieldtype": "Link",
+      "label": "Branch",
+      "options": "Branch"
+    },
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "label": "Posting Date",
+      "reqd": 1,
+      "default": "Today",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "label": "Customer",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "customer_reference_no",
+      "fieldtype": "Data",
+      "label": "Customer Reference No"
+    },
     {
       "fieldname": "receipt_purpose",
       "fieldtype": "Select",
@@ -58,12 +96,43 @@
       "reqd": 1,
       "in_list_view": 1
     },
-    { "fieldname": "receipt_design", "fieldtype": "Link", "label": "Receipt Design", "options": "Receipt Design" },
-    { "fieldname": "remarks", "fieldtype": "Small Text", "label": "Remarks" },
-    { "fieldname": "total_amount", "fieldtype": "Currency", "label": "Total Amount", "read_only": 1, "in_list_view": 1 },
-    { "fieldname": "paid_amount", "fieldtype": "Currency", "label": "Paid Amount", "read_only": 1, "in_list_view": 1 },
-    { "fieldname": "outstanding_amount", "fieldtype": "Currency", "label": "Outstanding Amount", "read_only": 1, "in_list_view": 1 },
-    { "fieldname": "items_section", "fieldtype": "Section Break", "label": "References" },
+    {
+      "fieldname": "receipt_design",
+      "fieldtype": "Link",
+      "label": "Receipt Design",
+      "options": "Receipt Design"
+    },
+    {
+      "fieldname": "remarks",
+      "fieldtype": "Small Text",
+      "label": "Remarks"
+    },
+    {
+      "fieldname": "total_amount",
+      "fieldtype": "Currency",
+      "label": "Total Amount",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "paid_amount",
+      "fieldtype": "Currency",
+      "label": "Paid Amount",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "outstanding_amount",
+      "fieldtype": "Currency",
+      "label": "Outstanding Amount",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "items_section",
+      "fieldtype": "Section Break",
+      "label": "References"
+    },
     {
       "fieldname": "items",
       "fieldtype": "Table",
@@ -71,9 +140,23 @@
       "options": "Customer Receipt Item",
       "reqd": 1
     },
-    { "fieldname": "payments_section", "fieldtype": "Section Break", "label": "Payments" },
-    { "fieldname": "payments", "fieldtype": "Table", "label": "Payments", "options": "Customer Receipt Payment", "read_only": 1 },
-    { "fieldname": "stamp_section", "fieldtype": "Section Break", "label": "Digital Stamp" },
+    {
+      "fieldname": "payments_section",
+      "fieldtype": "Section Break",
+      "label": "Payments"
+    },
+    {
+      "fieldname": "payments",
+      "fieldtype": "Table",
+      "label": "Payments",
+      "options": "Customer Receipt Payment",
+      "read_only": 1
+    },
+    {
+      "fieldname": "stamp_section",
+      "fieldtype": "Section Break",
+      "label": "Digital Stamp"
+    },
     {
       "fieldname": "stamp_mode",
       "fieldtype": "Select",
@@ -81,8 +164,17 @@
       "options": "None\nPhysical\nDigital",
       "default": "None"
     },
-    { "fieldname": "digital_stamp_template", "fieldtype": "Link", "label": "Digital Stamp Template", "options": "Digital Stamp Template" },
-    { "fieldname": "digital_stamp_reference", "fieldtype": "Data", "label": "Digital Stamp Reference" },
+    {
+      "fieldname": "digital_stamp_template",
+      "fieldtype": "Link",
+      "label": "Digital Stamp Template",
+      "options": "Digital Stamp Template"
+    },
+    {
+      "fieldname": "digital_stamp_reference",
+      "fieldtype": "Data",
+      "label": "Digital Stamp Reference"
+    },
     {
       "fieldname": "digital_stamp_status",
       "fieldtype": "Select",
@@ -90,9 +182,39 @@
       "options": "Draft\nRequested\nIssued\nFailed\nCancelled",
       "default": "Draft"
     },
-    { "fieldname": "digital_stamp_issue_datetime", "fieldtype": "Datetime", "label": "Digital Stamp Issued At", "read_only": 1 },
-    { "default": "0", "fieldname": "digital_stamp_locked", "fieldtype": "Check", "label": "Digital Stamp Locked" },
-    { "fieldname": "digital_stamp_logs", "fieldtype": "Table", "label": "Digital Stamp Logs", "options": "Customer Receipt Stamp Log" }
+    {
+      "fieldname": "digital_stamp_issue_datetime",
+      "fieldtype": "Datetime",
+      "label": "Digital Stamp Issued At",
+      "read_only": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "digital_stamp_locked",
+      "fieldtype": "Check",
+      "label": "Digital Stamp Locked"
+    },
+    {
+      "fieldname": "digital_stamp_logs",
+      "fieldtype": "Table",
+      "label": "Digital Stamp Logs",
+      "options": "Customer Receipt Stamp Log"
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
+    }
   ],
   "has_web_view": 0,
   "idx": 0,
@@ -107,10 +229,38 @@
   "name": "Customer Receipt",
   "owner": "Administrator",
   "permissions": [
-    { "role": "System Manager", "create": 1, "read": 1, "write": 1, "submit": 1, "cancel": 1, "delete": 1, "email": 1, "print": 1, "report": 1, "share": 1 },
-    { "role": "Receipt Maker", "create": 1, "read": 1, "write": 1 },
-    { "role": "Receipt Approver", "read": 1, "write": 1, "submit": 1, "cancel": 1 },
-    { "role": "Receipt Auditor", "read": 1, "report": 1, "print": 1 }
+    {
+      "role": "System Manager",
+      "create": 1,
+      "read": 1,
+      "write": 1,
+      "submit": 1,
+      "cancel": 1,
+      "delete": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1
+    },
+    {
+      "role": "Receipt Maker",
+      "create": 1,
+      "read": 1,
+      "write": 1
+    },
+    {
+      "role": "Receipt Approver",
+      "read": 1,
+      "write": 1,
+      "submit": 1,
+      "cancel": 1
+    },
+    {
+      "role": "Receipt Auditor",
+      "read": 1,
+      "report": 1,
+      "print": 1
+    }
   ],
   "quick_entry": 0,
   "show_name_in_global_search": 1,

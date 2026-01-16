@@ -99,6 +99,12 @@
         <div><strong>Status Workflow:</strong> {{ doc.workflow_state or '-' }}</div>
         <div><strong>Dicetak oleh:</strong> {{ doc.printed_by or '-' }}</div>
         <div><strong>Tanggal Cetak:</strong> {{ frappe.utils.format_datetime(doc.printed_at) if doc.printed_at else '-' }}</div>
+        {% if doc.created_by_user %}
+        <div><strong>Dibuat oleh:</strong> {{ doc.created_by_user }}</div>
+        {% endif %}
+        {% if doc.submit_on %}
+        <div><strong>Submit On:</strong> {{ frappe.utils.format_datetime(doc.submit_on) }}</div>
+        {% endif %}
       </td>
     </tr>
   </table>

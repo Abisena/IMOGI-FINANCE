@@ -30,7 +30,9 @@
     "journal_entry",
     "payment_entry",
     "references_section",
-    "references"
+    "references",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -186,6 +188,21 @@
       "fieldtype": "Table",
       "label": "References",
       "options": "Tax Payment Reference"
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "index_web_pages_for_search": 1,

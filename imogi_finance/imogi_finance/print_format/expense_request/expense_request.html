@@ -523,6 +523,18 @@
 				</span>
 			</div>
 			{% endif %}
+			{% if doc.created_by_user %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Created By") }}:</span>
+				<span class="detail-value">{{ doc.created_by_user }}</span>
+			</div>
+			{% endif %}
+			{% if doc.submit_on %}
+			<div class="detail-item">
+				<span class="detail-label">{{ _("Submit On") }}:</span>
+				<span class="detail-value">{{ frappe.utils.format_datetime(doc.submit_on) }}</span>
+			</div>
+			{% endif %}
 		</div>
 	</div>
 </div>

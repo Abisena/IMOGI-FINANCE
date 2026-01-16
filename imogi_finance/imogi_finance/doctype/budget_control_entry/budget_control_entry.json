@@ -11,7 +11,6 @@
   "field_order": [
     "entry_type",
     "direction",
-
     "tab_main",
     "basic_section",
     "company",
@@ -25,13 +24,14 @@
     "column_break_dimension",
     "project",
     "branch",
-
     "tab_reference",
     "reference_section",
     "ref_doctype",
     "ref_name",
     "remarks_section",
-    "remarks"
+    "remarks",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -54,7 +54,6 @@
       "in_standard_filter": 1,
       "bold": 1
     },
-
     {
       "fieldname": "tab_main",
       "fieldtype": "Tab Break",
@@ -139,7 +138,6 @@
       "fieldtype": "Link",
       "options": "Branch"
     },
-
     {
       "fieldname": "tab_reference",
       "fieldtype": "Tab Break",
@@ -172,6 +170,21 @@
       "fieldname": "remarks",
       "label": "Keterangan",
       "fieldtype": "Small Text"
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "permissions": [

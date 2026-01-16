@@ -50,7 +50,9 @@
     "paid_date",
     "paid_amount",
     "printed_by",
-    "printed_at"
+    "printed_at",
+    "created_by_user",
+    "submit_on"
   ],
   "fields": [
     {
@@ -281,6 +283,21 @@
       "fieldtype": "Datetime",
       "label": "Printed At",
       "read_only": 1
+    },
+    {
+      "fieldname": "created_by_user",
+      "fieldtype": "Link",
+      "label": "Created By",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "submit_on",
+      "fieldtype": "Datetime",
+      "label": "Submit On",
+      "read_only": 1,
+      "no_copy": 1
     }
   ],
   "has_web_view": 0,
