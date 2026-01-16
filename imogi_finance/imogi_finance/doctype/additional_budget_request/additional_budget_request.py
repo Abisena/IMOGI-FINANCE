@@ -63,21 +63,20 @@ class AdditionalBudgetRequest(Document):
             # Advance approval level and get next state
             next_state = budget_approval.advance_approval_level(self)
             
-            # Manually set workflow_state - will override Frappe's default transition
-            if hasattr(self, "db_set"):
-                self.db_set("workflow_state", next_state, update_modified=False)
-                # Reload doc to get updated workflow_state
-                self.reload()
+            # For intermediate levels: manually set workflow_state and prevent transition
+            if next_state == "Pending Approval":
+                if hasattr(self, "db_set"):
+                    self.db_set("workflow_state", "Pending Approval", update_modified=False)
+                    self.reload()
+                # Return False to prevent Frappe from executing transition
+                return False
             
-            # Execute budget supplement only when fully approved
+            # For final level (Approved): let workflow execute the transition
+            # Execute budget supplement before workflow completes
             if next_state == "Approved":
                 self._execute_budget_supplement()
             
-            # Return False to prevent Frappe from executing default transition
-            # This allows us to control intermediate states (Pending→Pending or Pending→Approved)
-            if next_state == "Pending Approval":
-                return False
-            
+            # Don't return False - let workflow execute Pending → Approved transition
             return
         
         if action == "Reject":
