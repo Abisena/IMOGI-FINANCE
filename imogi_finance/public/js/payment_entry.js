@@ -131,6 +131,17 @@ function _setupCancelButton(frm) {
  * Show simple cancel dialog - no "Cancel All Documents" list
  */
 function _showSimpleCancelDialog(frm) {
+  // Validate document is submitted before allowing cancel
+  if (frm.doc.docstatus !== 1) {
+    frappe.msgprint({
+      title: __('Cannot Cancel'),
+      indicator: 'red',
+      message: __('Only submitted documents can be cancelled. This document is in {0} status.', 
+        [frm.doc.docstatus === 0 ? __('Draft') : __('Cancelled')])
+    });
+    return;
+  }
+  
   let message = '<div style="padding: 10px;">';
   message += '<p style="font-size: 14px;">' + __('Are you sure you want to cancel this Payment Entry?') + '</p>';
   
