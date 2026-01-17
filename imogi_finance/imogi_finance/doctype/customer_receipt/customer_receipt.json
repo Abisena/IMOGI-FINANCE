@@ -336,16 +336,6 @@
       "group": "Payment",
       "link_doctype": "Payment Entry",
       "link_fieldname": "customer_receipt"
-    },
-    {
-      "group": "Reference",
-      "link_doctype": "Sales Order",
-      "link_fieldname": "items.sales_order"
-    },
-    {
-      "group": "Reference",
-      "link_doctype": "Sales Invoice",
-      "link_fieldname": "items.sales_invoice"
     }
   ],
   "modified": "2024-01-01 00:00:00.000000",

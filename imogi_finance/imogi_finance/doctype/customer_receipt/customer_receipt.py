@@ -112,6 +112,10 @@ class CustomerReceipt(Document):
 
             self.set_reference_meta(row, allowed_doctype, reference, branch_settings=branch_settings)
 
+            # Default amount_to_collect from reference_outstanding if not provided
+            if not row.amount_to_collect and row.reference_outstanding:
+                row.amount_to_collect = row.reference_outstanding
+
             if row.amount_to_collect and row.reference_outstanding and row.amount_to_collect > row.reference_outstanding:
                 frappe.throw(
                     _("Amount to collect for {0} cannot exceed outstanding {1}.").format(
@@ -365,3 +369,41 @@ class CustomerReceipt(Document):
             })
             return {"message": _("Print tracked successfully")}
         return {"message": _("Already tracked")}
+
+
+@frappe.whitelist()
+def get_reference_data(doctype: str, name: str) -> dict:
+    """
+    Get reference document data for Customer Receipt Item.
+    Returns customer, company, reference_date, reference_outstanding.
+    """
+    if doctype not in ("Sales Invoice", "Sales Order"):
+        frappe.throw(_("Invalid reference doctype"))
+
+    if doctype == "Sales Invoice":
+        fields = ["customer", "company", "posting_date", "outstanding_amount", "docstatus"]
+        values = frappe.db.get_value(doctype, name, fields, as_dict=True)
+        if not values:
+            frappe.throw(_("Sales Invoice {0} not found").format(name))
+        if values.docstatus != 1:
+            frappe.throw(_("Sales Invoice must be submitted before linking"))
+        return {
+            "customer": values.customer,
+            "company": values.company,
+            "reference_date": str(values.posting_date) if values.posting_date else None,
+            "reference_outstanding": float(values.outstanding_amount or 0),
+        }
+    else:  # Sales Order
+        fields = ["customer", "company", "transaction_date", "grand_total", "advance_paid", "docstatus"]
+        values = frappe.db.get_value(doctype, name, fields, as_dict=True)
+        if not values:
+            frappe.throw(_("Sales Order {0} not found").format(name))
+        if values.docstatus != 1:
+            frappe.throw(_("Sales Order must be submitted before linking"))
+        outstanding = float(values.grand_total or 0) - float(values.advance_paid or 0)
+        return {
+            "customer": values.customer,
+            "company": values.company,
+            "reference_date": str(values.transaction_date) if values.transaction_date else None,
+            "reference_outstanding": outstanding,
+        }

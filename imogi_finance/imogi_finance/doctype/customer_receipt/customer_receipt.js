@@ -95,8 +95,7 @@ function setup_item_query_filters(frm) {
     }
 }
 
-// Child table behavior: only help set parent customer/company; 
-// reference fields are computed in Python (set_reference_meta).
+// Child table behavior: fetch reference data and populate fields
 frappe.ui.form.on('Customer Receipt Item', {
     items_add: function(frm) {
         setup_item_query_filters(frm);
@@ -112,48 +111,68 @@ frappe.ui.form.on('Customer Receipt Item', {
             setup_item_query_filters(frm);
         } else if (frm.doc.receipt_purpose !== 'Billing (Sales Invoice)') {
             frappe.msgprint(__('Please set Receipt Purpose to "Billing (Sales Invoice)" to use Sales Invoice'));
-            frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+            row.sales_invoice = '';
+            frm.refresh_field('items');
             return;
         }
 
         // Clear opposite reference if filled
         if (row.sales_order) {
-            frappe.model.set_value(cdt, cdn, 'sales_order', '');
+            row.sales_order = '';
         }
 
-        // Only use fetched data to populate parent fields; 
-        // child reference fields stay server-driven.
+        // Fetch reference data using custom API
         frappe.call({
-            method: 'frappe.client.get',
+            method: 'imogi_finance.imogi_finance.doctype.customer_receipt.customer_receipt.get_reference_data',
             args: {
                 doctype: 'Sales Invoice',
-                name: row.sales_invoice,
-                fields: ['customer', 'company', 'docstatus']
+                name: row.sales_invoice
             },
             callback: function(r) {
                 if (!r.message) return;
-
-                if (r.message.docstatus !== 1) {
-                    frappe.msgprint(__('Sales Invoice must be submitted before linking'));
-                    frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
-                    return;
-                }
+                const data = r.message;
+                const current_row = locals[cdt][cdn];
+                if (!current_row) return;
 
                 // Auto-fill customer/company if missing; else validate match
                 if (!frm.doc.customer) {
-                    frm.set_value('customer', r.message.customer);
-                } else if (frm.doc.customer !== r.message.customer) {
+                    frm.set_value('customer', data.customer);
+                } else if (frm.doc.customer !== data.customer) {
                     frappe.msgprint(__('Sales Invoice customer does not match Customer Receipt customer'));
-                    frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+                    current_row.sales_invoice = '';
+                    frm.refresh_field('items');
                     return;
                 }
 
                 if (!frm.doc.company) {
-                    frm.set_value('company', r.message.company);
-                } else if (frm.doc.company !== r.message.company) {
+                    frm.set_value('company', data.company);
+                } else if (frm.doc.company !== data.company) {
                     frappe.msgprint(__('Sales Invoice company does not match Customer Receipt company'));
-                    frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+                    current_row.sales_invoice = '';
+                    frm.refresh_field('items');
                     return;
+                }
+
+                // Populate child row fields directly (no frappe.model.set_value)
+                current_row.reference_date = data.reference_date;
+                current_row.reference_outstanding = data.reference_outstanding;
+                if (!current_row.amount_to_collect || current_row.amount_to_collect === 0) {
+                    current_row.amount_to_collect = data.reference_outstanding;
+                }
+
+                // Refresh grid to show updated values
+                frm.refresh_field('items');
+
+                frappe.show_alert({
+                    message: __('Data loaded: Outstanding {0}', [format_currency(data.reference_outstanding)]),
+                    indicator: 'green'
+                }, 3);
+            },
+            error: function() {
+                const current_row = locals[cdt][cdn];
+                if (current_row) {
+                    current_row.sales_invoice = '';
+                    frm.refresh_field('items');
                 }
             }
         });
@@ -169,46 +188,68 @@ frappe.ui.form.on('Customer Receipt Item', {
             setup_item_query_filters(frm);
         } else if (frm.doc.receipt_purpose !== 'Before Billing (Sales Order)') {
             frappe.msgprint(__('Please set Receipt Purpose to "Before Billing (Sales Order)" to use Sales Order'));
-            frappe.model.set_value(cdt, cdn, 'sales_order', '');
+            row.sales_order = '';
+            frm.refresh_field('items');
             return;
         }
 
         // Clear opposite reference if filled
         if (row.sales_invoice) {
-            frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+            row.sales_invoice = '';
         }
 
+        // Fetch reference data using custom API
         frappe.call({
-            method: 'frappe.client.get',
+            method: 'imogi_finance.imogi_finance.doctype.customer_receipt.customer_receipt.get_reference_data',
             args: {
                 doctype: 'Sales Order',
-                name: row.sales_order,
-                fields: ['customer', 'company', 'docstatus']
+                name: row.sales_order
             },
             callback: function(r) {
                 if (!r.message) return;
-
-                if (r.message.docstatus !== 1) {
-                    frappe.msgprint(__('Sales Order must be submitted before linking'));
-                    frappe.model.set_value(cdt, cdn, 'sales_order', '');
-                    return;
-                }
+                const data = r.message;
+                const current_row = locals[cdt][cdn];
+                if (!current_row) return;
 
                 // Auto-fill customer/company if missing; else validate match
                 if (!frm.doc.customer) {
-                    frm.set_value('customer', r.message.customer);
-                } else if (frm.doc.customer !== r.message.customer) {
+                    frm.set_value('customer', data.customer);
+                } else if (frm.doc.customer !== data.customer) {
                     frappe.msgprint(__('Sales Order customer does not match Customer Receipt customer'));
-                    frappe.model.set_value(cdt, cdn, 'sales_order', '');
+                    current_row.sales_order = '';
+                    frm.refresh_field('items');
                     return;
                 }
 
                 if (!frm.doc.company) {
-                    frm.set_value('company', r.message.company);
-                } else if (frm.doc.company !== r.message.company) {
+                    frm.set_value('company', data.company);
+                } else if (frm.doc.company !== data.company) {
                     frappe.msgprint(__('Sales Order company does not match Customer Receipt company'));
-                    frappe.model.set_value(cdt, cdn, 'sales_order', '');
+                    current_row.sales_order = '';
+                    frm.refresh_field('items');
                     return;
+                }
+
+                // Populate child row fields directly (no frappe.model.set_value)
+                current_row.reference_date = data.reference_date;
+                current_row.reference_outstanding = data.reference_outstanding;
+                if (!current_row.amount_to_collect || current_row.amount_to_collect === 0) {
+                    current_row.amount_to_collect = data.reference_outstanding;
+                }
+
+                // Refresh grid to show updated values
+                frm.refresh_field('items');
+
+                frappe.show_alert({
+                    message: __('Data loaded: Outstanding {0}', [format_currency(data.reference_outstanding)]),
+                    indicator: 'green'
+                }, 3);
+            },
+            error: function() {
+                const current_row = locals[cdt][cdn];
+                if (current_row) {
+                    current_row.sales_order = '';
+                    frm.refresh_field('items');
                 }
             }
         });
