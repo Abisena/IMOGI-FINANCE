@@ -12,184 +12,346 @@
 
 <style>
   * {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
     box-sizing: border-box;
     margin: 0;
     padding: 0;
   }
   
+  body {
+    background: #fff;
+  }
+  
   .cr-container { 
     width: 100%;
-    padding: 0;
-    font-size: 10pt;
-    color: #333;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 15mm;
+    font-size: 11pt;
+    color: #000;
     position: relative;
+    background: white;
   }
   
   .cr-header {
-    display: table;
-    width: 100%;
-    margin-bottom: 20pt;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 25pt;
+    padding-bottom: 15pt;
+    border-bottom: 3pt double #000;
   }
   
   .cr-header-left {
-    display: table-cell;
-    vertical-align: top;
-    width: 50%;
+    flex: 1;
   }
   
   .cr-header-right {
-    display: table-cell;
-    vertical-align: top;
+    flex: 1;
     text-align: right;
-    width: 50%;
   }
   
-  .cr-logo { max-height: 45px; max-width: 120px; }
-  .cr-company { font-size: 11pt; font-weight: 600; margin-top: 4pt; }
+  .cr-logo { 
+    max-height: 60px; 
+    max-width: 180px;
+    margin-bottom: 8pt;
+  }
+  
+  .cr-company { 
+    font-size: 13pt; 
+    font-weight: 700;
+    color: #000;
+    margin-bottom: 4pt;
+  }
+  
+  .cr-company-info {
+    font-size: 9pt;
+    color: #555;
+    line-height: 1.6;
+  }
   
   .cr-title {
-    font-size: 16pt;
-    font-weight: 700;
-    letter-spacing: 2pt;
-    margin-bottom: 6pt;
+    font-size: 22pt;
+    font-weight: 800;
+    letter-spacing: 3pt;
+    color: #000;
+    border: 2pt solid #000;
+    padding: 8pt 16pt;
+    display: inline-block;
+    margin-bottom: 10pt;
   }
   
-  .cr-meta { font-size: 9pt; color: #666; line-height: 1.5; }
-  
-  .cr-divider {
-    border-top: 1pt solid #1a1a1a;
-    margin: 15pt 0;
-  }
-  
-  .cr-info {
-    display: table;
-    width: 100%;
-    margin-bottom: 15pt;
-  }
-  
-  .cr-info-row {
-    display: table-row;
-  }
-  
-  .cr-info-label {
-    display: table-cell;
-    width: 100pt;
-    padding: 3pt 0;
-    color: #666;
-  }
-  
-  .cr-info-value {
-    display: table-cell;
-    padding: 3pt 0;
+  .cr-meta { 
+    font-size: 10pt; 
+    color: #000;
+    line-height: 1.8;
     font-weight: 500;
   }
   
-  .cr-amount-box {
-    background: #f5f5f5;
-    padding: 12pt 15pt;
-    margin: 15pt 0;
-    text-align: center;
+  .cr-meta strong {
+    font-weight: 700;
   }
   
-  .cr-amount { font-size: 18pt; font-weight: 700; }
-  .cr-terbilang { font-size: 9pt; font-style: italic; color: #555; margin-top: 4pt; }
+  .cr-section {
+    margin: 20pt 0;
+  }
+  
+  .cr-section-title {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #000;
+    margin-bottom: 10pt;
+    padding-bottom: 4pt;
+    border-bottom: 2pt solid #000;
+  }
+  
+  .cr-info-grid {
+    display: grid;
+    grid-template-columns: 140pt 1fr;
+    gap: 8pt 15pt;
+    margin: 15pt 0;
+  }
+  
+  .cr-info-label {
+    font-weight: 600;
+    color: #000;
+  }
+  
+  .cr-info-value {
+    color: #000;
+  }
+  
+  .cr-amount-section {
+    margin: 25pt 0;
+    padding: 20pt;
+    background: #f8f9fa;
+    border: 2pt solid #000;
+    border-radius: 4pt;
+  }
+  
+  .cr-amount-label {
+    font-size: 10pt;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8pt;
+    text-transform: uppercase;
+  }
+  
+  .cr-amount { 
+    font-size: 24pt; 
+    font-weight: 800;
+    color: #000;
+    margin-bottom: 10pt;
+  }
+  
+  .cr-terbilang { 
+    font-size: 10pt; 
+    font-style: italic; 
+    color: #000;
+    line-height: 1.5;
+    border-top: 1pt solid #ddd;
+    padding-top: 10pt;
+  }
   
   .cr-table {
     width: 100%;
     border-collapse: collapse;
-    margin: 15pt 0;
-    font-size: 9pt;
+    margin: 20pt 0;
+    font-size: 10pt;
+    border: 2pt solid #000;
   }
   
-  .cr-table th {
-    background: #1a1a1a;
+  .cr-table thead th {
+    background: #000;
     color: white;
-    padding: 6pt 8pt;
+    padding: 10pt 12pt;
     text-align: left;
+    font-weight: 700;
+    border-bottom: 2pt solid #000;
+  }
+  
+  .cr-table thead th.right { 
+    text-align: right; 
+  }
+  
+  .cr-table tbody td {
+    padding: 10pt 12pt;
+    border-bottom: 1pt solid #ddd;
+    vertical-align: top;
+  }
+  
+  .cr-table tbody td.right { 
+    text-align: right;
     font-weight: 600;
   }
   
-  .cr-table th.right { text-align: right; }
-  
-  .cr-table td {
-    padding: 6pt 8pt;
-    border-bottom: 1pt solid #ddd;
+  .cr-table tbody tr:last-child td {
+    border-bottom: 2pt solid #000;
   }
-  
-  .cr-table td.right { text-align: right; }
   
   .cr-table tfoot th {
-    background: #f5f5f5;
-    color: #1a1a1a;
-    border-top: 2pt solid #1a1a1a;
+    background: #f8f9fa;
+    color: #000;
+    padding: 12pt;
+    font-weight: 700;
+    border-top: 2pt solid #000;
   }
   
-  .cr-footer {
-    margin-top: 30pt;
+  .cr-table tfoot th.right {
     text-align: right;
+    font-size: 12pt;
   }
   
-  .cr-sign-stamp-box {
-    display: inline-block;
+  .cr-remarks {
+    margin: 20pt 0;
+    padding: 15pt;
+    background: #f8f9fa;
+    border-left: 4pt solid #000;
+  }
+  
+  .cr-remarks-label {
+    font-weight: 700;
+    margin-bottom: 8pt;
+    color: #000;
+  }
+  
+  .cr-remarks-text {
+    color: #333;
+    line-height: 1.6;
+  }
+  
+  .cr-footer-section {
+    margin-top: 40pt;
+    display: flex;
+    justify-content: space-between;
+  }
+  
+  .cr-stamp-area {
+    flex: 0 0 35%;
     text-align: center;
-    position: relative;
-    min-width: 150pt;
+  }
+  
+  .cr-signature-area {
+    flex: 0 0 35%;
+    text-align: center;
   }
   
   .cr-stamp-box {
-    border: 1pt dashed #999;
+    border: 2pt dashed #666;
     text-align: center;
-    font-size: 7pt;
-    color: #888;
-    padding: 4pt;
-    margin: 0 auto;
+    font-size: 9pt;
+    color: #666;
+    padding: 8pt;
+    min-height: 60mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fafafa;
+    position: relative;
   }
   
-  .cr-sig-line {
-    width: 100%;
-    border-top: 1pt solid #333;
-    margin-top: 8pt;
-    padding-top: 4pt;
-    text-align: center;
+  .cr-stamp-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
   }
   
-  .cr-sig-name { font-weight: 600; font-size: 9pt; }
-  .cr-sig-role { font-size: 8pt; color: #666; }
+  .cr-signature-box {
+    min-height: 60mm;
+    border-bottom: 2pt solid #000;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  
+  .cr-sig-label {
+    font-size: 9pt;
+    color: #666;
+    margin-bottom: 8pt;
+  }
+  
+  .cr-sig-space {
+    flex: 1;
+    position: relative;
+  }
   
   .cr-sig-image {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1;
+    max-height: 50mm;
+    max-width: 100%;
+  }
+  
+  .cr-sig-info {
+    padding-top: 8pt;
+    text-align: center;
+  }
+  
+  .cr-sig-name { 
+    font-weight: 700; 
+    font-size: 11pt;
+    color: #000;
+  }
+  
+  .cr-sig-role { 
+    font-size: 9pt; 
+    color: #666;
+    margin-top: 2pt;
   }
   
   .cr-watermark {
     position: absolute;
-    top: 35%;
-    left: 15%;
-    right: 15%;
-    text-align: center;
-    font-size: 16pt;
-    color: rgba(200,0,0,0.2);
-    transform: rotate(-20deg);
-    font-weight: bold;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 48pt;
+    color: rgba(220, 53, 69, 0.15);
+    font-weight: 900;
     pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+    letter-spacing: 4pt;
   }
   
   .cr-print-info {
-    margin-top: 20pt;
-    padding-top: 8pt;
-    border-top: 1pt solid #eee;
-    font-size: 7pt;
+    margin-top: 30pt;
+    padding-top: 15pt;
+    border-top: 1pt solid #ddd;
+    font-size: 8pt;
     color: #999;
     text-align: center;
+    display: flex;
+    justify-content: space-between;
   }
   
   @media print {
-    @page { size: A4; margin: 15mm; }
-    .cr-table th { background: #1a1a1a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { 
+      size: A4; 
+      margin: 0;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    
+    .cr-container {
+      padding: 15mm;
+    }
+    
+    .cr-table thead th { 
+      background: #000 !important;
+      color: white !important;
+      -webkit-print-color-adjust: exact; 
+      print-color-adjust: exact; 
+    }
+    
+    .cr-amount-section,
+    .cr-remarks,
+    .cr-stamp-box {
+      -webkit-print-color-adjust: exact; 
+      print-color-adjust: exact;
+    }
   }
 </style>
 
@@ -201,100 +363,171 @@
   {#- Header -#}
   <div class="cr-header">
     <div class="cr-header-left">
-      {% if receipt_logo %}<img class="cr-logo" src="{{ receipt_logo }}">{% endif %}
-      {% if doc.company %}<div class="cr-company">{{ doc.company }}</div>{% endif %}
+      {% if receipt_logo %}
+        <img class="cr-logo" src="{{ receipt_logo }}" alt="Logo">
+      {% endif %}
+      {% if doc.company %}
+        <div class="cr-company">{{ doc.company }}</div>
+        {% set company_address = frappe.db.get_value("Company", doc.company, ["address_line1", "city", "state", "country"], as_dict=1) %}
+        {% if company_address %}
+          <div class="cr-company-info">
+            {% if company_address.address_line1 %}{{ company_address.address_line1 }}<br>{% endif %}
+            {% if company_address.city %}{{ company_address.city }}{% endif %}
+            {% if company_address.state %}, {{ company_address.state }}{% endif %}
+          </div>
+        {% endif %}
+      {% endif %}
     </div>
     <div class="cr-header-right">
       <div class="cr-title">{{ design.custom_wording_title or "KUITANSI" }}</div>
       <div class="cr-meta">
-        No: {{ doc.name }}<br>
-        Tanggal: {{ frappe.utils.formatdate(doc.posting_date) }}
+        <strong>No:</strong> {{ doc.name }}<br>
+        <strong>Tanggal:</strong> {{ frappe.utils.formatdate(doc.posting_date, "dd MMMM yyyy") }}
       </div>
     </div>
   </div>
 
-  <div class="cr-divider"></div>
-
-  {#- Customer Info -#}
-  <div class="cr-info">
-    <div class="cr-info-row">
-      <span class="cr-info-label">Diterima dari</span>
-      <span class="cr-info-value">: {{ doc.customer }}</span>
-    </div>
-    {% if doc.customer_reference_no %}
-    <div class="cr-info-row">
-      <span class="cr-info-label">No. Referensi</span>
-      <span class="cr-info-value">: {{ doc.customer_reference_no }}</span>
-    </div>
-    {% endif %}
-  </div>
-
-  {#- Amount -#}
-  <div class="cr-amount-box">
-    <div class="cr-amount">{{ frappe.utils.fmt_money(doc.total_amount, currency=doc.currency or 'IDR') }}</div>
-    <div class="cr-terbilang">{{ terbilang_id(doc.total_amount) }}</div>
-  </div>
-
-  {#- Items Table -#}
-  {% if design.show_detail_table and doc.items %}
-  <table class="cr-table">
-    <thead>
-      <tr>
-        <th style="width:5%">No</th>
-        <th style="width:55%">Keterangan</th>
-        <th class="right" style="width:40%">Jumlah</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in doc.items %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td>{{ row.sales_invoice or row.sales_order or row.reference_name or doc.remarks or '-' }}</td>
-        <td class="right">{{ frappe.utils.fmt_money(row.amount_to_collect or row.amount or 0, currency=doc.currency or 'IDR') }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-    <tfoot>
-      <tr>
-        <th colspan="2" class="right">Total</th>
-        <th class="right">{{ frappe.utils.fmt_money(doc.total_amount, currency=doc.currency or 'IDR') }}</th>
-      </tr>
-    </tfoot>
-  </table>
-  {% endif %}
-
-  {#- Footer: Signature over Stamp -#}
-  <div class="cr-footer">
-    <div class="cr-sign-stamp-box">
-      {#- Signature image overlapping stamp -#}
-      {% if design.signature_image %}
-        <img class="cr-sig-image" src="{{ design.signature_image }}" style="max-height:45pt;">
+  {#- Customer Information Section -#}
+  <div class="cr-section">
+    <div class="cr-section-title">Informasi Penerima</div>
+    <div class="cr-info-grid">
+      <div class="cr-info-label">Diterima dari</div>
+      <div class="cr-info-value">: {{ doc.customer }}</div>
+      
+      {% set customer_address = frappe.db.get_value("Customer", doc.customer, ["customer_primary_address"], as_dict=1) if doc.customer else None %}
+      {% if customer_address and customer_address.customer_primary_address %}
+        {% set address_doc = frappe.get_doc("Address", customer_address.customer_primary_address) %}
+        {% if address_doc %}
+        <div class="cr-info-label">Alamat</div>
+        <div class="cr-info-value">: 
+          {% if address_doc.address_line1 %}{{ address_doc.address_line1 }}{% endif %}
+          {% if address_doc.address_line2 %}, {{ address_doc.address_line2 }}{% endif %}
+          {% if address_doc.city %}, {{ address_doc.city }}{% endif %}
+          {% if address_doc.state %} - {{ address_doc.state }}{% endif %}
+        </div>
+        {% endif %}
       {% endif %}
       
-      {#- Stamp area -#}
+      {% if doc.customer_reference_no %}
+      <div class="cr-info-label">No. Referensi</div>
+      <div class="cr-info-value">: {{ doc.customer_reference_no }}</div>
+      {% endif %}
+      
+      {% if doc.branch %}
+      <div class="cr-info-label">Cabang</div>
+      <div class="cr-info-value">: {{ doc.branch }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {#- Amount Section -#}
+  <div class="cr-amount-section">
+    <div class="cr-amount-label">Jumlah Uang</div>
+    <div class="cr-amount">{{ frappe.utils.fmt_money(doc.total_amount, currency=doc.currency or 'IDR') }}</div>
+    <div class="cr-terbilang">
+      <strong>Terbilang:</strong> {{ terbilang_id(doc.total_amount) }}
+    </div>
+  </div>
+
+  {#- Items Detail Table - Always show if items exist -#}
+  {% if doc.items and doc.items|length > 0 %}
+  <div class="cr-section">
+    <div class="cr-section-title">Rincian Pembayaran</div>
+    <table class="cr-table">
+      <thead>
+        <tr>
+          <th style="width:8%">No</th>
+          <th style="width:52%">Keterangan</th>
+          <th class="right" style="width:40%">Jumlah</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in doc.items %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>
+            {% if row.sales_invoice %}
+              <strong>Invoice:</strong> {{ row.sales_invoice }}
+            {% elif row.sales_order %}
+              <strong>Sales Order:</strong> {{ row.sales_order }}
+            {% elif row.reference_name %}
+              {{ row.reference_name }}
+            {% endif %}
+            {% if row.description %}
+              <br><small style="color: #666;">{{ row.description }}</small>
+            {% endif %}
+          </td>
+          <td class="right">{{ frappe.utils.fmt_money(row.amount_to_collect or row.amount or 0, currency=doc.currency or 'IDR') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="2" class="right">TOTAL</th>
+          <th class="right">{{ frappe.utils.fmt_money(doc.total_amount, currency=doc.currency or 'IDR') }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% endif %}
+
+  {#- Remarks -#}
+  {% if doc.remarks %}
+  <div class="cr-remarks">
+    <div class="cr-remarks-label">Keterangan:</div>
+    <div class="cr-remarks-text">{{ doc.remarks }}</div>
+  </div>
+  {% endif %}
+
+  {#- Footer: Stamp and Signature -#}
+  <div class="cr-footer-section">
+    {#- Stamp Area -#}
+    <div class="cr-stamp-area">
       {% if doc.stamp_mode and doc.stamp_mode != "None" %}
         {% set sw = design.stamp_width_mm or 35 %}
         {% set sh = design.stamp_height_mm or 40 %}
-        <div class="cr-stamp-box" style="width:{{ sw }}mm;height:{{ sh }}mm;">
+        <div style="margin-bottom: 8pt; font-weight: 600;">Materai</div>
+        <div class="cr-stamp-box" style="width:{{ sw }}mm; height:{{ sh }}mm;">
           {% if doc.stamp_mode == "Physical" %}
-            <div style="margin-top:40%">Materai</div>
+            <div>Tempel<br>Materai<br>Di Sini</div>
           {% elif stamp_image %}
-            <img src="{{ stamp_image }}" style="width:100%;height:100%;object-fit:contain;opacity:{{ (design.digital_stamp_opacity_pct or 100)/100 }};">
+            <img src="{{ stamp_image }}" class="cr-stamp-image" style="opacity:{{ (design.digital_stamp_opacity_pct or 100)/100 }};">
           {% else %}
-            <div style="margin-top:35%">e-Materai</div>
+            <div>e-Materai<br>Belum<br>Diterbitkan</div>
           {% endif %}
         </div>
+        {% if verification_url %}
+          <div style="font-size: 7pt; margin-top: 4pt; color: #666;">
+            Ref: {{ doc.digital_stamp_reference }}
+          </div>
+        {% endif %}
       {% endif %}
-      
-      {#- Signature line -#}
-      <div class="cr-sig-line">
-        <div class="cr-sig-name">{{ design.signer_name or '' }}</div>
-        {% if design.signer_role %}<div class="cr-sig-role">{{ design.signer_role }}</div>{% endif %}
+    </div>
+    
+    {#- Signature Area -#}
+    <div class="cr-signature-area">
+      <div class="cr-sig-label">
+        {{ doc.company_location or doc.company or '' }}, {{ frappe.utils.formatdate(doc.posting_date, "dd MMMM yyyy") }}
+      </div>
+      <div class="cr-signature-box">
+        <div class="cr-sig-space">
+          {% if design.signature_image %}
+            <img class="cr-sig-image" src="{{ design.signature_image }}" alt="Signature">
+          {% endif %}
+        </div>
+        <div class="cr-sig-info">
+          <div class="cr-sig-name">{{ design.signer_name or '( _________________ )' }}</div>
+          {% if design.signer_role %}
+            <div class="cr-sig-role">{{ design.signer_role }}</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
 
+  {#- Print Info -#}
   <div class="cr-print-info">
-    Dicetak: {{ frappe.utils.formatdate(frappe.utils.nowdate()) }} | IMOGI Finance
+    <div>Dicetak oleh: {{ frappe.session.user }} pada {{ frappe.utils.now_datetime().strftime("%d-%m-%Y %H:%M") }}</div>
+    <div>IMOGI Finance - Customer Receipt</div>
   </div>
 </div>
