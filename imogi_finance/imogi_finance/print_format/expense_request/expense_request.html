@@ -13,22 +13,29 @@
     box-sizing: border-box;
   }
   
-  body { font-size: 10px; color: var(--text); }
+  body { font-size: 10px; color: var(--text); margin: 0; padding: 0; }
   
-  .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+  /* A4 Page Setup */
+  .container { 
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto; 
+    padding: 15mm 20mm;
+    background: white;
+  }
   
   /* Header */
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 2px solid var(--primary);
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   
   .header h1 {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     margin: 0;
     color: var(--primary);
@@ -57,32 +64,33 @@
   .badge-rejected { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
   
   /* Grid */
-  .grid { display: grid; gap: 16px; margin-bottom: 16px; }
+  .grid { display: grid; gap: 12px; margin-bottom: 12px; }
   .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
   
   /* Card */
   .card {
     background: white;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 12px 16px;
+    border-radius: 4px;
+    padding: 10px 12px;
   }
   
   .card-title {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-light);
-    margin: 0 0 10px 0;
-    padding-bottom: 6px;
+    margin: 0 0 8px 0;
+    padding-bottom: 5px;
     border-bottom: 1px solid var(--border);
   }
   
   .row {
     display: flex;
     justify-content: space-between;
-    padding: 4px 0;
+    padding: 3px 0;
     font-size: 10px;
   }
   
@@ -93,17 +101,17 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10px;
-    margin-bottom: 16px;
+    font-size: 9px;
+    margin-bottom: 12px;
   }
   
   thead { background: var(--primary); color: white; }
   
   th {
-    padding: 8px 12px;
+    padding: 6px 10px;
     text-align: left;
     font-weight: 600;
-    font-size: 9px;
+    font-size: 8px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -111,7 +119,7 @@
   th.right { text-align: right; }
   
   td {
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     color: var(--text);
   }
@@ -127,29 +135,135 @@
   .notes {
     background: var(--bg-light);
     border-left: 3px solid var(--secondary);
-    padding: 10px 14px;
-    margin-bottom: 16px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
   }
   
   .notes-title {
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-light);
+    margin-bottom: 3px;
+  }
+  
+  .notes-content {
+    font-size: 9px;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  
+  /* Signature Section */
+  .signature-section {
+    margin-top: 30px;
+    page-break-inside: avoid;
+  }
+  
+  .signature-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--primary);
+    margin-bottom: 15px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .signature-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+  }
+  
+  .signature-box {
+    text-align: center;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: white;
+  }
+  
+  .signature-role {
     font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
     color: var(--text-light);
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
   
-  .notes-content {
+  .signature-line {
+    height: 50px;
+    border-bottom: 1px solid var(--primary);
+    margin: 0 10px 8px 10px;
+  }
+  
+  .signature-name {
     font-size: 10px;
-    color: var(--text);
-    line-height: 1.5;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 2px;
+    min-height: 14px;
+  }
+  
+  .signature-date {
+    font-size: 8px;
+    color: var(--text-light);
+    min-height: 12px;
+  }
+  
+  .signature-status {
+    font-size: 7px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  
+  .signature-status.approved {
+    background: #dcfce7;
+    color: #166534;
+  }
+  
+  .signature-status.pending {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  
+  .signature-status.rejected {
+    background: #fee2e2;
+    color: #991b1b;
   }
   
   /* Print */
   @media print {
-    @page { margin: 12mm; }
+    @page { 
+      size: A4;
+      margin: 10mm; 
+    }
+    
+    body { 
+      margin: 0; 
+      padding: 0; 
+    }
+    
+    .container {
+      width: 100%;
+      min-height: auto;
+      padding: 5mm;
+    }
+    
     thead { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .badge-approved { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .signature-status.approved { background: #dcfce7 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .signature-status.pending { background: #fef3c7 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .signature-status.rejected { background: #fee2e2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    
+    .signature-section {
+      page-break-inside: avoid;
+    }
   }
 </style>
 
@@ -267,25 +381,70 @@
     </div>
 
     <div class="card">
-      <div class="card-title">{{ _("Approval") }}</div>
-      {% if doc.level_1_user %}
+      <div class="card-title">{{ _("Payment Info") }}</div>
       <div class="row">
-        <span class="row-label">{{ _("Level 1") }}</span>
-        <span class="row-value">{{ doc.level_1_user }}{% if doc.level_1_approved_on %} ✓{% endif %}</span>
+        <span class="row-label">{{ _("Payment Status") }}</span>
+        <span class="row-value">{{ doc.payment_status or 'Unpaid' }}</span>
+      </div>
+      {% if doc.payment_entry %}
+      <div class="row">
+        <span class="row-label">{{ _("Payment Entry") }}</span>
+        <span class="row-value">{{ doc.payment_entry }}</span>
       </div>
       {% endif %}
-      {% if doc.level_2_user %}
-      <div class="row">
-        <span class="row-label">{{ _("Level 2") }}</span>
-        <span class="row-value">{{ doc.level_2_user }}{% if doc.level_2_approved_on %} ✓{% endif %}</span>
+    </div>
+  </div>
+
+  <!-- Signature Section -->
+  <div class="signature-section">
+    <div class="signature-section-title">{{ _("Signatures") }}</div>
+    <div class="signature-grid">
+      <!-- Created By -->
+      <div class="signature-box">
+        <div class="signature-role">{{ _("Created By") }}</div>
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ doc.owner | replace("@", " ") if doc.owner else '' }}</div>
+        <div class="signature-date">{{ frappe.utils.formatdate(doc.creation) if doc.creation else '' }}</div>
       </div>
-      {% endif %}
-      {% if doc.level_3_user %}
-      <div class="row">
-        <span class="row-label">{{ _("Level 3") }}</span>
-        <span class="row-value">{{ doc.level_3_user }}{% if doc.level_3_approved_on %} ✓{% endif %}</span>
+      
+      <!-- Level 1 Approval -->
+      <div class="signature-box">
+        <div class="signature-role">{{ _("Approved By (L1)") }}</div>
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ doc.level_1_user or '' }}</div>
+        <div class="signature-date">{{ frappe.utils.formatdate(doc.level_1_approved_on) if doc.level_1_approved_on else '' }}</div>
+        {% if doc.level_1_approved_on %}
+        <span class="signature-status approved">{{ _("Approved") }}</span>
+        {% elif doc.level_1_user %}
+        <span class="signature-status pending">{{ _("Pending") }}</span>
+        {% endif %}
       </div>
-      {% endif %}
+      
+      <!-- Level 2 Approval -->
+      <div class="signature-box">
+        <div class="signature-role">{{ _("Approved By (L2)") }}</div>
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ doc.level_2_user or '' }}</div>
+        <div class="signature-date">{{ frappe.utils.formatdate(doc.level_2_approved_on) if doc.level_2_approved_on else '' }}</div>
+        {% if doc.level_2_approved_on %}
+        <span class="signature-status approved">{{ _("Approved") }}</span>
+        {% elif doc.level_2_user %}
+        <span class="signature-status pending">{{ _("Pending") }}</span>
+        {% endif %}
+      </div>
+      
+      <!-- Level 3 Approval -->
+      <div class="signature-box">
+        <div class="signature-role">{{ _("Approved By (L3)") }}</div>
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ doc.level_3_user or '' }}</div>
+        <div class="signature-date">{{ frappe.utils.formatdate(doc.level_3_approved_on) if doc.level_3_approved_on else '' }}</div>
+        {% if doc.level_3_approved_on %}
+        <span class="signature-status approved">{{ _("Approved") }}</span>
+        {% elif doc.level_3_user %}
+        <span class="signature-status pending">{{ _("Pending") }}</span>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>
