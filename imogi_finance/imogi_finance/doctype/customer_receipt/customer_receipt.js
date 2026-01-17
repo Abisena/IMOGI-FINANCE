@@ -37,51 +37,68 @@ frappe.ui.form.on('Customer Receipt', {
         // Clear items when receipt purpose changes
         frm.clear_table('items');
         frm.refresh_field('items');
+        // Update query filters for future rows
+        setup_item_query_filters(frm);
     },
 
     customer: function(frm) {
         // Clear items when customer changes
         frm.clear_table('items');
         frm.refresh_field('items');
+        // Update query filters for future rows
+        setup_item_query_filters(frm);
     },
 
     company: function(frm) {
         // Clear items when company changes
         frm.clear_table('items');
         frm.refresh_field('items');
+        // Update query filters for future rows
+        setup_item_query_filters(frm);
     }
 });
 
+// Helper function to setup query filters
+function setup_item_query_filters(frm) {
+    // Set up query filters for Sales Invoice
+    if (frm.doc.receipt_purpose === 'Billing (Sales Invoice)') {
+        frm.set_query('sales_invoice', 'items', function() {
+            return {
+                filters: {
+                    'customer': frm.doc.customer || '',
+                    'company': frm.doc.company || '',
+                    'docstatus': 1,
+                    'outstanding_amount': ['>', 0]
+                }
+            };
+        });
+        // Clear sales_order query
+        frm.set_query('sales_order', 'items', function() {
+            return { filters: { 'name': ['=', ''] } }; // Return empty to hide
+        });
+    }
+    // Set up query filters for Sales Order
+    else if (frm.doc.receipt_purpose === 'Before Billing (Sales Order)') {
+        frm.set_query('sales_order', 'items', function() {
+            return {
+                filters: {
+                    'customer': frm.doc.customer || '',
+                    'company': frm.doc.company || '',
+                    'docstatus': 1
+                }
+            };
+        });
+        // Clear sales_invoice query
+        frm.set_query('sales_invoice', 'items', function() {
+            return { filters: { 'name': ['=', ''] } }; // Return empty to hide
+        });
+    }
+}
+
 frappe.ui.form.on('Customer Receipt Item', {
     items_add: function(frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-        
-        // Set up query filters for Sales Invoice
-        if (frm.doc.receipt_purpose === 'Billing (Sales Invoice)' && frm.doc.customer && frm.doc.company) {
-            frappe.meta.get_docfield('Customer Receipt Item', 'sales_invoice', cdn).get_query = function() {
-                return {
-                    filters: {
-                        'customer': frm.doc.customer,
-                        'company': frm.doc.company,
-                        'docstatus': 1,
-                        'outstanding_amount': ['>', 0]
-                    }
-                };
-            };
-        }
-
-        // Set up query filters for Sales Order
-        if (frm.doc.receipt_purpose === 'Before Billing (Sales Order)' && frm.doc.customer && frm.doc.company) {
-            frappe.meta.get_docfield('Customer Receipt Item', 'sales_order', cdn).get_query = function() {
-                return {
-                    filters: {
-                        'customer': frm.doc.customer,
-                        'company': frm.doc.company,
-                        'docstatus': 1
-                    }
-                };
-            };
-        }
+        // Query filters are already set at parent level
+        setup_item_query_filters(frm);
     },
 
     sales_invoice: function(frm, cdt, cdn) {
@@ -117,6 +134,16 @@ function fetch_sales_invoice_data(frm, row) {
         },
         callback: function(r) {
             if (r.message) {
+                // Auto-populate customer if empty
+                if (!frm.doc.customer) {
+                    frm.set_value('customer', r.message.customer);
+                }
+                
+                // Auto-populate company if empty
+                if (!frm.doc.company) {
+                    frm.set_value('company', r.message.company);
+                }
+                
                 // Validate customer
                 if (r.message.customer !== frm.doc.customer) {
                     frappe.msgprint(__('Sales Invoice customer does not match Customer Receipt customer'));
@@ -166,6 +193,16 @@ function fetch_sales_order_data(frm, row) {
         },
         callback: function(r) {
             if (r.message) {
+                // Auto-populate customer if empty
+                if (!frm.doc.customer) {
+                    frm.set_value('customer', r.message.customer);
+                }
+                
+                // Auto-populate company if empty
+                if (!frm.doc.company) {
+                    frm.set_value('company', r.message.company);
+                }
+                
                 // Validate customer
                 if (r.message.customer !== frm.doc.customer) {
                     frappe.msgprint(__('Sales Order customer does not match Customer Receipt customer'));

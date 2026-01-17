@@ -639,11 +639,6 @@
       "group": "Payment",
       "link_doctype": "Payment Entry",
       "link_fieldname": "branch_expense_request"
-    },
-    {
-      "group": "Tax",
-      "link_doctype": "Tax Invoice OCR Upload",
-      "link_fieldname": "branch_expense_request"
     }
   ],
   "module": "Imogi Finance",

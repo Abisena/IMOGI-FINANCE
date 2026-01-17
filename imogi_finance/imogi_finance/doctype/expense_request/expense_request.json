@@ -803,11 +803,6 @@
       "link_fieldname": "expense_request"
     },
     {
-      "group": "Tax",
-      "link_doctype": "Tax Invoice OCR Upload",
-      "link_fieldname": "expense_request"
-    },
-    {
       "group": "Budget",
       "link_doctype": "Budget Control Ledger Entry",
       "link_fieldname": "source_document"

@@ -45,11 +45,6 @@ Native ERPNext connections menggunakan property `links` di DocType JSON untuk ot
     "link_fieldname": "expense_request"
   },
   {
-    "group": "Tax",
-    "link_doctype": "Tax Invoice OCR Upload",
-    "link_fieldname": "expense_request"
-  },
-  {
     "group": "Budget",
     "link_doctype": "Budget Control Ledger Entry",
     "link_fieldname": "source_document"
@@ -68,11 +63,6 @@ Native ERPNext connections menggunakan property `links` di DocType JSON untuk ot
   {
     "group": "Payment",
     "link_doctype": "Payment Entry",
-    "link_fieldname": "branch_expense_request"
-  },
-  {
-    "group": "Tax",
-    "link_doctype": "Tax Invoice OCR Upload",
     "link_fieldname": "branch_expense_request"
   }
 ]

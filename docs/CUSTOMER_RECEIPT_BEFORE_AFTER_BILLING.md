@@ -18,8 +18,8 @@ Modul Customer Receipt telah diperbaiki untuk memastikan pilihan "Before Billing
 
 ### 2. Auto-Fetch Data
 Ketika user memilih Sales Order atau Sales Invoice, sistem otomatis mengambil data:
-- **Customer**: Divalidasi harus sama dengan Customer di header
-- **Company**: Divalidasi harus sama dengan Company di header  
+- **Customer**: Auto-populate jika kosong, atau divalidasi harus sama dengan Customer di header
+- **Company**: Auto-populate jika kosong, atau divalidasi harus sama dengan Company di header  
 - **Reference Date**: Transaction date (SO) atau Posting date (SI)
 - **Reference Outstanding**: Sisa yang belum dibayar
 - **Amount to Collect**: Otomatis diisi dengan outstanding amount
@@ -28,9 +28,10 @@ Ketika user memilih Sales Order atau Sales Invoice, sistem otomatis mengambil da
 #### Client-side (JavaScript):
 - Clear items ketika Receipt Purpose berubah
 - Clear items ketika Customer atau Company berubah
-- Filter Sales Order/Invoice hanya menampilkan yang sesuai customer & company
+- **Dynamic filter** Sales Order/Invoice yang otomatis update berdasarkan receipt_purpose, customer & company
+- Filter hanya menampilkan dokumen submitted dengan outstanding > 0
 - Validasi dokumen harus sudah submitted
-- Validasi customer & company harus match
+- Validasi customer & company harus match (atau auto-populate jika kosong)
 - Auto-clear field yang tidak sesuai receipt purpose
 
 #### Server-side (Python):
@@ -41,13 +42,14 @@ Ketika user memilih Sales Order atau Sales Invoice, sistem otomatis mengambil da
 - Validasi customer & company harus match dengan header
 
 ## Files Modified
-
-### 1. customer_receipt.js (NEW)
-File JavaScript baru untuk handle client-side logic:
+UPDATED)
+File JavaScript untuk handle client-side logic:
 - Event handlers untuk receipt_purpose, customer, company changes
+- **Dynamic query filters** menggunakan `frm.set_query()` untuk child table
+- Auto-populate customer & company dari Sales Invoice/Order jika kosong
 - Auto-fetch data dari Sales Invoice
 - Auto-fetch data dari Sales Order
-- Query filters untuk dropdown
+- Validasi client-side dengan error messagesdropdown
 - Validasi client-side
 
 ### 2. customer_receipt_item.js (NEW)
@@ -66,29 +68,31 @@ Placeholder file untuk child table
 ## Usage Guide
 
 ### Membuat Customer Receipt - Before Billing
-
-1. Buat Customer Receipt baru
-2. Pilih **Company** dan **Customer**
-3. Pilih **Receipt Purpose**: "Before Billing (Sales Order)"
+Receipt Purpose**: "Before Billing (Sales Order)"
+3. **(Opsional)** Pilih **Company** dan **Customer** - atau biarkan kosong, akan auto-populate dari Sales Order
 4. Klik "Add Row" di tabel Items
-5. Pilih **Sales Order** (hanya Sales Order yang muncul dengan outstanding > 0)
-6. Data otomatis terisi:
+5. Pilih **Sales Order** (dropdown otomatis filter: submitted dengan customer & company yang sesuai)
+6. **Customer & Company otomatis terisi** jika masih kosong
+7. Data otomatis terisi:
    - Reference Date dari transaction date
    - Reference Outstanding = grand_total - advance_paid
    - Amount to Collect = reference outstanding
+8. Adjust amount to collect jika perlu
+9  - Amount to Collect = reference outstanding
 7. Adjust amount to collect jika perlu
 8. Save dan Submit
 
-### Membuat Customer Receipt - After Billing
-
-1. Buat Customer Receipt baru
-2. Pilih **Company** dan **Customer**
-3. Pilih **Receipt Purpose**: "Billing (Sales Invoice)"
+### MembuatReceipt Purpose**: "Billing (Sales Invoice)"
+3. **(Opsional)** Pilih **Company** dan **Customer** - atau biarkan kosong, akan auto-populate dari Sales Invoice
 4. Klik "Add Row" di tabel Items
-5. Pilih **Sales Invoice** (hanya Sales Invoice dengan outstanding > 0)
-6. Data otomatis terisi:
+5. Pilih **Sales Invoice** (dropdown otomatis filter: submitted dengan outstanding > 0 untuk customer & company yang sesuai)
+6. **Customer & Company otomatis terisi** jika masih kosong
+7. Data otomatis terisi:
    - Reference Date dari posting date
    - Reference Outstanding dari outstanding_amount
+   - Amount to Collect = reference outstanding
+8. Adjust amount to collect jika perlu
+9  - Reference Outstanding dari outstanding_amount
    - Amount to Collect = reference outstanding
 7. Adjust amount to collect jika perlu
 8. Save dan Submit
