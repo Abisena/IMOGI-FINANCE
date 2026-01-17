@@ -178,6 +178,13 @@ def get_data(filters):
 	user = filters.get("user")
 	from_date = filters.get("from_date")
 	to_date = filters.get("to_date")
+	
+	# Convert date strings to proper date objects
+	if from_date:
+		from_date = getdate(from_date)
+	if to_date:
+		to_date = getdate(to_date)
+	
 	doctype_filter = filters.get("doctype")
 	approval_level_filter = filters.get("approval_level")
 	cost_center_filter = filters.get("cost_center")
