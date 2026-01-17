@@ -154,17 +154,27 @@ class ExpenseRequest(Document):
         # If budget control is enabled and fails, the entire submit MUST fail
         try:
             handle_expense_request_workflow(self, "Submit", getattr(self, "workflow_state"))
-        except frappe.ValidationError:
-            # Re-raise validation errors (e.g., budget exceeded)
+        except frappe.ValidationError as ve:
+            # Re-raise validation errors (e.g., budget exceeded) with clear message
+            frappe.logger().error(f"on_submit: Validation error for {self.name}: {str(ve)}")
             raise
+        except frappe.DoesNotExistError as de:
+            # Handle missing document errors
+            frappe.logger().error(f"on_submit: Document not found for {self.name}: {str(de)}")
+            frappe.throw(
+                _("Required document not found during budget control. Please check your setup. Error: {0}").format(str(de)),
+                title=_("Document Not Found")
+            )
         except Exception as e:
-            # Log unexpected errors and fail the transaction
+            # Log unexpected errors and fail the transaction with detailed message
+            error_msg = str(e)
+            frappe.logger().error(f"on_submit: Budget control error for {self.name}: {error_msg}")
             frappe.log_error(
                 title=f"Budget Control Critical Error for {self.name}",
-                message=f"Failed to handle budget workflow on submit: {str(e)}\n\n{frappe.get_traceback()}"
+                message=f"Failed to handle budget workflow on submit: {error_msg}\n\n{frappe.get_traceback()}"
             )
             frappe.throw(
-                _("Budget control operation failed. Transaction cannot be completed. Error: {0}").format(str(e)),
+                _("Budget control operation failed during submission.<br><br>Error: {0}<br><br>Please contact administrator if the problem persists.").format(error_msg),
                 title=_("Budget Control Error")
             )
 

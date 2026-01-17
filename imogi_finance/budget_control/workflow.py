@@ -354,37 +354,62 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         frappe.msgprint(_("Budget lock is disabled in Budget Control Settings"), indicator="orange")
         return
 
-    target_state = settings.get("lock_on_workflow_state") or "Approved"
+    # Check if already reserved (avoid duplicate)
+    existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+    if existing:
+        frappe.logger().info(f"reserve_budget_for_request: Budget already reserved for {getattr(expense_request, 'name', 'Unknown')}")
+        frappe.msgprint(
+            _("Budget already reserved for this request."),
+            indicator="blue",
+            alert=True
+        )
+        return
+    
+    # Budget check dilakukan saat submit (docstatus=1), tidak perlu tunggu approved
+    docstatus = getattr(expense_request, "docstatus", 0)
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
     
     frappe.logger().info(
         f"reserve_budget_for_request: {getattr(expense_request, 'name', 'Unknown')} "
-        f"- status={status}, workflow={workflow_state}, target={target_state}"
+        f"- docstatus={docstatus}, status={status}, workflow={workflow_state}"
     )
     
-    if status != target_state and workflow_state != target_state:
-        frappe.logger().info(f"reserve_budget_for_request: Status {status}/{workflow_state} not matching target {target_state}")
+    # Allow reservation saat submitted (docstatus=1), tidak perlu tunggu state tertentu
+    if docstatus != 1:
+        frappe.logger().info(f"reserve_budget_for_request: Document not submitted yet (docstatus={docstatus})")
         frappe.msgprint(
-            _("Document status ({0}/{1}) does not match target state ({2}). Budget reservation skipped.").format(
-                status, workflow_state, target_state
-            ),
+            _("Budget reservation requires document to be submitted."),
             indicator="yellow"
         )
         return
 
     ic_doc = None
     if getattr(expense_request, "allocation_mode", "Direct") == "Allocated via Internal Charge":
-        ic_doc = _require_internal_charge_ready(expense_request, settings)
+        try:
+            ic_doc = _require_internal_charge_ready(expense_request, settings)
+        except Exception as e:
+            frappe.logger().error(f"reserve_budget_for_request: Internal Charge validation failed for {getattr(expense_request, 'name', 'Unknown')}: {str(e)}")
+            frappe.throw(
+                _("Internal Charge validation failed. {0}").format(str(e)),
+                title=_("Internal Charge Required")
+            )
 
-    slices = _build_allocation_slices(expense_request, settings=settings, ic_doc=ic_doc)
+    try:
+        slices = _build_allocation_slices(expense_request, settings=settings, ic_doc=ic_doc)
+    except Exception as e:
+        frappe.logger().error(f"reserve_budget_for_request: Failed to build allocation slices for {getattr(expense_request, 'name', 'Unknown')}: {str(e)}")
+        frappe.throw(
+            _("Failed to build budget allocation slices. Please check expense items, accounts, and cost centers. Error: {0}").format(str(e)),
+            title=_("Budget Allocation Failed")
+        )
+    
     if not slices:
         frappe.logger().warning(f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}")
-        frappe.msgprint(
-            _("No budget allocation slices could be created. Please check expense items and accounts."),
-            indicator="red"
+        frappe.throw(
+            _("No budget allocation slices could be created. Please ensure expense items have valid accounts and cost centers."),
+            title=_("Budget Allocation Failed")
         )
-        return
 
     frappe.logger().info(f"reserve_budget_for_request: Processing {len(slices)} slices for {getattr(expense_request, 'name', 'Unknown')}")
 
@@ -403,16 +428,42 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
     any_overrun = False
     for dims, amount in slices:
-        result = service.check_budget_available(dims, float(amount or 0))
+        try:
+            result = service.check_budget_available(dims, float(amount or 0))
+        except Exception as e:
+            frappe.logger().error(f"reserve_budget_for_request: Failed to check budget availability: {str(e)}")
+            frappe.throw(
+                _("Failed to check budget availability. Please contact administrator. Error: {0}").format(str(e)),
+                title=_("Budget Check Failed")
+            )
+        
         frappe.logger().info(
             f"reserve_budget_for_request: Budget check for {dims.cost_center}/{dims.account}: "
             f"amount={amount}, available={result.available}, ok={result.ok}"
         )
+        
         if not result.ok and not allow_overrun:
-            frappe.throw(result.message)
+            # Enhanced error message with details
+            frappe.logger().warning(
+                f"reserve_budget_for_request: Budget insufficient for {dims.cost_center}/{dims.account} - "
+                f"Requested: {amount}, Available: {result.available}"
+            )
+            frappe.throw(
+                _("Budget Insufficient: {0}<br><br>Cost Center: {1}<br>Account: {2}<br>Requested: {3}<br>Available: {4}").format(
+                    result.message,
+                    dims.cost_center or "(not set)",
+                    dims.account or "(not set)",
+                    frappe.format_value(amount, {"fieldtype": "Currency"}),
+                    frappe.format_value(result.available, {"fieldtype": "Currency"}) if result.available is not None else "N/A"
+                ),
+                title=_("Budget Exceeded")
+            )
 
         if not result.ok:
             any_overrun = True
+            frappe.logger().warning(
+                f"reserve_budget_for_request: Overrun allowed for {dims.cost_center}/{dims.account} by user with special role"
+            )
 
     entries_created = []
     for dims, amount in slices:
@@ -526,13 +577,38 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
         release_budget_for_request(expense_request, reason=action)
         return
 
-    # Reserve budget when transitioning to target state (e.g., "Approved")
-    # Check both the current state and the next state to handle different workflow patterns
+    # Reserve budget saat Submit (bukan saat Approve)
+    # Budget check akan gagal di submit jika tidak tersedia
+    if action == "Submit":
+        reserve_budget_for_request(expense_request, trigger_action=action, next_state=next_state)
+        return
+    
+    # Skip reserve saat Approve jika sudah ada reservation dari Submit
+    # Hanya update state ke Approved
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
     
     if next_state == target_state or workflow_state == target_state or status == target_state:
-        reserve_budget_for_request(expense_request, trigger_action=action, next_state=next_state)
+        # Check if already reserved
+        existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+        if existing:
+            # Already reserved, just update status
+            frappe.logger().info(f"handle_expense_request_workflow: Budget already reserved for {getattr(expense_request, 'name', None)}, updating to Approved")
+            if hasattr(expense_request, "db_set"):
+                expense_request.db_set("budget_lock_status", "Locked")
+            expense_request.budget_lock_status = "Locked"
+            _set_budget_workflow_state(expense_request, "Approved", reason=_("Budget already reserved on submit."))
+        else:
+            # No reservation yet, reserve now (fallback for old workflow)
+            frappe.logger().warning(f"handle_expense_request_workflow: No reservation found for {getattr(expense_request, 'name', None)}, attempting reserve as fallback")
+            try:
+                reserve_budget_for_request(expense_request, trigger_action=action, next_state=next_state)
+            except Exception as e:
+                frappe.logger().error(f"handle_expense_request_workflow: Failed to reserve budget during approve: {str(e)}")
+                frappe.throw(
+                    _("Failed to reserve budget during approval. Please ensure budget is available. Error: {0}").format(str(e)),
+                    title=_("Budget Reservation Failed")
+                )
 
 
 def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
