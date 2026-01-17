@@ -8,7 +8,9 @@
     "insert_after": "naming_series",
     "label": "Expense Request",
     "options": "Expense Request",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "in_standard_filter": 1,
+    "bold": 1
   },
   {
     "doctype": "Custom Field",
@@ -19,7 +21,10 @@
     "insert_after": "imogi_expense_request",
     "label": "Request Type",
     "options": "Expense",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "read_only": 1,
+    "fetch_from": "imogi_expense_request.request_type",
+    "fetch_if_empty": 1
   },
   {
     "doctype": "Custom Field",
@@ -30,7 +35,9 @@
     "insert_after": "imogi_request_type",
     "label": "PPh Type",
     "options": "Tax Withholding Category",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "fetch_from": "imogi_expense_request.pph_type",
+    "fetch_if_empty": 1
   },
   {
     "doctype": "Custom Field",
@@ -41,7 +48,8 @@
     "insert_after": "party",
     "label": "Expense Request",
     "options": "Expense Request",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "depends_on": "eval:doc.payment_type=='Pay' && doc.party_type=='Supplier'"
   },
   {
     "doctype": "Custom Field",
@@ -53,6 +61,7 @@
     "label": "Customer Receipt",
     "options": "Customer Receipt",
     "allow_on_submit": 1,
+    "depends_on": "eval:doc.payment_type=='Receive' && doc.party_type=='Customer'",
     "description": "Controlled customer receipt reference"
   },
   {
@@ -145,7 +154,8 @@
     "fieldname": "ti_tax_invoice_section",
     "fieldtype": "Section Break",
     "insert_after": "apply_tds",
-    "label": "Tax Invoice (OCR)"
+    "label": "Tax Invoice (OCR)",
+    "collapsible": 1
   },
   {
     "doctype": "Custom Field",
@@ -165,7 +175,9 @@
     "fieldname": "ti_tax_invoice_data_section",
     "fieldtype": "Section Break",
     "insert_after": "ti_tax_invoice_upload",
-    "label": "Tax Invoice Data"
+    "label": "Tax Invoice Data",
+    "collapsible": 1,
+    "depends_on": "eval:doc.ti_tax_invoice_upload"
   },
   {
     "doctype": "Custom Field",
@@ -301,7 +313,8 @@
     "fieldname": "out_fp_section",
     "fieldtype": "Section Break",
     "insert_after": "apply_discount_on",
-    "label": "Output Tax Invoice"
+    "label": "Output Tax Invoice",
+    "collapsible": 1
   },
   {
     "doctype": "Custom Field",
@@ -321,7 +334,8 @@
     "fieldname": "out_fp_data_section",
     "fieldtype": "Section Break",
     "insert_after": "out_fp_tax_invoice_upload",
-    "label": "Tax Invoice Data"
+    "label": "Tax Invoice Data",
+    "collapsible": 1
   },
   {
     "doctype": "Custom Field",
@@ -453,7 +467,9 @@
     "insert_after": "out_buyer_tax_id",
     "label": "Output Tax Invoice NPWP",
     "allow_on_submit": 1,
-    "read_only": 1
+    "read_only": 1,
+    "fetch_from": "customer.tax_id",
+    "fetch_if_empty": 1
   },
   {
     "doctype": "Custom Field",
@@ -475,7 +491,8 @@
     "insert_after": "reference_no",
     "label": "Transfer Application",
     "options": "Transfer Application",
-    "allow_on_submit": 1
+    "allow_on_submit": 1,
+    "depends_on": "eval:doc.payment_type=='Internal Transfer'"
   },
   {
     "doctype": "Custom Field",

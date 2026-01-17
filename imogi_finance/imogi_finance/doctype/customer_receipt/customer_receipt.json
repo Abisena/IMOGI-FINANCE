@@ -51,7 +51,9 @@
       "label": "Status",
       "options": "Draft\nIssued\nPartially Paid\nPaid\nCancelled",
       "in_list_view": 1,
-      "read_only": 1
+      "in_standard_filter": 1,
+      "read_only": 1,
+      "bold": 1
     },
     {
       "fieldname": "company",
@@ -59,13 +61,16 @@
       "label": "Company",
       "options": "Company",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "remember_last_selected_value": 1
     },
     {
       "fieldname": "branch",
       "fieldtype": "Link",
       "label": "Branch",
-      "options": "Branch"
+      "options": "Branch",
+      "in_standard_filter": 1
     },
     {
       "fieldname": "posting_date",
@@ -73,7 +78,8 @@
       "label": "Posting Date",
       "reqd": 1,
       "default": "Today",
-      "in_list_view": 1
+      "in_list_view": 1,
+      "bold": 1
     },
     {
       "fieldname": "customer",
@@ -81,7 +87,9 @@
       "label": "Customer",
       "options": "Customer",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "bold": 1
     },
     {
       "fieldname": "customer_reference_no",
@@ -94,7 +102,9 @@
       "label": "Receipt Purpose",
       "options": "Before Billing (Sales Order)\nBilling (Sales Invoice)",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "bold": 1
     },
     {
       "fieldname": "receipt_design",
@@ -168,37 +178,47 @@
       "fieldname": "digital_stamp_template",
       "fieldtype": "Link",
       "label": "Digital Stamp Template",
-      "options": "Digital Stamp Template"
+      "options": "Digital Stamp Template",
+      "depends_on": "eval:doc.stamp_mode=='Digital'"
     },
     {
       "fieldname": "digital_stamp_reference",
       "fieldtype": "Data",
-      "label": "Digital Stamp Reference"
+      "label": "Digital Stamp Reference",
+      "read_only": 1,
+      "depends_on": "eval:doc.stamp_mode=='Digital'"
     },
     {
       "fieldname": "digital_stamp_status",
       "fieldtype": "Select",
       "label": "Digital Stamp Status",
       "options": "Draft\nRequested\nIssued\nFailed\nCancelled",
-      "default": "Draft"
+      "default": "Draft",
+      "read_only": 1,
+      "depends_on": "eval:doc.stamp_mode=='Digital'"
     },
     {
       "fieldname": "digital_stamp_issue_datetime",
       "fieldtype": "Datetime",
       "label": "Digital Stamp Issued At",
-      "read_only": 1
+      "read_only": 1,
+      "depends_on": "eval:doc.stamp_mode=='Digital' && doc.digital_stamp_status=='Issued'"
     },
     {
       "default": "0",
       "fieldname": "digital_stamp_locked",
       "fieldtype": "Check",
-      "label": "Digital Stamp Locked"
+      "label": "Digital Stamp Locked",
+      "read_only": 1,
+      "depends_on": "eval:doc.stamp_mode=='Digital'"
     },
     {
       "fieldname": "digital_stamp_logs",
       "fieldtype": "Table",
       "label": "Digital Stamp Logs",
-      "options": "Customer Receipt Stamp Log"
+      "options": "Customer Receipt Stamp Log",
+      "read_only": 1,
+      "depends_on": "eval:doc.stamp_mode=='Digital'"
     },
     {
       "fieldname": "created_by_user",

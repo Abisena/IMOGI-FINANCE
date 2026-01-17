@@ -15,30 +15,55 @@
     "provider_response"
   ],
   "fields": [
-    { "fieldname": "action", "fieldtype": "Data", "label": "Action", "in_list_view": 1 },
-    { "fieldname": "timestamp", "fieldtype": "Datetime", "label": "Timestamp", "in_list_view": 1 },
-    { "fieldname": "user", "fieldtype": "Data", "label": "User" },
+    { 
+      "fieldname": "action", 
+      "fieldtype": "Data", 
+      "label": "Action", 
+      "in_list_view": 1,
+      "read_only": 1
+    },
+    { 
+      "fieldname": "timestamp", 
+      "fieldtype": "Datetime", 
+      "label": "Timestamp", 
+      "in_list_view": 1,
+      "read_only": 1
+    },
+    { 
+      "fieldname": "user", 
+      "fieldtype": "Data", 
+      "label": "User",
+      "read_only": 1
+    },
     {
       "default": "10000",
       "fieldname": "stamp_cost",
       "fieldtype": "Currency",
       "label": "Stamp Cost",
-      "in_list_view": 1
+      "in_list_view": 1,
+      "read_only": 1
     },
     {
       "fieldname": "payment_reference_doctype",
       "fieldtype": "Select",
       "label": "Payment Reference Type",
-      "options": "\nPayment Entry\nJournal Entry"
+      "options": "\nPayment Entry\nJournal Entry",
+      "read_only": 1
     },
     {
       "fieldname": "payment_reference",
       "fieldtype": "Dynamic Link",
       "label": "Payment Reference",
       "options": "payment_reference_doctype",
-      "in_list_view": 1
+      "in_list_view": 1,
+      "read_only": 1
     },
-    { "fieldname": "provider_response", "fieldtype": "Small Text", "label": "Provider Response" }
+    { 
+      "fieldname": "provider_response", 
+      "fieldtype": "Small Text", 
+      "label": "Provider Response",
+      "read_only": 1
+    }
   ],
   "idx": 0,
   "istable": 1,

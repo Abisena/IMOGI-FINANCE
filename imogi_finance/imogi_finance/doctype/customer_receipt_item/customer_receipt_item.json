@@ -19,7 +19,8 @@
       "label": "Sales Invoice",
       "options": "Sales Invoice",
       "in_list_view": 1,
-      "columns": 2
+      "columns": 2,
+      "depends_on": "eval:parent.receipt_purpose=='Billing (Sales Invoice)'"
     },
     {
       "fieldname": "sales_order",
@@ -27,26 +28,34 @@
       "label": "Sales Order",
       "options": "Sales Order",
       "in_list_view": 1,
-      "columns": 2
+      "columns": 2,
+      "depends_on": "eval:parent.receipt_purpose=='Before Billing (Sales Order)'"
     },
     {
       "fieldname": "reference_date",
       "fieldtype": "Date",
       "label": "Reference Date",
-      "in_list_view": 1
+      "in_list_view": 1,
+      "read_only": 1,
+      "fetch_from": "sales_invoice.posting_date",
+      "fetch_if_empty": 1
     },
     {
       "fieldname": "reference_outstanding",
       "fieldtype": "Currency",
       "label": "Reference Outstanding",
-      "read_only": 1
+      "read_only": 1,
+      "in_list_view": 1,
+      "fetch_from": "sales_invoice.outstanding_amount",
+      "fetch_if_empty": 1
     },
     {
       "fieldname": "amount_to_collect",
       "fieldtype": "Currency",
       "label": "Amount to Collect",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "columns": 2
     }
   ],
   "idx": 0,
