@@ -317,9 +317,11 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             }
             pi.append("items", variance_item)
 
+    # Set PPh details after all items are added
     if item_wise_pph_detail:
         pi.item_wise_tax_detail = item_wise_pph_detail
 
+    # Set PPN template after all items (including variance) are added
     if is_ppn_applicable and request.ppn_template:
         pi.taxes_and_charges = request.ppn_template
         pi.set_taxes()
@@ -345,14 +347,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.insert(ignore_permissions=True)
     
     # Recalculate taxes and totals after insert to ensure PPN and PPh are properly calculated
-    # This is necessary because withholding tax (PPh) is calculated by Frappe's controller
-    # after the document is saved and taxes need to be recalculated
+    # This is critical because:
+    # 1. Withholding tax (PPh) is calculated by Frappe's TDS controller after save
+    # 2. PPN needs to be recalculated from the final item total (including variance)
+    # 3. ERPNext's tax calculation requires the document to exist in DB first
+    pi.reload()  # Refresh from DB to get any auto-calculated fields
+    
+    # Now recalculate with all items and settings in place
     if hasattr(pi, "calculate_taxes_and_totals"):
         pi.calculate_taxes_and_totals()
         pi.save(ignore_permissions=True)
-    else:
-        # Fallback: reload document to get calculated taxes
-        pi.reload()
+    
+    # Reload again to get final calculated values
+    pi.reload()
 
     _update_request_purchase_invoice_links(request, pi)
 
