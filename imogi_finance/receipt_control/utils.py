@@ -206,3 +206,20 @@ def build_verification_url(pattern: Optional[str], stamp_ref: Optional[str]) -> 
     if not pattern or not stamp_ref:
         return None
     return pattern.replace("{{stamp_ref}}", stamp_ref)
+
+
+def get_default_receipt_design():
+    """Return default receipt design as a safe dict for Jinja templates"""
+    import frappe
+    return frappe._dict({
+        "custom_wording_title": "KUITANSI",
+        "show_detail_table": 1,
+        "stamp_mode_default": "Physical",
+        "stamp_position": "Bottom Right",
+        "stamp_width_mm": 35,
+        "stamp_height_mm": 40,
+        "digital_stamp_opacity_pct": 100,
+        "show_qr": 0,
+        "custom_logo": None,
+        "logo_mode": "Company Default"
+    })
