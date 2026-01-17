@@ -94,6 +94,7 @@ jinja = {
     "methods": [
         "imogi_finance.receipt_control.utils.terbilang_id",
         "imogi_finance.receipt_control.utils.build_verification_url",
+        "imogi_finance.receipt_control.utils.requires_materai",
     ]
 }
 

@@ -21,6 +21,7 @@ def get_receipt_control_settings():
             "enable_digital_stamp": 0,
             "digital_stamp_policy": "Optional",
             "digital_stamp_threshold_amount": 0,
+            "materai_minimum_amount": 10000000,
             "allow_physical_stamp_fallback": 0,
             "digital_stamp_provider": None,
             "provider_mode": None,
@@ -125,6 +126,21 @@ def terbilang_id(amount: float | int | Decimal, suffix: str = "rupiah") -> str:
         words = f"{words} {suffix}".strip()
 
     return words
+
+
+def requires_materai(receipt_amount: float | Decimal) -> bool:
+    """Check if the receipt amount requires materai (stamp duty).
+    
+    Args:
+        receipt_amount: The total amount on the customer receipt.
+        
+    Returns:
+        True if the amount meets or exceeds the minimum threshold for materai.
+    """
+    settings = get_receipt_control_settings()
+    min_amount = float(settings.get("materai_minimum_amount", 10000000))
+    
+    return float(receipt_amount or 0) >= min_amount
 
 
 def record_stamp_cost(customer_receipt: str, cost: float | Decimal) -> str:

@@ -17,6 +17,7 @@
     "enable_digital_stamp",
     "digital_stamp_policy",
     "digital_stamp_threshold_amount",
+    "materai_minimum_amount",
     "allow_physical_stamp_fallback",
     "digital_stamp_provider",
     "provider_mode",
@@ -93,6 +94,13 @@
       "fieldname": "digital_stamp_threshold_amount",
       "fieldtype": "Currency",
       "label": "Digital Stamp Threshold Amount"
+    },
+    {
+      "default": "10000000",
+      "fieldname": "materai_minimum_amount",
+      "fieldtype": "Currency",
+      "label": "Materai Minimum Amount",
+      "description": "Minimum amount for customer receipt to require materai (stamp duty). Default: Rp 10,000,000 based on Indonesian regulation."
     },
     {
       "default": "0",

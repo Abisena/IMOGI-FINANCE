@@ -17,20 +17,8 @@ frappe.ui.form.on('Customer Receipt', {
             });
         }
 
-        // Track print action
-        if (frm.doc.docstatus === 1) {
-            frm.page.on('print', function() {
-                frappe.call({
-                    method: 'track_print',
-                    doc: frm.doc,
-                    callback: function(r) {
-                        if (r.message) {
-                            frm.reload_doc();
-                        }
-                    }
-                });
-            });
-        }
+        // Track print action removed - frm.page.on is not available in form context
+        // Print tracking should be handled server-side if needed
     },
 
     receipt_purpose: function(frm) {
