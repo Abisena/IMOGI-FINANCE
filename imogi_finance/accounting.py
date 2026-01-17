@@ -258,7 +258,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.tax_withholding_category = request.pph_type if is_pph_applicable else None
     pi.imogi_pph_type = request.pph_type
     pi.apply_tds = 1 if is_pph_applicable else 0
-    pi.withholding_tax_base_amount = _get_pph_base_amount(request) if is_pph_applicable else None
+    # withholding_tax_base_amount will be set after all items are added
 
     item_wise_pph_detail = {}
 
@@ -317,14 +317,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             }
             pi.append("items", variance_item)
 
+    # Calculate withholding tax base amount from actual PI items (not ER)
+    # This ensures PPh is calculated correctly even if variance is added
+    if is_pph_applicable:
+        if item_wise_pph_detail:
+            # If per-item PPh, sum from item_wise_pph_detail
+            pi.withholding_tax_base_amount = sum(float(v) for v in item_wise_pph_detail.values())
+        else:
+            # If header-level PPh, use total of all PI items
+            pi.withholding_tax_base_amount = sum(flt(item.get("amount", 0)) for item in pi.items)
+
     # Set PPh details after all items are added
     if item_wise_pph_detail:
         pi.item_wise_tax_detail = item_wise_pph_detail
-
-    # Set PPN template after all items (including variance) are added
-    if is_ppn_applicable and request.ppn_template:
-        pi.taxes_and_charges = request.ppn_template
-        pi.set_taxes()
 
     # map tax invoice metadata
     pi.ti_tax_invoice_pdf = getattr(request, "ti_tax_invoice_pdf", None)
@@ -345,6 +350,12 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     apply_branch(pi, branch)
 
     pi.insert(ignore_permissions=True)
+    
+    # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
+    if is_ppn_applicable and request.ppn_template:
+        pi.taxes_and_charges = request.ppn_template
+        pi.set_taxes()
+        pi.save(ignore_permissions=True)
     
     # Recalculate taxes and totals after insert to ensure PPN and PPh are properly calculated
     # This is critical because:
