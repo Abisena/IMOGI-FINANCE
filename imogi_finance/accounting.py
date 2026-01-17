@@ -302,8 +302,6 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # Add DPP variance as additional line item if exists
     dpp_variance = flt(getattr(request, "ti_dpp_variance", 0) or 0)
     if dpp_variance != 0:
-        from imogi_finance.tax_invoice_ocr import get_settings
-        settings = get_settings()
         variance_account = settings.get("dpp_variance_account")
         
         if variance_account:
