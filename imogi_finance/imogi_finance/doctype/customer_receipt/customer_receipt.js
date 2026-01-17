@@ -21,6 +21,26 @@ frappe.ui.form.on('Customer Receipt', {
         // Print tracking should be handled server-side if needed
     },
 
+    onload: function(frm) {
+        // Set query filter for Receipt Design - only show active designs
+        frm.set_query('receipt_design', function() {
+            return {
+                filters: {
+                    'is_active': 1
+                }
+            };
+        });
+        
+        // Set query filter for Digital Stamp Template
+        frm.set_query('digital_stamp_template', function() {
+            return {
+                filters: {
+                    'is_active': 1
+                }
+            };
+        });
+    },
+
     receipt_purpose: function(frm) {
         // Clear items when receipt purpose changes
         frm.clear_table('items');

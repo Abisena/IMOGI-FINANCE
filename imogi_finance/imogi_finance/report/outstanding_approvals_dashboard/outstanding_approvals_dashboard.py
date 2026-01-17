@@ -18,13 +18,6 @@ def execute(filters=None):
 	if not filters.get("user"):
 		filters["user"] = frappe.session.user
 	
-	# Default date range to last 30 days if not provided
-	if not filters.get("from_date"):
-		filters["from_date"] = frappe.utils.add_days(frappe.utils.nowdate(), -30)
-	
-	if not filters.get("to_date"):
-		filters["to_date"] = frappe.utils.nowdate()
-	
 	columns = get_columns()
 	data = get_data(filters)
 	chart = get_chart_data(data)
@@ -181,12 +174,26 @@ def get_data(filters):
 	
 	# Convert date strings to proper date objects
 	if from_date:
-		from_date = getdate(from_date)
+		try:
+			from_date = getdate(from_date)
+		except:
+			from_date = None
 	if to_date:
-		to_date = getdate(to_date)
+		try:
+			to_date = getdate(to_date)
+		except:
+			to_date = None
 	
 	doctype_filter = filters.get("doctype")
 	approval_level_filter = filters.get("approval_level")
+	
+	# Convert approval level to int if provided
+	if approval_level_filter:
+		try:
+			approval_level_filter = int(approval_level_filter)
+		except:
+			approval_level_filter = None
+	
 	cost_center_filter = filters.get("cost_center")
 	branch_filter = filters.get("branch")
 	

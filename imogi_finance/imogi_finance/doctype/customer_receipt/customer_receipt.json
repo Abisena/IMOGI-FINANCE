@@ -131,7 +131,8 @@
       "fieldname": "receipt_design",
       "fieldtype": "Link",
       "label": "Receipt Design",
-      "options": "Receipt Design"
+      "options": "Receipt Design",
+      "description": "Select a custom receipt design template"
     },
     {
       "fieldname": "remarks",
