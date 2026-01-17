@@ -96,181 +96,158 @@ function setup_item_query_filters(frm) {
 }
 
 frappe.ui.form.on('Customer Receipt Item', {
-    items_add: function(frm, cdt, cdn) {
+    items_add: function(frm) {
         // Query filters are already set at parent level
         setup_item_query_filters(frm);
     },
 
     sales_invoice: function(frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-        console.log('sales_invoice triggered', {sales_invoice: row.sales_invoice, receipt_purpose: frm.doc.receipt_purpose});
-        
-        if (row.sales_invoice) {
-            // Validate receipt purpose
-            if (frm.doc.receipt_purpose !== 'Billing (Sales Invoice)') {
-                frappe.msgprint(__('Please set Receipt Purpose to "Billing (Sales Invoice)" to use Sales Invoice'));
-                frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
-                return;
-            }
-            
-            // Clear sales_order if accidentally filled
-            if (row.sales_order) {
-                frappe.model.set_value(cdt, cdn, 'sales_order', '');
-            }
-            
-            fetch_sales_invoice_data(frm, row);
+        const row = locals[cdt][cdn];
+        if (!row || !row.sales_invoice) return;
+
+        // Enforce mode: only allow Sales Invoice in Billing mode
+        if (frm.doc.receipt_purpose !== 'Billing (Sales Invoice)') {
+            frappe.msgprint(__('Please set Receipt Purpose to "Billing (Sales Invoice)" to use Sales Invoice'));
+            frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+            return;
         }
+
+        // Clear opposite field using official API
+        if (row.sales_order) {
+            frappe.model.set_value(cdt, cdn, 'sales_order', '');
+        }
+
+        fetch_sales_invoice_data(frm, cdt, cdn);
     },
 
     sales_order: function(frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-        console.log('sales_order triggered', {sales_order: row.sales_order, receipt_purpose: frm.doc.receipt_purpose});
-        
-        if (row.sales_order) {
-            // Validate receipt purpose
-            if (frm.doc.receipt_purpose !== 'Before Billing (Sales Order)') {
-                frappe.msgprint(__('Please set Receipt Purpose to "Before Billing (Sales Order)" to use Sales Order'));
-                frappe.model.set_value(cdt, cdn, 'sales_order', '');
-                return;
-            }
-            
-            // Clear sales_invoice if accidentally filled
-            if (row.sales_invoice) {
-                frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
-            }
-            
-            fetch_sales_order_data(frm, row);
+        const row = locals[cdt][cdn];
+        if (!row || !row.sales_order) return;
+
+        // Enforce mode: only allow Sales Order in Before Billing mode
+        if (frm.doc.receipt_purpose !== 'Before Billing (Sales Order)') {
+            frappe.msgprint(__('Please set Receipt Purpose to "Before Billing (Sales Order)" to use Sales Order'));
+            frappe.model.set_value(cdt, cdn, 'sales_order', '');
+            return;
         }
+
+        // Clear opposite field using official API
+        if (row.sales_invoice) {
+            frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+        }
+
+        fetch_sales_order_data(frm, cdt, cdn);
     }
 });
 
-function fetch_sales_invoice_data(frm, row) {
+function fetch_sales_invoice_data(frm, cdt, cdn) {
+    const current = locals[cdt][cdn];
+    if (!current || !current.sales_invoice) return;
+
     frappe.call({
         method: 'frappe.client.get',
         args: {
             doctype: 'Sales Invoice',
-            name: row.sales_invoice,
+            name: current.sales_invoice,
             fields: ['customer', 'company', 'posting_date', 'outstanding_amount', 'grand_total', 'docstatus']
         },
         callback: function(r) {
-            if (r.message) {
-                // Auto-populate customer if empty
-                if (!frm.doc.customer) {
-                    frm.set_value('customer', r.message.customer);
-                }
-                
-                // Auto-populate company if empty
-                if (!frm.doc.company) {
-                    frm.set_value('company', r.message.company);
-                }
-                
-                // Validate customer
-                if (r.message.customer !== frm.doc.customer) {
-                    frappe.msgprint(__('Sales Invoice customer does not match Customer Receipt customer'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_invoice', '');
-                    return;
-                }
+            const row = locals[cdt][cdn];
+            if (!row || !r.message) return; // row might have been deleted/changed
 
-                // Validate company
-                if (r.message.company !== frm.doc.company) {
-                    frappe.msgprint(__('Sales Invoice company does not match Customer Receipt company'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_invoice', '');
-                    return;
-                }
-
-                // Validate submission status
-                if (r.message.docstatus !== 1) {
-                    frappe.msgprint(__('Sales Invoice must be submitted before linking'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_invoice', '');
-                    return;
-                }
-
-                // Auto-fill data - update locals directly to avoid refresh issues with depends_on
-                row.reference_date = r.message.posting_date;
-                row.reference_outstanding = r.message.outstanding_amount;
-                
-                // Set amount_to_collect to outstanding amount if not already set
-                if (!row.amount_to_collect || row.amount_to_collect === 0) {
-                    row.amount_to_collect = r.message.outstanding_amount;
-                }
-                
-                // Refresh the grid row to show updated values
-                frm.fields_dict.items.grid.grid_rows_by_docname[row.name].refresh();
-
-                frappe.show_alert({
-                    message: __('Sales Invoice data fetched: Customer={0}, Amount={1}', [r.message.customer, format_currency(r.message.outstanding_amount)]),
-                    indicator: 'green'
-                }, 5);
+            // Auto-populate customer/company if empty (standard pattern in v15)
+            if (!frm.doc.customer) {
+                frm.set_value('customer', r.message.customer);
             }
+            if (!frm.doc.company) {
+                frm.set_value('company', r.message.company);
+            }
+
+            // Basic validations
+            if (r.message.customer !== frm.doc.customer) {
+                frappe.msgprint(__('Sales Invoice customer does not match Customer Receipt customer'));
+                frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+                return;
+            }
+            if (r.message.company !== frm.doc.company) {
+                frappe.msgprint(__('Sales Invoice company does not match Customer Receipt company'));
+                frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+                return;
+            }
+            if (r.message.docstatus !== 1) {
+                frappe.msgprint(__('Sales Invoice must be submitted before linking'));
+                frappe.model.set_value(cdt, cdn, 'sales_invoice', '');
+                return;
+            }
+
+            // Use frappe.model.set_value so grid refresh stays in core control
+            frappe.model.set_value(cdt, cdn, 'reference_date', r.message.posting_date);
+            frappe.model.set_value(cdt, cdn, 'reference_outstanding', r.message.outstanding_amount);
+            if (!row.amount_to_collect || row.amount_to_collect === 0) {
+                frappe.model.set_value(cdt, cdn, 'amount_to_collect', r.message.outstanding_amount);
+            }
+
+            frappe.show_alert({
+                message: __('Sales Invoice data fetched: Customer={0}, Amount={1}', [r.message.customer, format_currency(r.message.outstanding_amount)]),
+                indicator: 'green'
+            }, 5);
         }
     });
 }
 
-function fetch_sales_order_data(frm, row) {
-    console.log('fetch_sales_order_data called', {sales_order: row.sales_order, row_name: row.name});
-    
+function fetch_sales_order_data(frm, cdt, cdn) {
+    const current = locals[cdt][cdn];
+    if (!current || !current.sales_order) return;
+
     frappe.call({
         method: 'frappe.client.get',
         args: {
             doctype: 'Sales Order',
-            name: row.sales_order,
+            name: current.sales_order,
             fields: ['customer', 'company', 'transaction_date', 'advance_paid', 'grand_total', 'docstatus']
         },
         callback: function(r) {
-            console.log('fetch_sales_order_data response', r);
-            
-            if (r.message) {
-                // Auto-populate customer if empty
-                if (!frm.doc.customer) {
-                    frm.set_value('customer', r.message.customer);
-                }
-                
-                // Auto-populate company if empty
-                if (!frm.doc.company) {
-                    frm.set_value('company', r.message.company);
-                }
-                
-                // Validate customer
-                if (r.message.customer !== frm.doc.customer) {
-                    frappe.msgprint(__('Sales Order customer does not match Customer Receipt customer'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_order', '');
-                    return;
-                }
+            const row = locals[cdt][cdn];
+            if (!row || !r.message) return;
 
-                // Validate company
-                if (r.message.company !== frm.doc.company) {
-                    frappe.msgprint(__('Sales Order company does not match Customer Receipt company'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_order', '');
-                    return;
-                }
-
-                // Validate submission status
-                if (r.message.docstatus !== 1) {
-                    frappe.msgprint(__('Sales Order must be submitted before linking'));
-                    frappe.model.set_value(row.doctype, row.name, 'sales_order', '');
-                    return;
-                }
-
-                // Calculate outstanding (grand_total - advance_paid)
-                let outstanding = r.message.grand_total - (r.message.advance_paid || 0);
-
-                // Auto-fill data - update locals directly to avoid refresh issues with depends_on
-                row.reference_date = r.message.transaction_date;
-                row.reference_outstanding = outstanding;
-                
-                // Set amount_to_collect to outstanding amount if not already set
-                if (!row.amount_to_collect || row.amount_to_collect === 0) {
-                    row.amount_to_collect = outstanding;
-                }
-                
-                // Refresh the grid row to show updated values
-                frm.fields_dict.items.grid.grid_rows_by_docname[row.name].refresh();
-
-                frappe.show_alert({
-                    message: __('Sales Order data fetched: Customer={0}, Amount={1}', [r.message.customer, format_currency(outstanding)]),
-                    indicator: 'green'
-                }, 5);
+            // Auto-populate customer/company if empty
+            if (!frm.doc.customer) {
+                frm.set_value('customer', r.message.customer);
             }
+            if (!frm.doc.company) {
+                frm.set_value('company', r.message.company);
+            }
+
+            // Basic validations
+            if (r.message.customer !== frm.doc.customer) {
+                frappe.msgprint(__('Sales Order customer does not match Customer Receipt customer'));
+                frappe.model.set_value(cdt, cdn, 'sales_order', '');
+                return;
+            }
+            if (r.message.company !== frm.doc.company) {
+                frappe.msgprint(__('Sales Order company does not match Customer Receipt company'));
+                frappe.model.set_value(cdt, cdn, 'sales_order', '');
+                return;
+            }
+            if (r.message.docstatus !== 1) {
+                frappe.msgprint(__('Sales Order must be submitted before linking'));
+                frappe.model.set_value(cdt, cdn, 'sales_order', '');
+                return;
+            }
+
+            // Compute outstanding (standard pattern for SO advance vs total)
+            const outstanding = (r.message.grand_total || 0) - (r.message.advance_paid || 0);
+
+            frappe.model.set_value(cdt, cdn, 'reference_date', r.message.transaction_date);
+            frappe.model.set_value(cdt, cdn, 'reference_outstanding', outstanding);
+            if (!row.amount_to_collect || row.amount_to_collect === 0) {
+                frappe.model.set_value(cdt, cdn, 'amount_to_collect', outstanding);
+            }
+
+            frappe.show_alert({
+                message: __('Sales Order data fetched: Customer={0}, Amount={1}', [r.message.customer, format_currency(outstanding)]),
+                indicator: 'green'
+            }, 5);
         }
     });
 }

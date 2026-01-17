@@ -44,6 +44,7 @@
     "read_only": 1,
     "fetch_from": "imogi_expense_request.request_type",
     "fetch_if_empty": 1,
+    "depends_on": "eval:doc.imogi_expense_request || doc.branch_expense_request",
     "description": "Auto-filled from linked Expense Request or Branch Expense Request"
   },
   {
