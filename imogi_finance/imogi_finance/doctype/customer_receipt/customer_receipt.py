@@ -299,23 +299,74 @@ class CustomerReceipt(Document):
         return {row.reference_name: Decimal(row.allocated_amount or 0) for row in rows}
 
     @frappe.whitelist()
-    def make_payment_entry(self, paid_amount: Optional[float] = None):
+    def make_payment_entry(
+        self,
+        paid_amount: Optional[float] = None,
+        mode_of_payment: Optional[str] = None,
+        paid_to_account: Optional[str] = None,
+        posting_date: Optional[str] = None,
+        reference_no: Optional[str] = None,
+        reference_date: Optional[str] = None,
+    ):
+        """Create Payment Entry from Customer Receipt.
+        
+        Args:
+            paid_amount: Amount to be paid
+            mode_of_payment: Mode of Payment (e.g., Cash, Bank Transfer)
+            paid_to_account: Account where payment is received
+            posting_date: Date of payment
+            reference_no: Payment reference number (e.g., check number, transfer ID)
+            reference_date: Payment reference date
+        """
         paid_amount = Decimal(paid_amount or self.outstanding_amount or 0)
         if paid_amount <= 0:
             frappe.throw(_("Paid amount must be greater than zero."))
+
+        if not paid_to_account:
+            frappe.throw(_("Please specify the account where payment will be received (Paid To Account)."))
 
         pe = frappe.new_doc("Payment Entry")
         pe.payment_type = "Receive"
         pe.party_type = "Customer"
         pe.party = self.customer
         pe.company = self.company
-        pe.posting_date = frappe.utils.getdate()
+        pe.posting_date = posting_date or frappe.utils.getdate()
         pe.customer_receipt = self.name
         pe.received_amount = float(paid_amount)
         pe.paid_amount = float(paid_amount)
         
-        # Set exchange rates to avoid validation errors
-        # This triggers ERPNext's auto-calculation of exchange rates based on currencies
+        # Set mode of payment if provided
+        if mode_of_payment:
+            pe.mode_of_payment = mode_of_payment
+        
+        # Set reference details if provided
+        if reference_no:
+            pe.reference_no = reference_no
+        if reference_date:
+            pe.reference_date = reference_date
+        
+        # Get default receivable account for the customer (paid_from)
+        party_account = frappe.get_value(
+            "Party Account",
+            {"parent": self.customer, "company": self.company},
+            "account"
+        )
+        if not party_account:
+            party_account = frappe.get_value(
+                "Company", self.company, "default_receivable_account"
+            )
+        
+        if not party_account:
+            frappe.throw(_("Default Receivable Account not found for customer {0}").format(self.customer))
+        
+        pe.paid_from = party_account
+        pe.paid_from_account_currency = frappe.get_value("Account", party_account, "account_currency")
+        
+        # Set paid_to account (provided by user)
+        pe.paid_to = paid_to_account
+        pe.paid_to_account_currency = frappe.get_value("Account", paid_to_account, "account_currency")
+        
+        # Set exchange rates
         pe.source_exchange_rate = 1.0
         pe.target_exchange_rate = 1.0
         

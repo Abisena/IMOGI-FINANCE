@@ -5,15 +5,7 @@ frappe.ui.form.on('Customer Receipt', {
     refresh: function(frm) {
         if (frm.doc.docstatus === 1 && frm.doc.outstanding_amount > 0) {
             frm.add_custom_button(__('Make Payment Entry'), function() {
-                frappe.call({
-                    method: 'make_payment_entry',
-                    doc: frm.doc,
-                    callback: function(r) {
-                        if (r.message) {
-                            frappe.set_route('Form', 'Payment Entry', r.message.name);
-                        }
-                    }
-                });
+                show_payment_dialog(frm);
             });
         }
 
@@ -263,3 +255,116 @@ frappe.ui.form.on('Customer Receipt Item', {
         });
     }
 });
+
+// Show dialog to select payment mode and account
+function show_payment_dialog(frm) {
+    let dialog = new frappe.ui.Dialog({
+        title: __('Create Payment Entry'),
+        fields: [
+            {
+                fieldname: 'paid_amount',
+                fieldtype: 'Currency',
+                label: __('Paid Amount'),
+                default: frm.doc.outstanding_amount,
+                reqd: 1
+            },
+            {
+                fieldtype: 'Column Break'
+            },
+            {
+                fieldname: 'posting_date',
+                fieldtype: 'Date',
+                label: __('Posting Date'),
+                default: frappe.datetime.get_today(),
+                reqd: 1
+            },
+            {
+                fieldtype: 'Section Break'
+            },
+            {
+                fieldname: 'mode_of_payment',
+                fieldtype: 'Link',
+                label: __('Mode of Payment'),
+                options: 'Mode of Payment',
+                reqd: 1,
+                onchange: function() {
+                    let mode = dialog.get_value('mode_of_payment');
+                    if (mode) {
+                        // Fetch default account for this mode of payment
+                        frappe.call({
+                            method: 'frappe.client.get_value',
+                            args: {
+                                doctype: 'Mode of Payment Account',
+                                filters: {
+                                    parent: mode,
+                                    company: frm.doc.company
+                                },
+                                fieldname: 'default_account'
+                            },
+                            callback: function(r) {
+                                if (r.message && r.message.default_account) {
+                                    dialog.set_value('paid_to_account', r.message.default_account);
+                                }
+                            }
+                        });
+                    }
+                }
+            },
+            {
+                fieldname: 'paid_to_account',
+                fieldtype: 'Link',
+                label: __('Paid To Account'),
+                options: 'Account',
+                reqd: 1,
+                get_query: function() {
+                    return {
+                        filters: {
+                            company: frm.doc.company,
+                            is_group: 0,
+                            account_type: ['in', ['Bank', 'Cash']]
+                        }
+                    };
+                }
+            },
+            {
+                fieldtype: 'Section Break'
+            },
+            {
+                fieldname: 'reference_no',
+                fieldtype: 'Data',
+                label: __('Reference No')
+            },
+            {
+                fieldtype: 'Column Break'
+            },
+            {
+                fieldname: 'reference_date',
+                fieldtype: 'Date',
+                label: __('Reference Date')
+            }
+        ],
+        primary_action_label: __('Create'),
+        primary_action: function(values) {
+            frappe.call({
+                method: 'make_payment_entry',
+                doc: frm.doc,
+                args: {
+                    paid_amount: values.paid_amount,
+                    mode_of_payment: values.mode_of_payment,
+                    paid_to_account: values.paid_to_account,
+                    posting_date: values.posting_date,
+                    reference_no: values.reference_no,
+                    reference_date: values.reference_date
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        dialog.hide();
+                        frappe.set_route('Form', 'Payment Entry', r.message.name);
+                    }
+                }
+            });
+        }
+    });
+    
+    dialog.show();
+}
