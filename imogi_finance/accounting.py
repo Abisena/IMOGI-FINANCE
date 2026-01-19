@@ -189,6 +189,11 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     total_amount, expense_accounts = summarize_request_items(request_items, skip_invalid_items=True)
     _sync_request_amounts(request, total_amount, expense_accounts)
+    request_total_amount = flt(getattr(request, "total_amount", None) or 0)
+    # If ER total_amount already includes PPN/PPh adjustments, use it directly for PI item totals
+    # and skip re-applying tax rows to avoid double counting.
+    use_net_total = bool(request_total_amount and abs(request_total_amount - total_amount) > 0.0001)
+    amount_ratio = request_total_amount / total_amount if use_net_total and total_amount else 1
 
     settings = get_settings()
     sync_tax_invoice_upload(request, "Expense Request", save=False)
@@ -244,6 +249,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
     is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
+    apply_ppn = is_ppn_applicable and not use_net_total
+    apply_pph = is_pph_applicable and not use_net_total
 
     pi = frappe.new_doc("Purchase Invoice")
     pi.company = company
@@ -255,9 +262,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.imogi_expense_request = request.name
     pi.internal_charge_request = getattr(request, "internal_charge_request", None)
     pi.imogi_request_type = request.request_type
-    pi.tax_withholding_category = request.pph_type if is_pph_applicable else None
+    pi.tax_withholding_category = request.pph_type if apply_pph else None
     pi.imogi_pph_type = request.pph_type
-    pi.apply_tds = 1 if is_pph_applicable else 0
+    pi.apply_tds = 1 if apply_pph else 0
     # withholding_tax_base_amount will be set after all items are added
 
     # Collect per-item PPh details during item creation
@@ -272,6 +279,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         
         qty = getattr(item, "qty", 1) or 1
         item_amount = flt(getattr(item, "amount", 0))
+        if use_net_total:
+            item_amount *= amount_ratio
         
         pi_item = {
             "item_name": getattr(item, "asset_name", None)
@@ -296,7 +305,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         pi.append("items", pi_item)
 
         # Track which items have PPh for later index mapping
-        if getattr(item, "is_pph_applicable", 0):
+        if apply_pph and getattr(item, "is_pph_applicable", 0):
             base_amount = getattr(item, "pph_base_amount", None)
             if base_amount is not None:
                 temp_pph_items.append({
@@ -333,7 +342,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     # Calculate withholding tax base amount
     # IMPORTANT: Exclude variance item from PPh calculation
-    if is_pph_applicable:
+    if apply_pph:
         if item_wise_pph_detail:
             # If per-item PPh, sum from item_wise_pph_detail
             pi.withholding_tax_base_amount = sum(float(v) for v in item_wise_pph_detail.values())
@@ -370,13 +379,13 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.insert(ignore_permissions=True)
     
     # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
-    if is_ppn_applicable and request.ppn_template:
+    if apply_ppn and request.ppn_template:
         pi.taxes_and_charges = request.ppn_template
         pi.set_taxes()
         pi.save(ignore_permissions=True)
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
-    if is_pph_applicable:
+    if apply_pph:
         set_tax_withholding = getattr(pi, "set_tax_withholding", None)
         if callable(set_tax_withholding):
             set_tax_withholding()
