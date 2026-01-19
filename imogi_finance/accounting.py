@@ -409,6 +409,13 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # Now recalculate with all items and settings in place
     if hasattr(pi, "calculate_taxes_and_totals"):
         pi.calculate_taxes_and_totals()
+        for fieldname in (
+            "taxes_and_charges_added",
+            "taxes_and_charges_deducted",
+            "total_taxes_and_charges",
+        ):
+            if getattr(pi, fieldname, None) is None:
+                setattr(pi, fieldname, 0)
         pi.save(ignore_permissions=True)
     
     # Reload again to get final calculated values
