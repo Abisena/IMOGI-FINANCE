@@ -247,6 +247,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 )
 
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
+    has_item_level_pph = bool(pph_items)
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
     is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
     apply_ppn = is_ppn_applicable and not use_net_total
@@ -261,6 +262,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.bill_date = request.supplier_invoice_date
     pi.bill_no = request.supplier_invoice_no
     pi.currency = request.currency
+    if hasattr(pi, "tax_category"):
+        pi.tax_category = getattr(request, "tax_category", None)
     pi.imogi_expense_request = request.name
     pi.internal_charge_request = getattr(request, "internal_charge_request", None)
     pi.imogi_request_type = request.request_type
@@ -304,7 +307,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pi_item["service_end_date"] = add_months(deferred_start_date, deferred_periods or 0)
             pi_item["deferred_expense_account"] = expense_account
         
-        pi.append("items", pi_item)
+        pi_item_doc = pi.append("items", pi_item)
+        if apply_pph and hasattr(pi_item_doc, "apply_tds"):
+            if not has_item_level_pph or getattr(item, "is_pph_applicable", 0):
+                pi_item_doc.apply_tds = 1
 
         # Track which items have PPh for later index mapping
         if apply_pph and getattr(item, "is_pph_applicable", 0):
