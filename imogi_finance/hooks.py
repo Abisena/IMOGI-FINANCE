@@ -212,7 +212,10 @@ doc_events = {
             "imogi_finance.events.purchase_invoice.on_submit",
             "imogi_finance.advance_payment.api.on_reference_update",
         ],
-        "on_update_after_submit": "imogi_finance.advance_payment.api.on_reference_update",
+        "on_update_after_submit": [
+            "imogi_finance.advance_payment.api.on_reference_update",
+            "imogi_finance.events.purchase_invoice.sync_expense_request_status_from_pi",
+        ],
         "before_cancel": "imogi_finance.events.purchase_invoice.before_cancel",
         "on_cancel": [
             "imogi_finance.events.purchase_invoice.on_cancel",

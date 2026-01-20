@@ -23,6 +23,37 @@ from imogi_finance.budget_control.workflow import (
 )
 
 
+def sync_expense_request_status_from_pi(doc, method=None):
+    """Sync Expense Request status when Purchase Invoice status changes (e.g., Paid).
+    
+    Triggered on PI on_update_after_submit to detect when PI status badge
+    changes from Unpaid to Paid (after Payment Entry is applied).
+    """
+    expense_request = doc.get("imogi_expense_request")
+    if not expense_request:
+        return
+    
+    if not frappe.db.exists("Expense Request", expense_request):
+        return
+    
+    # Get current ER status based on PI status
+    request_links = get_expense_request_links(expense_request)
+    new_status = get_expense_request_status(request_links)
+    
+    # Update ER workflow state if changed
+    current_status = frappe.db.get_value("Expense Request", expense_request, "workflow_state")
+    if current_status != new_status:
+        frappe.db.set_value(
+            "Expense Request",
+            expense_request,
+            {"workflow_state": new_status, "status": new_status}
+        )
+        frappe.logger().info(
+            f"[PI status sync] PI {doc.name} status changed. "
+            f"Updated ER {expense_request} status: {current_status} → {new_status}"
+        )
+
+
 def validate_before_submit(doc, method=None):
     # Sync OCR fields but don't save - document will be saved automatically after this hook
     sync_tax_invoice_upload(doc, "Purchase Invoice", save=False)

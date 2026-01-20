@@ -274,12 +274,11 @@ def _handle_expense_request_submit(doc, expense_request):
             label=_("Payment Entry"),
         )
 
-    # Update workflow state to Paid
-    # Status akan auto-update via query karena PE.imogi_expense_request sudah set
-    frappe.db.set_value(
-        "Expense Request",
-        request.name,
-        {"workflow_state": "Paid", "status": "Paid"},
+    # Status akan auto-sync dari PI status badge (ERPNext auto-update saat PE submitted)
+    # get_expense_request_status() akan detect dari pi_status field
+    frappe.logger().info(
+        f"[PE on_submit] PE {doc.name} submitted for ER {request.name}. "
+        f"ER status will auto-sync from PI status badge."
     )
 
 
@@ -372,51 +371,29 @@ def on_cancel(doc, method=None):
     1. Check if linked to any printed daily reports (done in before_cancel)
     2. If yes, BLOCK cancellation and suggest reversal
     3. If no, allow cancellation
-    4. Status auto-updated via query:
-       - Query filters docstatus=1 (only submitted)
-       - Cancelled PE (docstatus=2) automatically excluded
-       - If other PE exist → "Paid"
-       - If no PE exist → "PI Created"
+    4. Status auto-sync from PI status badge (ERPNext auto-updates outstanding)
+       - After PE cancelled, PI outstanding increases
+       - PI status badge updates (Paid → Unpaid/Partially Paid)
+       - Hook on PI on_update_after_submit will sync ER status
     """
     expense_request_name = doc.get("imogi_expense_request")
     branch_request_name = doc.get("branch_expense_request")
     
-    # Update Expense Request workflow state
-    # Query will automatically exclude this cancelled PE (docstatus=2)
+    # Update Expense Request workflow state based on PI status
     if expense_request_name:
-        # Query untuk cek apakah masih ada PE lain yang submitted
-        other_pes = frappe.db.get_all(
-            "Payment Entry",
-            filters={
-                "imogi_expense_request": expense_request_name,
-                "docstatus": 1,  # Only submitted
-                "name": ["!=", doc.name]  # Exclude current (being cancelled)
-            },
-            pluck="name"
-        )
-        
-        # Determine status based on remaining PEs
-        if other_pes:
-            # Masih ada PE lain yang submitted → status tetap "Paid"
-            next_status = "Paid"
-            frappe.logger().info(
-                f"[PE on_cancel] PE {doc.name} cancelled, "
-                f"but {len(other_pes)} other PE(s) still active: {other_pes}. "
-                f"ER status remains 'Paid'"
-            )
-        else:
-            # Tidak ada PE lain → status kembali ke "PI Created" (atau "Approved" jika PI juga cancelled)
-            request_links = get_expense_request_links(expense_request_name)
-            next_status = get_expense_request_status(request_links)
-            frappe.logger().info(
-                f"[PE on_cancel] PE {doc.name} cancelled, "
-                f"no other active PE. ER status: {next_status}"
-            )
+        # Get current status based on PI (will reflect updated outstanding after cancel)
+        request_links = get_expense_request_links(expense_request_name)
+        next_status = get_expense_request_status(request_links)
         
         frappe.db.set_value(
             "Expense Request",
             expense_request_name,
             {"workflow_state": next_status}
+        )
+        
+        frappe.logger().info(
+            f"[PE on_cancel] PE {doc.name} cancelled. "
+            f"ER {expense_request_name} status updated to: {next_status} (based on PI status)"
         )
     
     # Update Branch Expense Request
@@ -583,46 +560,19 @@ def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = N
     expense_request, branch_request = _resolve_expense_request(original_pe)
     
     if expense_request:
-        # Query untuk cek apakah masih ada PE lain yang submitted
-        # Note: original PE belum di-cancel, masih docstatus=1
-        # Tapi sudah di-mark is_reversed=1
-        other_pes = frappe.db.get_all(
-            "Payment Entry",
-            filters={
-                "imogi_expense_request": expense_request,
-                "docstatus": 1,  # Only submitted
-                "name": ["!=", payment_entry_name],  # Exclude reversed PE
-                "is_reversed": ["!=", 1]  # Exclude reversed PEs
-            },
-            pluck="name"
-        )
-        
-        # Determine status based on remaining PEs
-        if other_pes:
-            # Masih ada PE lain yang active → status tetap "Paid"
-            next_status = "Paid"
-            frappe.logger().info(
-                f"[PE reversal] PE {payment_entry_name} reversed, "
-                f"but {len(other_pes)} other PE(s) still active: {other_pes}. "
-                f"ER status remains 'Paid'"
-            )
-        else:
-            # Tidak ada PE lain → status kembali ke "PI Created"
-            request_links = get_expense_request_links(expense_request)
-            next_status = get_expense_request_status(request_links)
-            frappe.logger().info(
-                f"[PE reversal] PE {payment_entry_name} reversed, "
-                f"no other active PE. ER status: {next_status}"
-            )
+        # Get current status based on PI (will reflect updated outstanding after reversal)
+        request_links = get_expense_request_links(expense_request)
+        next_status = get_expense_request_status(request_links)
         
         frappe.db.set_value(
             "Expense Request",
             expense_request,
             {"workflow_state": next_status}
         )
-    
-    if branch_request:
-        if frappe.db.exists("Branch Expense Request", branch_request):
+        
+        frappe.logger().info(
+            f"[PE reversal] PE {payment_entry_name} reversed. "
+            f"ER {expense_request} status updated to: {next_status} (based on PI status)"
             frappe.db.set_value("Branch Expense Request", branch_request, "linked_payment_entry", None)
     
     return reversal_pe.as_dict()

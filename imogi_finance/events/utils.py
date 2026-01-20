@@ -43,15 +43,20 @@ def get_expense_request_links(request_name: str, *, include_pending: bool = Fals
     - has_payment_entries: True if any PE exists (for status check)
     """
     # Query Purchase Invoice yang linked dan submitted (max 1)
-    linked_pi = frappe.db.get_value(
+    # Also get status field (Paid/Unpaid badge)
+    pi_data = frappe.db.get_value(
         "Purchase Invoice",
         {
             "imogi_expense_request": request_name,
             "docstatus": 1  # Only submitted PI
         },
-        "name",
+        ["name", "status"],
+        as_dict=True,
         order_by="creation desc"
     )
+    
+    linked_pi = pi_data.get("name") if pi_data else None
+    pi_status = pi_data.get("status") if pi_data else None
     
     # Query Payment Entry yang linked dan submitted (bisa multiple)
     # Return latest PE untuk backward compatibility
@@ -68,7 +73,8 @@ def get_expense_request_links(request_name: str, *, include_pending: bool = Fals
     result = {
         "linked_purchase_invoice": linked_pi,
         "linked_payment_entry": linked_pe,
-        "has_payment_entries": bool(linked_pe)  # True if any PE exists
+        "has_payment_entries": bool(linked_pe),  # True if any PE exists
+        "pi_status": pi_status  # PI status badge (Paid/Unpaid/etc)
     }
     
     # Include pending field if requested (for backward compatibility)
@@ -94,16 +100,17 @@ def get_expense_request_status(request_links: dict, *, check_pi_docstatus: bool 
     """Determine Expense Request status based on linked documents.
     
     Args:
-        request_links: Dict with linked_payment_entry, linked_purchase_invoice
+        request_links: Dict with linked_payment_entry, linked_purchase_invoice, pi_status
         check_pi_docstatus: Deprecated - query now automatically filters submitted docs
     
     Returns:
-        - "Paid" if Payment Entry exists (submitted)
+        - "Paid" if Purchase Invoice status = "Paid" (auto-updated by ERPNext)
         - "PI Created" if Purchase Invoice exists (submitted)
         - "Approved" otherwise
     """
     # Status priority: Paid > PI Created > Approved
-    if request_links.get("linked_payment_entry"):
+    # Check PI status badge (auto-updated by ERPNext based on outstanding_amount)
+    if request_links.get("linked_purchase_invoice") and request_links.get("pi_status") == "Paid":
         return "Paid"
     
     if request_links.get("linked_purchase_invoice"):
