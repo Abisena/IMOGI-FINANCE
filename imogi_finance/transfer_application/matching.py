@@ -51,6 +51,8 @@ def _match_transfer_application(doc: Document, *, settings):
     remark_text = _build_remark_text(doc)
     tolerance = get_amount_tolerance(settings)
 
+    # Note: Now beneficiary details are in items, so matching is simplified
+    # We match primarily by amount and bank_reference_hint
     candidates = frappe.get_all(
         "Transfer Application",
         filters={
@@ -62,8 +64,6 @@ def _match_transfer_application(doc: Document, *, settings):
             "name",
             "amount",
             "expected_amount",
-            "account_number",
-            "beneficiary_name",
             "bank_reference_hint",
         ],
     )
@@ -77,9 +77,23 @@ def _match_transfer_application(doc: Document, *, settings):
         if abs(amount - expected) > tolerance:
             continue
 
-        account_match = _account_matches(candidate.account_number, remark_text)
+        # Check items for account number and beneficiary name matches
+        items = frappe.get_all(
+            "Transfer Application Item",
+            filters={"parent": candidate.name},
+            fields=["account_number", "beneficiary_name"]
+        )
+        
+        account_match = False
+        name_match = False
+        
+        for item in items:
+            if not account_match and _account_matches(item.get("account_number"), remark_text):
+                account_match = True
+            if not name_match and _text_matches(item.get("beneficiary_name"), remark_text):
+                name_match = True
+        
         hint_match = _text_matches(candidate.bank_reference_hint, remark_text)
-        name_match = _text_matches(candidate.beneficiary_name, remark_text)
         ta_in_remark = _text_matches(candidate.name, remark_text)
 
         if account_match or hint_match or ta_in_remark:
@@ -103,12 +117,27 @@ def _apply_strong_match(doc: Document, candidate: dict, amount: float, remark_te
     transfer_application = candidate.name
     note_parts = [_("Matched Transfer Application {0}").format(transfer_application)]
 
-    account_match = _account_matches(candidate.get("account_number"), remark_text)
-    if account_match:
+    # Get items to check matches
+    items = frappe.get_all(
+        "Transfer Application Item",
+        filters={"parent": candidate.name},
+        fields=["account_number", "beneficiary_name"]
+    )
+    
+    account_found = False
+    beneficiary_found = False
+    
+    for item in items:
+        if _account_matches(item.get("account_number"), remark_text):
+            account_found = True
+        if _text_matches(item.get("beneficiary_name"), remark_text):
+            beneficiary_found = True
+    
+    if account_found:
         note_parts.append(_("Account number found in bank description."))
     if _text_matches(candidate.get("bank_reference_hint"), remark_text):
         note_parts.append(_("Reference hint present in bank description."))
-    if _text_matches(candidate.get("beneficiary_name"), remark_text):
+    if beneficiary_found:
         note_parts.append(_("Beneficiary name present in bank description."))
 
     _update_bank_transaction_fields(

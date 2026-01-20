@@ -15,6 +15,7 @@ from imogi_finance.transfer_application.settings import get_reference_doctype_op
 class TransferApplication(Document):
     def validate(self):
         self.apply_defaults()
+        self.validate_item_parties()
         self.calculate_totals()
         self.validate_reference_fields()
         self.update_amount_in_words()
@@ -28,12 +29,6 @@ class TransferApplication(Document):
         if not self.requested_transfer_date:
             self.requested_transfer_date = self.posting_date
 
-        if self.payee_type in {"Supplier", "Employee"} and not self.party_type:
-            self.party_type = self.payee_type
-
-        if self.party_type in {None, "", "None"}:
-            self.party = None
-
         if not self.currency:
             company_currency = None
             if self.company:
@@ -42,6 +37,25 @@ class TransferApplication(Document):
 
         if not self.workflow_state:
             self.workflow_state = self.status or "Draft"
+
+    def validate_item_parties(self):
+        """Validate that each item has required party/beneficiary details"""
+        if not self.items:
+            frappe.throw(_("Please add at least one item to the Transfer Application."))
+        
+        for idx, item in enumerate(self.items, start=1):
+            if not item.beneficiary_name:
+                frappe.throw(_("Row {0}: Beneficiary Name is required").format(idx))
+            if not item.bank_name:
+                frappe.throw(_("Row {0}: Bank Name is required").format(idx))
+            if not item.account_number:
+                frappe.throw(_("Row {0}: Account Number is required").format(idx))
+            
+            # Sync party_type from party if set
+            if item.party and not item.party_type:
+                party_type = frappe.db.get_value("Party", item.party, "party_type")
+                if party_type:
+                    item.party_type = party_type
 
     def calculate_totals(self):
         """Calculate total amount and expected amount from items"""
@@ -125,6 +139,43 @@ class TransferApplication(Document):
         )
         self.reload()
         return {"payment_entry": payment_entry.name}
+
+    def get_grouped_items(self):
+        """Group items by beneficiary for cleaner print format.
+        Returns a list of dicts with beneficiary info and their items."""
+        from collections import OrderedDict
+        
+        grouped = OrderedDict()
+        
+        for item in self.items or []:
+            # Create unique key for each beneficiary
+            key = (
+                item.beneficiary_name or "",
+                item.bank_name or "",
+                item.account_number or "",
+                item.account_holder_name or "",
+                item.bank_branch or ""
+            )
+            
+            if key not in grouped:
+                grouped[key] = {
+                    "beneficiary_name": item.beneficiary_name,
+                    "bank_name": item.bank_name,
+                    "bank_branch": item.bank_branch,
+                    "account_number": item.account_number,
+                    "account_holder_name": item.account_holder_name,
+                    "party_type": item.party_type,
+                    "party": item.party,
+                    "items": [],
+                    "total_amount": 0.0,
+                    "total_expected": 0.0
+                }
+            
+            grouped[key]["items"].append(item)
+            grouped[key]["total_amount"] += flt(item.amount)
+            grouped[key]["total_expected"] += flt(item.expected_amount or item.amount)
+        
+        return list(grouped.values())
 
 
 @frappe.whitelist()

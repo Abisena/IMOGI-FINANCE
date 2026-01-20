@@ -67,9 +67,17 @@ def create_payment_entry_for_transfer_application(
         "Transfer Application {0} | Purpose: {1}"
     ).format(transfer_application.name, transfer_application.transfer_purpose or "-")
 
-    if transfer_application.party_type and transfer_application.party:
-        payment_entry.party_type = transfer_application.party_type
-        payment_entry.party = transfer_application.party
+    # Use first item's party info if available
+    item_party_type = None
+    item_party = None
+    if transfer_application.items and len(transfer_application.items) > 0:
+        first_item = transfer_application.items[0]
+        item_party_type = getattr(first_item, "party_type", None)
+        item_party = getattr(first_item, "party", None)
+    
+    if item_party_type and item_party:
+        payment_entry.party_type = item_party_type
+        payment_entry.party = item_party
         if hasattr(payment_entry, "party_account"):
             payment_entry.party_account = paid_to
 
@@ -143,8 +151,15 @@ def _get_default_bank_cash_account(company: str, *, account_type: str):
 
 def _resolve_paid_to_account(transfer_application: Document, *, settings=None):
     settings = settings or get_transfer_application_settings()
-    party_type = getattr(transfer_application, "party_type", None)
-    party = getattr(transfer_application, "party", None)
+    
+    # Try to get party info from first item (for backward compatibility)
+    party_type = None
+    party = None
+    
+    if transfer_application.items and len(transfer_application.items) > 0:
+        first_item = transfer_application.items[0]
+        party_type = getattr(first_item, "party_type", None)
+        party = getattr(first_item, "party", None)
 
     if party_type and party:
         try:

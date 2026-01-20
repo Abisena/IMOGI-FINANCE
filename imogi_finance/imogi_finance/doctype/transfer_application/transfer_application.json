@@ -20,16 +20,9 @@
     "section_reference",
     "reference_doctype",
     "reference_name",
-    "column_break_party",
-    "payee_type",
-    "party_type",
-    "party",
-    "beneficiary_name",
-    "bank_name",
-    "bank_branch",
-    "account_number",
-    "account_holder_name",
+    "column_break_ref",
     "transfer_method",
+    "requested_transfer_date",
     "section_items",
     "items",
     "section_break_total",
@@ -37,7 +30,6 @@
     "amount",
     "expected_amount",
     "amount_in_words",
-    "requested_transfer_date",
     "transfer_purpose",
     "bank_reference_hint",
     "section_signatories",
@@ -109,55 +101,8 @@
       "options": "reference_doctype"
     },
     {
-      "fieldname": "column_break_party",
+      "fieldname": "column_break_ref",
       "fieldtype": "Column Break"
-    },
-    {
-      "default": "Supplier",
-      "fieldname": "payee_type",
-      "fieldtype": "Select",
-      "label": "Payee Type",
-      "options": "Supplier\nEmployee\nGovernment\nOther"
-    },
-    {
-      "fieldname": "party_type",
-      "fieldtype": "Select",
-      "label": "Party Type",
-      "options": "Supplier\nEmployee\nNone"
-    },
-    {
-      "fieldname": "party",
-      "fieldtype": "Dynamic Link",
-      "label": "Party",
-      "options": "party_type"
-    },
-    {
-      "fieldname": "beneficiary_name",
-      "fieldtype": "Data",
-      "label": "Beneficiary Name",
-      "reqd": 1
-    },
-    {
-      "fieldname": "bank_name",
-      "fieldtype": "Data",
-      "label": "Bank Name",
-      "reqd": 1
-    },
-    {
-      "fieldname": "bank_branch",
-      "fieldtype": "Data",
-      "label": "Bank Branch"
-    },
-    {
-      "fieldname": "account_number",
-      "fieldtype": "Data",
-      "label": "Account Number",
-      "reqd": 1
-    },
-    {
-      "fieldname": "account_holder_name",
-      "fieldtype": "Data",
-      "label": "Account Holder Name"
     },
     {
       "fieldname": "transfer_method",
@@ -168,7 +113,7 @@
     {
       "fieldname": "section_items",
       "fieldtype": "Section Break",
-      "label": "Transfer Items"
+      "label": "Transfer Items (Each item can have different beneficiary)"
     },
     {
       "fieldname": "items",
