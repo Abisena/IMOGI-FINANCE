@@ -573,7 +573,8 @@ def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = N
         frappe.logger().info(
             f"[PE reversal] PE {payment_entry_name} reversed. "
             f"ER {expense_request} status updated to: {next_status} (based on PI status)"
-            frappe.db.set_value("Branch Expense Request", branch_request, "linked_payment_entry", None)
+        )
+        frappe.db.set_value("Branch Expense Request", branch_request, "linked_payment_entry", None)
     
     return reversal_pe.as_dict()
 
