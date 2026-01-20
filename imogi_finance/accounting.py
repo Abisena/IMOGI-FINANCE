@@ -442,7 +442,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         except Exception as e:
             frappe.logger().error(f"Tax calculation failed for PI {pi.name}: {str(e)}")
             frappe.msgprint(
-                _("Tax calculation encountered an error: {0}. Please review the Purchase Invoice manually.").format(str(e)),
+                _("Tax calculation encountered an error. Please review the Purchase Invoice {0} manually.").format(pi.name),
                 indicator="red",
                 alert=True
             )
