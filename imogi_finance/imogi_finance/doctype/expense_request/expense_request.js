@@ -788,39 +788,104 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
   }
 
   frm.add_custom_button(__('Create Purchase Invoice'), async () => {
-    frappe.confirm(
-      __('Are you sure you want to create a Purchase Invoice from this Expense Request?'),
-      async () => {
-        try {
-          frappe.show_progress(__('Creating...'), 0, 100);
-
-          const { message } = await frappe.call({
-            method: 'imogi_finance.accounting.create_purchase_invoice_from_request',
-            args: { expense_request_name: frm.doc.name },
-            freeze: true,
-            freeze_message: __('Creating Purchase Invoice...'),
-          });
-
-          frappe.hide_progress();
-
-          if (message) {
-            frappe.show_alert({
-              message: __('Purchase Invoice {0} created successfully!', [message]),
-              indicator: 'green',
-            }, 5);
-            frm.reload_doc();
+    // Check for WHT category conflict before creating PI
+    const hasItemsWithWHT = frm.doc.items?.some(item => item.is_pph_applicable);
+    
+    if (hasItemsWithWHT && frm.doc.supplier) {
+      // Check if supplier has different WHT category
+      const supplierData = await frappe.db.get_value('Supplier', frm.doc.supplier, 'tax_withholding_category');
+      const supplierCategory = supplierData?.message?.tax_withholding_category;
+      const erPphType = frm.doc.pph_type;
+      
+      if (supplierCategory && erPphType && supplierCategory !== erPphType) {
+        // Conflict detected! Show dialog to user
+        frappe.confirm(
+          __('<b>WHT Category Conflict Detected</b><br><br>' +
+             'Supplier <b>{0}</b> has WHT Category: <b>{1}</b><br>' +
+             'Expense Request has PPh Type: <b>{2}</b><br><br>' +
+             '<b>Which category do you want to use?</b><br>' +
+             '• Click <b>Yes</b> to use <b>{2}</b> (from Expense Request)<br>' +
+             '• Click <b>No</b> to update Expense Request to use <b>{1}</b> (from Supplier)',
+            [frm.doc.supplier, supplierCategory, erPphType]
+          ),
+          async () => {
+            // User chose to use ER's PPh Type (proceed with current setup)
+            proceedCreatePI(frm);
+          },
+          () => {
+            // User chose to use Supplier's category (update ER first)
+            frappe.confirm(
+              __('Update Expense Request PPh Type to <b>{0}</b>?', [supplierCategory]),
+              async () => {
+                try {
+                  await frappe.call({
+                    method: 'frappe.client.set_value',
+                    args: {
+                      doctype: 'Expense Request',
+                      name: frm.doc.name,
+                      fieldname: 'pph_type',
+                      value: supplierCategory
+                    }
+                  });
+                  frm.reload_doc();
+                  frappe.show_alert({
+                    message: __('PPh Type updated to {0}', [supplierCategory]),
+                    indicator: 'green'
+                  });
+                } catch (error) {
+                  frappe.msgprint({
+                    title: __('Error'),
+                    message: error?.message || __('Failed to update PPh Type'),
+                    indicator: 'red'
+                  });
+                }
+              }
+            );
           }
-        } catch (error) {
-          frappe.hide_progress();
-          frappe.msgprint({
-            title: __('Error'),
-            message: error?.message || __('Failed to create Purchase Invoice'),
-            indicator: 'red',
-          });
-        }
+        );
+        return; // Stop here, wait for user decision
       }
-    );
+    }
+    
+    // No conflict, proceed normally
+    proceedCreatePI(frm);
   }, __('Actions'));
+}
+
+// Helper function to create PI
+async function proceedCreatePI(frm) {
+  frappe.confirm(
+    __('Are you sure you want to create a Purchase Invoice from this Expense Request?'),
+    async () => {
+      try {
+        frappe.show_progress(__('Creating...'), 0, 100);
+
+        const { message } = await frappe.call({
+          method: 'imogi_finance.accounting.create_purchase_invoice_from_request',
+          args: { expense_request_name: frm.doc.name },
+          freeze: true,
+          freeze_message: __('Creating Purchase Invoice...'),
+        });
+
+        frappe.hide_progress();
+
+        if (message) {
+          frappe.show_alert({
+            message: __('Purchase Invoice {0} created successfully!', [message]),
+            indicator: 'green',
+          }, 5);
+          frm.reload_doc();
+        }
+      } catch (error) {
+        frappe.hide_progress();
+        frappe.msgprint({
+          title: __('Error'),
+          message: error?.message || __('Failed to create Purchase Invoice'),
+          indicator: 'red',
+        });
+      }
+    }
+  );
 }
 frappe.ui.form.on('Expense Request Item', {
   amount(frm, cdt, cdn) {
