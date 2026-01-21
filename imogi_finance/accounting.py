@@ -340,26 +340,20 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
     elif has_mixed_pph:
         # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
-        # Action: MATIKAN SEMUA PPh di PI level, biarkan items handle individual PPh
-        # This ensures only items with Apply WHT get taxed
-        pi.tax_withholding_category = None
-        pi.imogi_pph_type = None
-        pi.apply_tds = 0
+        # Action: SET PI's pph_type BUT with apply_tds=0 at PI level
+        # Then set apply_tds=1 ONLY for items with Apply WHT (item-level control)
+        # This ensures only items with Apply WHT get taxed, avoiding supplier override
+        pi.tax_withholding_category = request.pph_type
+        pi.imogi_pph_type = request.pph_type
+        pi.apply_tds = 0  # Disable at PI level - let items control it
         
         frappe.logger().warning(
             f"[PPh MIXED MODE] PI {pi.name}: "
             f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
-            f"Disabling PI-level PPh - items will calculate individually. "
-            f"Supplier's category disabled to prevent applying to all items."
+            f"Using item-level PPh control with pph_type '{request.pph_type}'. "
+            f"Only items with apply_tds=1 will be taxed."
         )
-        
-        frappe.msgprint(
-            _(f"⚠️ Mixed Apply WHT Detected: {items_with_pph} of {total_items} items have Apply WHT. "
-              f"PPh will be calculated per-item, not at PI level. "
-              f"Supplier's Tax Withholding Category is disabled."),
-            indicator="orange",
-            alert=True
-        )
+        # NOTE: No user notification for mixed mode - system handles it transparently
     else:
         # ❌ ER does NOT have Apply WHT set (no items with Apply WHT)
         # Action: MATIKAN ER's pph_type, GUNAKAN supplier's category (jika ada & enabled)

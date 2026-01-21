@@ -231,45 +231,48 @@ def _prevent_double_wht(doc):
       AND set apply_tds = 0 to prevent Frappe's TDS controller from using supplier's category
     """
     expense_request = doc.get("imogi_expense_request")
-    apply_tds = cint(doc.get("apply_tds", 0))  # Dari ER's Apply WHT checkbox
+    apply_tds = cint(doc.get("apply_tds", 0))  # Dari ER's Apply WHT checkbox (at PI level)
     pph_type = doc.get("imogi_pph_type")        # Dari ER's Tab Tax
     supplier_tax_category = doc.get("tax_withholding_category")  # Auto-populated oleh Frappe
     
     # Check if this is a mixed Apply WHT scenario
-    # If apply_tds=0 but supplier_tax_category exists AND expense_request, it might be mixed mode
+    # MIXED mode: apply_tds=0 at PI level BUT pph_type is set AND supplier_tax_category exists
+    # This means items control PPh individually, not the PI level
     is_mixed_mode = (
         expense_request and 
         not apply_tds and 
-        not pph_type and 
-        supplier_tax_category
+        pph_type and 
+        supplier_tax_category and
+        pph_type == supplier_tax_category  # Both same = came from same source
     )
     
     # LOGIC: Ensure supplier's category doesn't interfere with item-level Apply WHT
     if expense_request and (apply_tds or is_mixed_mode):
-        # Check: Is there supplier's category that should NOT be used?
-        if supplier_tax_category:
-            # ✅ Found supplier's category that conflicts with ER's Apply WHT
+        # ✅ CONSISTENT MODE (apply_tds=1): ER's Apply WHT is set for all items
+        #    Clear supplier's category to prevent double calculation
+        # ✅ MIXED MODE (apply_tds=0 but pph_type set): Items control PPh individually
+        #    KEEP supplier's category for template, but don't apply to all items
+        
+        if apply_tds and supplier_tax_category and supplier_tax_category != pph_type:
+            # CONSISTENT mode + supplier has DIFFERENT category
             frappe.logger().info(
                 f"[PPh PROTECT] PI {doc.name}: "
-                f"Found supplier's category '{supplier_tax_category}' conflicting with ER Apply WHT. "
-                f"Clearing it to prevent double/unwanted calculation."
+                f"CONSISTENT mode - found supplier's category '{supplier_tax_category}' conflicting with ER Apply WHT '{pph_type}'. "
+                f"Clearing it to prevent double calculation."
             )
-            
-            # CRITICAL: Always clear supplier's category when ER has Apply WHT
-            doc.tax_withholding_category = None  # ← MATIKAN supplier's category
-            if apply_tds:
-                doc.apply_tds = 1  # Ensure TDS uses ER's pph_type
-            else:
-                doc.apply_tds = 0  # Keep disabled for mixed mode
-            
-            # User notification
-            frappe.msgprint(
-                _(f"✅ PPh Configuration: Item-level Apply WHT detected.\n"
-                  f"Supplier's Tax Withholding Category disabled.\n"
-                  f"Only items with Apply WHT will be taxed."),
-                indicator="green",
-                alert=True
+            doc.tax_withholding_category = None  # Clear conflicting category
+            doc.apply_tds = 1  # Use ER's pph_type only
+        elif is_mixed_mode:
+            # MIXED mode - keep category for template, apply_tds stays 0
+            # Items will control individual PPh calculation
+            frappe.logger().info(
+                f"[PPh MIXED] PI {doc.name}: "
+                f"MIXED mode - keeping category '{supplier_tax_category}' for template. "
+                f"Items control individual PPh (apply_tds at item level)."
             )
+            # Keep supplier_tax_category - it's needed for per-item calculation
+            # apply_tds=0 at PI level ensures only items with apply_tds=1 are taxed
+            # NOTE: No user notification - system handles it transparently
     else:
         # ❌ RULE 3: ER does NOT have Apply WHT
         # Supplier's category is OK (auto-copied by accounting.py)
