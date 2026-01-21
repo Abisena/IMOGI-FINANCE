@@ -249,18 +249,29 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     has_mixed_pph = 0 < items_with_pph < total_items  # Some but not all items have Apply WHT
     
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
-    is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
+    # CRITICAL: apply_pph MUST follow ER-level checkbox ONLY, NOT item-level flags
+    # This ensures PI's apply_tds matches ER's Apply WHT intention
+    is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0))
     # PPN and PPh are always calculated in PI based on item amounts (DPP)
     apply_ppn = is_ppn_applicable
     apply_pph = is_pph_applicable
     
-    # Log tax configuration for debugging
-    frappe.logger().info(
-        f"[TAX CONFIG] ER {request.name}: "
-        f"apply_ppn={apply_ppn}, apply_pph={apply_pph}, "
-        f"ppn_template={getattr(request, 'ppn_template', None)}, "
-        f"pph_type={getattr(request, 'pph_type', None)}"
-    )
+    # ============================================================================
+    # VALIDATION: Consistency between Header Apply WHT and Item-level flags
+    # ============================================================================
+    # RULE 1: If Header Apply WHT is checked, at least 1 item must have Apply WHT
+    if apply_pph and items_with_pph == 0:
+        frappe.throw(
+            _("Header 'Apply WHT' is checked but NO items have 'Apply WHT' checked. "
+              "Please check at least 1 item's 'Apply WHT' checkbox, or uncheck header 'Apply WHT'.")
+        )
+    
+    # RULE 2: If any item has Apply WHT, Header Apply WHT must be checked
+    if not apply_pph and items_with_pph > 0:
+        frappe.throw(
+            _("Found {0} item(s) with 'Apply WHT' checked but Header 'Apply WHT' is NOT checked. "
+              "Please check header 'Apply WHT' checkbox in Tab Tax, or uncheck all item-level 'Apply WHT'.").format(items_with_pph)
+        )
     
     # CRITICAL: If mixed Apply WHT (some items have, some don't)
     # Then don't use supplier's category at all (it would apply to all items)
@@ -348,19 +359,31 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
     elif has_mixed_pph:
         # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
-        # Action: ENABLE TDS at PI level (apply_tds=1) so Frappe can calculate taxes
-        # BUT set supplier category to None to prevent it being used
+        # Action: ONLY ENABLE TDS if ER has Apply WHT checked
         # Item-level apply_tds flags control which items are taxed individually
-        pi.tax_withholding_category = request.pph_type
-        pi.imogi_pph_type = request.pph_type
-        pi.apply_tds = 1  # ENABLE at PI level (Frappe REQUIRES this to calculate TDS)
-        
-        frappe.logger().warning(
-            f"[PPh MIXED MODE] PI {pi.name}: "
-            f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
-            f"Using item-level PPh control with pph_type '{request.pph_type}'. "
-            f"Only items with apply_tds=1 will be taxed. (apply_tds=1 at PI, cleared at hook)"
-        )
+        if apply_pph:
+            # ER has Apply WHT checked → use ER's pph_type
+            pi.tax_withholding_category = request.pph_type
+            pi.imogi_pph_type = request.pph_type
+            pi.apply_tds = 1  # ENABLE at PI level only if ER has Apply WHT
+            
+            frappe.logger().warning(
+                f"[PPh MIXED MODE] PI {pi.name}: "
+                f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items) dengan Apply WHT ER AKTIF. "
+                f"Using item-level PPh control with pph_type '{request.pph_type}'. "
+                f"Only items with apply_tds=1 will be taxed. (apply_tds=1 at PI, cleared at hook)"
+            )
+        else:
+            # ER does NOT have Apply WHT checked → no TDS at all
+            pi.tax_withholding_category = None
+            pi.imogi_pph_type = None
+            pi.apply_tds = 0
+            
+            frappe.logger().info(
+                f"[PPh MIXED MODE] PI {pi.name}: "
+                f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items) tapi Apply WHT ER TIDAK AKTIF. "
+                f"NO PPh akan diterapkan (apply_tds=0)."
+            )
         # NOTE: No user notification for mixed mode - system handles it transparently
     else:
         # ❌ ER does NOT have Apply WHT set (no items with Apply WHT)
@@ -439,15 +462,18 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pi_item["deferred_expense_account"] = expense_account
         
         pi_item_doc = pi.append("items", pi_item)
+        # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
-            # CRITICAL: Explicitly set apply_tds for EACH item
-            # In MIXED mode: Only items with is_pph_applicable=1 get apply_tds=1
-            # In CONSISTENT mode: All items follow the same rule
-            if not has_item_level_pph or getattr(item, "is_pph_applicable", 0):
-                pi_item_doc.apply_tds = 1
+            # In MIXED mode: only items with is_pph_applicable = 1 get taxed
+            # In ALL mode (not has_mixed_pph): all items get taxed (is_pph_applicable doesn't matter)
+            if has_mixed_pph:
+                # MIXED: only if this specific item has is_pph_applicable = 1
+                if getattr(item, "is_pph_applicable", 0):
+                    pi_item_doc.apply_tds = 1
+                # else: don't set (defaults to 0)
             else:
-                # EXPLICITLY set to 0 for items WITHOUT Apply WHT
-                pi_item_doc.apply_tds = 0
+                # ALL mode: apply to all items
+                pi_item_doc.apply_tds = 1
 
         # Track which items have PPh for later index mapping
         if apply_pph and getattr(item, "is_pph_applicable", 0):
@@ -525,22 +551,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     
     # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
     if apply_ppn and request.ppn_template:
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
-        )
         pi.taxes_and_charges = request.ppn_template
-        
-        # Use get_taxes_and_charges to properly populate the taxes table
-        if hasattr(pi, "get_taxes_and_charges"):
-            pi.get_taxes_and_charges()
-        else:
-            pi.set_taxes()
-        
+        pi.set_taxes()
         pi.save(ignore_permissions=True)
-        
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: PPN template applied, taxes_added = {flt(pi.taxes_and_charges_added):,.2f}"
-        )
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
@@ -626,5 +639,5 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 ).format(pi.name),
                 alert=True,
             )
-            
+
     return pi.name
