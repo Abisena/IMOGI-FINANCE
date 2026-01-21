@@ -254,6 +254,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     apply_ppn = is_ppn_applicable
     apply_pph = is_pph_applicable
     
+    # Log tax configuration for debugging
+    frappe.logger().info(
+        f"[TAX CONFIG] ER {request.name}: "
+        f"apply_ppn={apply_ppn}, apply_pph={apply_pph}, "
+        f"ppn_template={getattr(request, 'ppn_template', None)}, "
+        f"pph_type={getattr(request, 'pph_type', None)}"
+    )
+    
     # CRITICAL: If mixed Apply WHT (some items have, some don't)
     # Then don't use supplier's category at all (it would apply to all items)
     if has_mixed_pph:
@@ -517,9 +525,22 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     
     # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
     if apply_ppn and request.ppn_template:
+        frappe.logger().info(
+            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
+        )
         pi.taxes_and_charges = request.ppn_template
-        pi.set_taxes()
+        
+        # Use get_taxes_and_charges to properly populate the taxes table
+        if hasattr(pi, "get_taxes_and_charges"):
+            pi.get_taxes_and_charges()
+        else:
+            pi.set_taxes()
+        
         pi.save(ignore_permissions=True)
+        
+        frappe.logger().info(
+            f"[PPN] PI {pi.name}: PPN template applied, taxes_added = {flt(pi.taxes_and_charges_added):,.2f}"
+        )
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
