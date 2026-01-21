@@ -290,9 +290,69 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.imogi_expense_request = request.name
     pi.internal_charge_request = getattr(request, "internal_charge_request", None)
     pi.imogi_request_type = request.request_type
-    pi.tax_withholding_category = request.pph_type if apply_pph else None
-    pi.imogi_pph_type = request.pph_type
-    pi.apply_tds = 1 if apply_pph else 0
+    
+    # ============================================================================
+    # ON/OFF LOGIC FOR PPh (Withholding Tax)
+    # ============================================================================
+    # RULE:
+    # - Jika Apply WHT di ER ✅ CENTANG → MATIKAN supplier's category (ON/OFF)
+    # - Jika Apply WHT di ER ❌ TIDAK CENTANG → GUNAKAN supplier's category (jika ada)
+    # - TIDAK BOLEH keduanya aktif sekaligus (prevent double calculation)
+    # ============================================================================
+    
+    if apply_pph:
+        # ✅ ER has Apply WHT set (checkbox di Tab diceklist)
+        # Action: MATIKAN supplier's category, AKTIFKAN ER's pph_type
+        pi.tax_withholding_category = request.pph_type
+        pi.imogi_pph_type = request.pph_type
+        pi.apply_tds = 1
+        
+        frappe.logger().info(
+            f"[PPh ON/OFF] PI {pi.name}: "
+            f"Apply WHT di ER CENTANG → AKTIFKAN ER's pph_type '{request.pph_type}'. "
+            f"Supplier's category akan di-clear di event hook."
+        )
+    else:
+        # ❌ ER does NOT have Apply WHT set (checkbox di Tab tidak diceklist)
+        # Action: MATIKAN ER's pph_type, GUNAKAN supplier's category (jika ada & enabled)
+        
+        settings = get_settings() if callable(get_settings) else {}
+        use_supplier_wht = cint(settings.get("use_supplier_wht_if_no_er_pph", 0))
+        
+        if use_supplier_wht:
+            # Setting enabled: Auto-copy supplier's tax withholding category
+            supplier_wht = frappe.db.get_value("Supplier", request.supplier, "tax_withholding_category")
+            if supplier_wht:
+                # ✅ Supplier punya Tax Withholding Category
+                pi.tax_withholding_category = supplier_wht
+                pi.imogi_pph_type = supplier_wht
+                pi.apply_tds = 1
+                
+                frappe.logger().info(
+                    f"[PPh ON/OFF] PI {pi.name}: "
+                    f"Apply WHT di ER TIDAK CENTANG (setting enabled) → AKTIFKAN supplier's category '{supplier_wht}'."
+                )
+            else:
+                # ❌ Supplier TIDAK punya Tax Withholding Category
+                pi.tax_withholding_category = None
+                pi.imogi_pph_type = None
+                pi.apply_tds = 0
+                
+                frappe.logger().info(
+                    f"[PPh ON/OFF] PI {pi.name}: "
+                    f"Apply WHT di ER TIDAK CENTANG, supplier TIDAK punya category → NO PPh."
+                )
+        else:
+            # Setting disabled: Don't use supplier's category
+            # MATIKAN semua PPh (baik ER maupun supplier)
+            pi.tax_withholding_category = None
+            pi.imogi_pph_type = None
+            pi.apply_tds = 0
+            
+            frappe.logger().info(
+                f"[PPh ON/OFF] PI {pi.name}: "
+                f"Apply WHT di ER TIDAK CENTANG (setting disabled) → NO PPh dari supplier."
+            )
     # withholding_tax_base_amount will be set after all items are added
 
     # Collect per-item PPh details during item creation

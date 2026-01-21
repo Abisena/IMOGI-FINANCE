@@ -203,6 +203,7 @@ doc_events = {
     },
     "Purchase Invoice": {
         "validate": [
+            "imogi_finance.events.purchase_invoice.prevent_double_wht_validate",
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
             "imogi_finance.advance_payment.api.on_reference_update",

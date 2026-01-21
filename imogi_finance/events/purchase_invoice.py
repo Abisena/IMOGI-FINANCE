@@ -60,7 +60,20 @@ def sync_expense_request_status_from_pi(doc, method=None):
         pass
 
 
+def prevent_double_wht_validate(doc, method=None):
+    """Prevent double WHT on validate hook - called before other validations.
+    
+    When a Purchase Invoice is created from an Expense Request with Apply WHT,
+    we need to clear the supplier's tax withholding category early to prevent
+    Frappe from auto-populating it and causing double calculations.
+    """
+    _prevent_double_wht(doc)
+
+
 def validate_before_submit(doc, method=None):
+    # Prevent double WHT: clear supplier's tax category if Apply WHT already set from ER
+    _prevent_double_wht(doc)
+    
     # Sync OCR fields but don't save - document will be saved automatically after this hook
     sync_tax_invoice_upload(doc, "Purchase Invoice", save=False)
     validate_tax_invoice_upload_link(doc, "Purchase Invoice")
@@ -176,6 +189,83 @@ def _validate_npwp_match(doc):
             ),
             title=_("NPWP Mismatch")
         )
+
+
+def _prevent_double_wht(doc):
+    """Prevent double WHT calculation with ON/OFF logic for PPh.
+    
+    ============================================================================
+    ON/OFF LOGIC:
+    ============================================================================
+    
+    RULE 1: Jika Apply WHT di ER ✅ CENTANG
+    → AKTIFKAN ER's pph_type
+    → MATIKAN supplier's Tax Withholding Category (clear to NULL)
+    → Result: Single PPh dari ER only (tidak double)
+    
+    RULE 2: Jika Apply WHT di ER ❌ TIDAK CENTANG
+    → MATIKAN ER's pph_type
+    → AKTIFKAN supplier's Tax Withholding Category (auto-copy via accounting.py)
+    → Result: Single PPh dari supplier only (jika ada & enabled)
+    
+    TIDAK BOLEH keduanya aktif sekaligus!
+    
+    ============================================================================
+    Implementation Details:
+    ============================================================================
+    
+    Function ini dipanggil di 2 event hooks:
+    1. validate() - Early prevention (paling awal)
+    2. before_submit() - Double-check sebelum submit
+    
+    Ini memastikan supplier's category akan di-clear jika Apply WHT di-centang.
+    """
+    expense_request = doc.get("imogi_expense_request")
+    apply_tds = cint(doc.get("apply_tds", 0))  # Dari ER's Apply WHT checkbox
+    pph_type = doc.get("imogi_pph_type")        # Dari ER's Tab Tax
+    supplier_tax_category = doc.get("tax_withholding_category")  # Auto-populated oleh Frappe
+    
+    # LOGIC: Jika Apply WHT di ER CENTANG (apply_tds=1)
+    # Maka MATIKAN supplier's category untuk prevent double calculation
+    if expense_request and apply_tds and pph_type:
+        # ✅ RULE 1: ER's Apply WHT CENTANG
+        # Action: MATIKAN supplier's category
+        if supplier_tax_category:
+            frappe.logger().info(
+                f"[PPh ON/OFF] PI {doc.name}: "
+                f"Apply WHT di ER CENTANG → MATIKAN supplier's category '{supplier_tax_category}'. "
+                f"AKTIFKAN ER's pph_type '{pph_type}' instead. (prevent double)"
+            )
+            doc.tax_withholding_category = None  # ← MATIKAN SUPPLIER
+            
+            # Log this action for audit & user notification
+            frappe.msgprint(
+                _("PPh Configuration: Apply WHT di Expense Request CENTANG. "
+                  "Gunakan PPh Type '{0}' dari ER. "
+                  "Supplier's Tax Withholding Category dimatikan (prevent double calculation).").format(pph_type),
+                indicator="blue",
+                alert=False
+            )
+        else:
+            # Supplier's category already not set, just info
+            frappe.logger().info(
+                f"[PPh ON/OFF] PI {doc.name}: "
+                f"Apply WHT di ER CENTANG → GUNAKAN ER's pph_type '{pph_type}'. "
+                f"(supplier's category already not set)"
+            )
+    else:
+        # ❌ RULE 2: ER's Apply WHT TIDAK CENTANG
+        # Action: MATIKAN supplier's category di sini juga untuk safety
+        # (sebenarnya logic auto-copy sudah di accounting.py)
+        # Ini adalah double-check untuk memastikan tidak ada unexpected behavior
+        if not pph_type and supplier_tax_category:
+            # Jika pph_type tidak ada, tapi supplier_tax_category ada
+            # Berarti ini fallback ke supplier's category (yang sudah di-set di accounting.py)
+            frappe.logger().info(
+                f"[PPh ON/OFF] PI {doc.name}: "
+                f"Apply WHT di ER TIDAK CENTANG → GUNAKAN supplier's category '{supplier_tax_category}' (auto-copied). "
+                f"This is expected behavior (auto-copy enabled)."
+            )
 
 
 def on_submit(doc, method=None):
