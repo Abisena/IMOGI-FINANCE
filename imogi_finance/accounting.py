@@ -249,10 +249,29 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     has_mixed_pph = 0 < items_with_pph < total_items  # Some but not all items have Apply WHT
     
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
-    is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
+    # CRITICAL: apply_pph MUST follow ER-level checkbox ONLY, NOT item-level flags
+    # This ensures PI's apply_tds matches ER's Apply WHT intention
+    is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0))
     # PPN and PPh are always calculated in PI based on item amounts (DPP)
     apply_ppn = is_ppn_applicable
     apply_pph = is_pph_applicable
+    
+    # ============================================================================
+    # VALIDATION: Consistency between Header Apply WHT and Item-level flags
+    # ============================================================================
+    # RULE 1: If Header Apply WHT is checked, at least 1 item must have Apply WHT
+    if apply_pph and items_with_pph == 0:
+        frappe.throw(
+            _("Header 'Apply WHT' is checked but NO items have 'Apply WHT' checked. "
+              "Please check at least 1 item's 'Apply WHT' checkbox, or uncheck header 'Apply WHT'.")
+        )
+    
+    # RULE 2: If any item has Apply WHT, Header Apply WHT must be checked
+    if not apply_pph and items_with_pph > 0:
+        frappe.throw(
+            _("Found {0} item(s) with 'Apply WHT' checked but Header 'Apply WHT' is NOT checked. "
+              "Please check header 'Apply WHT' checkbox in Tab Tax, or uncheck all item-level 'Apply WHT'.").format(items_with_pph)
+        )
     
     # CRITICAL: If mixed Apply WHT (some items have, some don't)
     # Then don't use supplier's category at all (it would apply to all items)
@@ -340,19 +359,31 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
     elif has_mixed_pph:
         # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
-        # Action: SET PI's pph_type BUT with apply_tds=0 at PI level
-        # Then set apply_tds=1 ONLY for items with Apply WHT (item-level control)
-        # This ensures only items with Apply WHT get taxed, avoiding supplier override
-        pi.tax_withholding_category = request.pph_type
-        pi.imogi_pph_type = request.pph_type
-        pi.apply_tds = 0  # Disable at PI level - let items control it
-        
-        frappe.logger().warning(
-            f"[PPh MIXED MODE] PI {pi.name}: "
-            f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
-            f"Using item-level PPh control with pph_type '{request.pph_type}'. "
-            f"Only items with apply_tds=1 will be taxed."
-        )
+        # Action: ONLY ENABLE TDS if ER has Apply WHT checked
+        # Item-level apply_tds flags control which items are taxed individually
+        if apply_pph:
+            # ER has Apply WHT checked → use ER's pph_type
+            pi.tax_withholding_category = request.pph_type
+            pi.imogi_pph_type = request.pph_type
+            pi.apply_tds = 1  # ENABLE at PI level only if ER has Apply WHT
+            
+            frappe.logger().warning(
+                f"[PPh MIXED MODE] PI {pi.name}: "
+                f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items) dengan Apply WHT ER AKTIF. "
+                f"Using item-level PPh control with pph_type '{request.pph_type}'. "
+                f"Only items with apply_tds=1 will be taxed. (apply_tds=1 at PI, cleared at hook)"
+            )
+        else:
+            # ER does NOT have Apply WHT checked → no TDS at all
+            pi.tax_withholding_category = None
+            pi.imogi_pph_type = None
+            pi.apply_tds = 0
+            
+            frappe.logger().info(
+                f"[PPh MIXED MODE] PI {pi.name}: "
+                f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items) tapi Apply WHT ER TIDAK AKTIF. "
+                f"NO PPh akan diterapkan (apply_tds=0)."
+            )
         # NOTE: No user notification for mixed mode - system handles it transparently
     else:
         # ❌ ER does NOT have Apply WHT set (no items with Apply WHT)
@@ -431,8 +462,17 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pi_item["deferred_expense_account"] = expense_account
         
         pi_item_doc = pi.append("items", pi_item)
+        # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
-            if not has_item_level_pph or getattr(item, "is_pph_applicable", 0):
+            # In MIXED mode: only items with is_pph_applicable = 1 get taxed
+            # In ALL mode (not has_mixed_pph): all items get taxed (is_pph_applicable doesn't matter)
+            if has_mixed_pph:
+                # MIXED: only if this specific item has is_pph_applicable = 1
+                if getattr(item, "is_pph_applicable", 0):
+                    pi_item_doc.apply_tds = 1
+                # else: don't set (defaults to 0)
+            else:
+                # ALL mode: apply to all items
                 pi_item_doc.apply_tds = 1
 
         # Track which items have PPh for later index mapping
