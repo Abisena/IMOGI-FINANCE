@@ -242,11 +242,26 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
     has_item_level_pph = bool(pph_items)
+    
+    # Count items with Apply WHT to detect MIXED scenario
+    items_with_pph = len(pph_items)
+    total_items = len(request_items)
+    has_mixed_pph = 0 < items_with_pph < total_items  # Some but not all items have Apply WHT
+    
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
     is_pph_applicable = bool(getattr(request, "is_pph_applicable", 0) or pph_items)
     # PPN and PPh are always calculated in PI based on item amounts (DPP)
     apply_ppn = is_ppn_applicable
     apply_pph = is_pph_applicable
+    
+    # CRITICAL: If mixed Apply WHT (some items have, some don't)
+    # Then don't use supplier's category at all (it would apply to all items)
+    if has_mixed_pph:
+        frappe.logger().warning(
+            f"[PPh MIXED DETECTION] ER {request.name}: "
+            f"{items_with_pph} of {total_items} items have Apply WHT. "
+            f"This is MIXED mode - supplier's category will NOT be used."
+        )
 
     # Validate PPN template exists when PPN applicable
     if apply_ppn:
@@ -305,13 +320,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # CRITICAL: Control which PPh source to use (ER vs Supplier)
     # ============================================================================
     # RULE:
-    # - Jika Apply WHT di ER ✅ CENTANG → AKTIFKAN ER's pph_type, MATIKAN supplier's category
-    # - Jika Apply WHT di ER ❌ TIDAK CENTANG → GUNAKAN supplier's category (jika setting enabled)
-    # - TIDAK BOLEH keduanya aktif sekaligus (prevent double calculation)
+    # - Jika SEMUA items Apply WHT ✅ CENTANG → AKTIFKAN ER's pph_type
+    # - Jika ADA items dengan Apply WHT PARTIAL (mixed) → NO supplier category (items control)
+    # - Jika TIDAK ADA items Apply WHT ❌ → GUNAKAN supplier's category (jika enabled)
+    # - TIDAK BOLEH supplier category dipakai saat ada item-level Apply WHT
     # ============================================================================
     
-    if apply_pph:
-        # ✅ ER has Apply WHT set (checkbox di Tab diceklist)
+    if apply_pph and not has_mixed_pph:
+        # ✅ ER has Apply WHT set AND all items are consistent (all or none)
         # Action: AKTIFKAN ER's pph_type, MATIKAN supplier's category
         pi.tax_withholding_category = request.pph_type
         pi.imogi_pph_type = request.pph_type
@@ -319,11 +335,33 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         
         frappe.logger().info(
             f"[PPh ON/OFF] PI {pi.name}: "
-            f"Apply WHT di ER CENTANG → AKTIFKAN ER's pph_type '{request.pph_type}'. "
+            f"Apply WHT di ER CENTANG (consistent items) → AKTIFKAN ER's pph_type '{request.pph_type}'. "
             f"apply_tds=1, supplier's category akan di-clear di event hook validate."
         )
+    elif has_mixed_pph:
+        # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
+        # Action: MATIKAN SEMUA PPh di PI level, biarkan items handle individual PPh
+        # This ensures only items with Apply WHT get taxed
+        pi.tax_withholding_category = None
+        pi.imogi_pph_type = None
+        pi.apply_tds = 0
+        
+        frappe.logger().warning(
+            f"[PPh MIXED MODE] PI {pi.name}: "
+            f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
+            f"Disabling PI-level PPh - items will calculate individually. "
+            f"Supplier's category disabled to prevent applying to all items."
+        )
+        
+        frappe.msgprint(
+            _(f"⚠️ Mixed Apply WHT Detected: {items_with_pph} of {total_items} items have Apply WHT. "
+              f"PPh will be calculated per-item, not at PI level. "
+              f"Supplier's Tax Withholding Category is disabled."),
+            indicator="orange",
+            alert=True
+        )
     else:
-        # ❌ ER does NOT have Apply WHT set (checkbox di Tab tidak diceklist)
+        # ❌ ER does NOT have Apply WHT set (no items with Apply WHT)
         # Action: MATIKAN ER's pph_type, GUNAKAN supplier's category (jika ada & enabled)
         
         settings = get_settings() if callable(get_settings) else {}
@@ -340,7 +378,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 
                 frappe.logger().info(
                     f"[PPh ON/OFF] PI {pi.name}: "
-                    f"Apply WHT di ER TIDAK CENTANG (setting enabled) → AKTIFKAN supplier's category '{supplier_wht}'."
+                    f"No Apply WHT in ER items (setting enabled) → AKTIFKAN supplier's category '{supplier_wht}'."
                 )
             else:
                 # ❌ Supplier TIDAK punya Tax Withholding Category
@@ -350,7 +388,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 
                 frappe.logger().info(
                     f"[PPh ON/OFF] PI {pi.name}: "
-                    f"Apply WHT di ER TIDAK CENTANG, supplier TIDAK punya category → NO PPh."
+                    f"No Apply WHT in ER, supplier TIDAK punya category → NO PPh."
                 )
         else:
             # Setting disabled: Don't use supplier's category
@@ -361,7 +399,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             
             frappe.logger().info(
                 f"[PPh ON/OFF] PI {pi.name}: "
-                f"Apply WHT di ER TIDAK CENTANG (setting disabled) → NO PPh dari supplier."
+                f"No Apply WHT in ER items (setting disabled) → NO PPh dari supplier."
             )
     # withholding_tax_base_amount will be set after all items are added
 

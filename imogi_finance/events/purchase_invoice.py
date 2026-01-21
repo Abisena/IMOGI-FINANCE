@@ -198,17 +198,22 @@ def _prevent_double_wht(doc):
     ON/OFF LOGIC:
     ============================================================================
     
-    RULE 1: Jika Apply WHT di ER ✅ CENTANG
+    RULE 1: Jika SEMUA items Apply WHT ✅ CENTANG
     → AKTIFKAN ER's pph_type
     → MATIKAN supplier's Tax Withholding Category (clear to NULL)
     → Result: Single PPh dari ER only (tidak double)
     
-    RULE 2: Jika Apply WHT di ER ❌ TIDAK CENTANG
+    RULE 2: Jika ADA MIXED Apply WHT (some items yes, some no)
+    → MATIKAN supplier's category DAN PI-level PPh
+    → Items akan calculate PPh individually
+    → Result: Only items with Apply WHT get taxed
+    
+    RULE 3: Jika TIDAK ADA Apply WHT ❌ SAMA SEKALI
     → MATIKAN ER's pph_type
     → AKTIFKAN supplier's Tax Withholding Category (auto-copy via accounting.py)
     → Result: Single PPh dari supplier only (jika ada & enabled)
     
-    TIDAK BOLEH keduanya aktif sekaligus!
+    TIDAK BOLEH supplier's category dipakai saat ada item-level Apply WHT!
     
     ============================================================================
     Implementation Details:
@@ -230,34 +235,49 @@ def _prevent_double_wht(doc):
     pph_type = doc.get("imogi_pph_type")        # Dari ER's Tab Tax
     supplier_tax_category = doc.get("tax_withholding_category")  # Auto-populated oleh Frappe
     
-    # LOGIC: Jika Apply WHT di ER CENTANG (apply_tds=1)
-    # Maka MATIKAN supplier's category untuk prevent double calculation
-    if expense_request and apply_tds and pph_type:
-        # ✅ RULE 1: ER's Apply WHT CENTANG
-        # Action: MATIKAN supplier's category (ALWAYS, tidak peduli nilai saat ini)
-        
-        frappe.logger().info(
-            f"[PPh ON/OFF] PI {doc.name}: "
-            f"Apply WHT di ER CENTANG (apply_tds=1, pph_type='{pph_type}'). "
-            f"Clearing supplier's tax_withholding_category: '{supplier_tax_category}' → None. "
-            f"(prevent double WHT calculation)"
-        )
-        
-        # CRITICAL: Set both tax_withholding_category AND apply_tds
-        # - tax_withholding_category = None blocks supplier's category
-        # - apply_tds = 1 tells Frappe to use our custom imogi_pph_type instead
-        doc.tax_withholding_category = None  # ← MATIKAN supplier's category
-        doc.apply_tds = 1  # ← ENSURE apply_tds is set to use our ER's pph_type
-        
-        # User notification
-        frappe.msgprint(
-            _("✅ PPh Configuration: Apply WHT di Expense Request CENTANG.\n"
-              "Using PPh Type '{0}' from ER.\n"
-              "Supplier's Tax Withholding Category disabled (prevent double calculation).").format(pph_type),
-            indicator="green",
-            alert=True
-        )
+    # Check if this is a mixed Apply WHT scenario
+    # If apply_tds=0 but supplier_tax_category exists AND expense_request, it might be mixed mode
+    is_mixed_mode = (
+        expense_request and 
+        not apply_tds and 
+        not pph_type and 
+        supplier_tax_category
+    )
+    
+    # LOGIC: Ensure supplier's category doesn't interfere with item-level Apply WHT
+    if expense_request and (apply_tds or is_mixed_mode):
+        # Check: Is there supplier's category that should NOT be used?
+        if supplier_tax_category:
+            # ✅ Found supplier's category that conflicts with ER's Apply WHT
+            frappe.logger().info(
+                f"[PPh PROTECT] PI {doc.name}: "
+                f"Found supplier's category '{supplier_tax_category}' conflicting with ER Apply WHT. "
+                f"Clearing it to prevent double/unwanted calculation."
+            )
+            
+            # CRITICAL: Always clear supplier's category when ER has Apply WHT
+            doc.tax_withholding_category = None  # ← MATIKAN supplier's category
+            if apply_tds:
+                doc.apply_tds = 1  # Ensure TDS uses ER's pph_type
+            else:
+                doc.apply_tds = 0  # Keep disabled for mixed mode
+            
+            # User notification
+            frappe.msgprint(
+                _(f"✅ PPh Configuration: Item-level Apply WHT detected.\n"
+                  f"Supplier's Tax Withholding Category disabled.\n"
+                  f"Only items with Apply WHT will be taxed."),
+                indicator="green",
+                alert=True
+            )
     else:
+        # ❌ RULE 3: ER does NOT have Apply WHT
+        # Supplier's category is OK (auto-copied by accounting.py)
+        if expense_request and not apply_tds and not pph_type:
+            frappe.logger().info(
+                f"[PPh SUPPLIER MODE] PI {doc.name}: "
+                f"No Apply WHT in ER. Supplier's category allowed: '{supplier_tax_category}'"
+            )
         # ❌ RULE 2: ER's Apply WHT TIDAK CENTANG atau tidak ada ER
         # Di sini kita TIDAK clear supplier's category
         # Biarkan logic di accounting.py yang mengurus auto-copy ke supplier's category
