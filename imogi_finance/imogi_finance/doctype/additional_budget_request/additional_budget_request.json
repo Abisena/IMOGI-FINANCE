@@ -45,7 +45,6 @@
     "level_3_approved_by",
     "level_3_approved_at",
     "section_break_hidden",
-    "naming_series",
     "created_by_user",
     "submit_on"
   ],
@@ -280,15 +279,6 @@
     {
       "fieldname": "section_break_hidden",
       "fieldtype": "Section Break",
-      "hidden": 1
-    },
-    {
-      "fieldname": "naming_series",
-      "label": "Naming Series",
-      "fieldtype": "Select",
-      "options": "ABR-.YYYY.-.#####",
-      "reqd": 1,
-      "default": "ABR-.YYYY.-.#####",
       "hidden": 1
     },
     {

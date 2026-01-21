@@ -10,7 +10,6 @@
   "autoname": "ICR-.YYYY.-.#####",
   "description": "Request to allocate an Expense Request across multiple cost centers with detailed expense item breakdown.",
   "field_order": [
-    "naming_series",
     "expense_request",
     "company",
     "posting_date",
@@ -28,14 +27,6 @@
     "submit_on"
   ],
   "fields": [
-    {
-      "fieldname": "naming_series",
-      "label": "Naming Series",
-      "fieldtype": "Select",
-      "options": "ICR-.YYYY.-.#####",
-      "default": "ICR-.YYYY.-.#####",
-      "reqd": 1
-    },
     {
       "fieldname": "expense_request",
       "label": "Expense Request",
