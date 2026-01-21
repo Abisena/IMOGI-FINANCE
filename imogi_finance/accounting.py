@@ -432,8 +432,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         
         pi_item_doc = pi.append("items", pi_item)
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
+            # CRITICAL: Explicitly set apply_tds for EACH item
+            # In MIXED mode: Only items with is_pph_applicable=1 get apply_tds=1
+            # In CONSISTENT mode: All items follow the same rule
             if not has_item_level_pph or getattr(item, "is_pph_applicable", 0):
                 pi_item_doc.apply_tds = 1
+            else:
+                # EXPLICITLY set to 0 for items WITHOUT Apply WHT
+                pi_item_doc.apply_tds = 0
 
         # Track which items have PPh for later index mapping
         if apply_pph and getattr(item, "is_pph_applicable", 0):
