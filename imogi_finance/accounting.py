@@ -340,18 +340,18 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
     elif has_mixed_pph:
         # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
-        # Action: SET PI's pph_type BUT with apply_tds=0 at PI level
-        # Then set apply_tds=1 ONLY for items with Apply WHT (item-level control)
-        # This ensures only items with Apply WHT get taxed, avoiding supplier override
+        # Action: ENABLE TDS at PI level (apply_tds=1) so Frappe can calculate taxes
+        # BUT set supplier category to None to prevent it being used
+        # Item-level apply_tds flags control which items are taxed individually
         pi.tax_withholding_category = request.pph_type
         pi.imogi_pph_type = request.pph_type
-        pi.apply_tds = 0  # Disable at PI level - let items control it
+        pi.apply_tds = 1  # ENABLE at PI level (Frappe REQUIRES this to calculate TDS)
         
         frappe.logger().warning(
             f"[PPh MIXED MODE] PI {pi.name}: "
             f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
             f"Using item-level PPh control with pph_type '{request.pph_type}'. "
-            f"Only items with apply_tds=1 will be taxed."
+            f"Only items with apply_tds=1 will be taxed. (apply_tds=1 at PI, cleared at hook)"
         )
         # NOTE: No user notification for mixed mode - system handles it transparently
     else:
