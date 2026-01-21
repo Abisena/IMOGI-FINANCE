@@ -280,7 +280,16 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pi = frappe.new_doc("Purchase Invoice")
     pi.company = company
+    
+    # IMPORTANT: Set apply_tds = 0 BEFORE assigning supplier
+    # This prevents Frappe's TDS controller from auto-calculating supplier's WHT
+    # We will set it to 1 later if ER's Apply WHT is checked
+    pi.apply_tds = 0
+    
     pi.supplier = request.supplier
+    # NOTE: After setting supplier, Frappe auto-populates tax_withholding_category
+    # BUT since apply_tds=0, Frappe's TDS won't calculate it yet
+    # We will override this with ON/OFF logic below
     pi.posting_date = request.request_date
     pi.bill_date = request.supplier_invoice_date
     pi.bill_no = request.supplier_invoice_no
@@ -293,24 +302,25 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     
     # ============================================================================
     # ON/OFF LOGIC FOR PPh (Withholding Tax)
+    # CRITICAL: Control which PPh source to use (ER vs Supplier)
     # ============================================================================
     # RULE:
-    # - Jika Apply WHT di ER ✅ CENTANG → MATIKAN supplier's category (ON/OFF)
-    # - Jika Apply WHT di ER ❌ TIDAK CENTANG → GUNAKAN supplier's category (jika ada)
+    # - Jika Apply WHT di ER ✅ CENTANG → AKTIFKAN ER's pph_type, MATIKAN supplier's category
+    # - Jika Apply WHT di ER ❌ TIDAK CENTANG → GUNAKAN supplier's category (jika setting enabled)
     # - TIDAK BOLEH keduanya aktif sekaligus (prevent double calculation)
     # ============================================================================
     
     if apply_pph:
         # ✅ ER has Apply WHT set (checkbox di Tab diceklist)
-        # Action: MATIKAN supplier's category, AKTIFKAN ER's pph_type
+        # Action: AKTIFKAN ER's pph_type, MATIKAN supplier's category
         pi.tax_withholding_category = request.pph_type
         pi.imogi_pph_type = request.pph_type
-        pi.apply_tds = 1
+        pi.apply_tds = 1  # Enable TDS but use ER's pph_type, NOT supplier's
         
         frappe.logger().info(
             f"[PPh ON/OFF] PI {pi.name}: "
             f"Apply WHT di ER CENTANG → AKTIFKAN ER's pph_type '{request.pph_type}'. "
-            f"Supplier's category akan di-clear di event hook."
+            f"apply_tds=1, supplier's category akan di-clear di event hook validate."
         )
     else:
         # ❌ ER does NOT have Apply WHT set (checkbox di Tab tidak diceklist)

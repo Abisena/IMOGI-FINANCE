@@ -218,7 +218,12 @@ def _prevent_double_wht(doc):
     1. validate() - Early prevention (paling awal)
     2. before_submit() - Double-check sebelum submit
     
-    Ini memastikan supplier's category akan di-clear jika Apply WHT di-centang.
+    CRITICAL TIMING ISSUE:
+    - Frappe auto-populates supplier's tax_withholding_category AFTER supplier is assigned
+    - Even if supplier's category is NULL at validate() time, Frappe's TDS controller
+      might still calculate it independently based on supplier master
+    - SOLUTION: When ER's Apply WHT is set, explicitly set tax_withholding_category = None
+      AND set apply_tds = 0 to prevent Frappe's TDS controller from using supplier's category
     """
     expense_request = doc.get("imogi_expense_request")
     apply_tds = cint(doc.get("apply_tds", 0))  # Dari ER's Apply WHT checkbox
@@ -229,42 +234,38 @@ def _prevent_double_wht(doc):
     # Maka MATIKAN supplier's category untuk prevent double calculation
     if expense_request and apply_tds and pph_type:
         # ✅ RULE 1: ER's Apply WHT CENTANG
-        # Action: MATIKAN supplier's category
-        if supplier_tax_category:
-            frappe.logger().info(
-                f"[PPh ON/OFF] PI {doc.name}: "
-                f"Apply WHT di ER CENTANG → MATIKAN supplier's category '{supplier_tax_category}'. "
-                f"AKTIFKAN ER's pph_type '{pph_type}' instead. (prevent double)"
-            )
-            doc.tax_withholding_category = None  # ← MATIKAN SUPPLIER
-            
-            # Log this action for audit & user notification
-            frappe.msgprint(
-                _("PPh Configuration: Apply WHT di Expense Request CENTANG. "
-                  "Gunakan PPh Type '{0}' dari ER. "
-                  "Supplier's Tax Withholding Category dimatikan (prevent double calculation).").format(pph_type),
-                indicator="blue",
-                alert=False
-            )
-        else:
-            # Supplier's category already not set, just info
-            frappe.logger().info(
-                f"[PPh ON/OFF] PI {doc.name}: "
-                f"Apply WHT di ER CENTANG → GUNAKAN ER's pph_type '{pph_type}'. "
-                f"(supplier's category already not set)"
-            )
+        # Action: MATIKAN supplier's category (ALWAYS, tidak peduli nilai saat ini)
+        
+        frappe.logger().info(
+            f"[PPh ON/OFF] PI {doc.name}: "
+            f"Apply WHT di ER CENTANG (apply_tds=1, pph_type='{pph_type}'). "
+            f"Clearing supplier's tax_withholding_category: '{supplier_tax_category}' → None. "
+            f"(prevent double WHT calculation)"
+        )
+        
+        # CRITICAL: Set both tax_withholding_category AND apply_tds
+        # - tax_withholding_category = None blocks supplier's category
+        # - apply_tds = 1 tells Frappe to use our custom imogi_pph_type instead
+        doc.tax_withholding_category = None  # ← MATIKAN supplier's category
+        doc.apply_tds = 1  # ← ENSURE apply_tds is set to use our ER's pph_type
+        
+        # User notification
+        frappe.msgprint(
+            _("✅ PPh Configuration: Apply WHT di Expense Request CENTANG.\n"
+              "Using PPh Type '{0}' from ER.\n"
+              "Supplier's Tax Withholding Category disabled (prevent double calculation).").format(pph_type),
+            indicator="green",
+            alert=True
+        )
     else:
-        # ❌ RULE 2: ER's Apply WHT TIDAK CENTANG
-        # Action: MATIKAN supplier's category di sini juga untuk safety
-        # (sebenarnya logic auto-copy sudah di accounting.py)
-        # Ini adalah double-check untuk memastikan tidak ada unexpected behavior
-        if not pph_type and supplier_tax_category:
-            # Jika pph_type tidak ada, tapi supplier_tax_category ada
-            # Berarti ini fallback ke supplier's category (yang sudah di-set di accounting.py)
+        # ❌ RULE 2: ER's Apply WHT TIDAK CENTANG atau tidak ada ER
+        # Di sini kita TIDAK clear supplier's category
+        # Biarkan logic di accounting.py yang mengurus auto-copy ke supplier's category
+        if expense_request and not pph_type:
             frappe.logger().info(
                 f"[PPh ON/OFF] PI {doc.name}: "
-                f"Apply WHT di ER TIDAK CENTANG → GUNAKAN supplier's category '{supplier_tax_category}' (auto-copied). "
-                f"This is expected behavior (auto-copy enabled)."
+                f"Apply WHT di ER TIDAK CENTANG (apply_tds=0, pph_type=None). "
+                f"Supplier's category will be used if enabled in settings (auto-copy feature)."
             )
 
 
