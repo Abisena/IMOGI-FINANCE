@@ -574,6 +574,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             frappe.logger().warning(f"PPH not calculated for PI {pi.name} despite apply_pph=True")
 
     # Validate taxes were actually calculated
+    # NOTE: Skip validation for MIXED mode since taxes are calculated per-item, not at PI level
     if apply_ppn and flt(pi.taxes_and_charges_added) == 0:
         frappe.msgprint(
             _("Warning: PPN was not calculated. Please check PPN Template '{0}' configuration.").format(
@@ -583,7 +584,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             alert=True
         )
 
-    if apply_pph and flt(pi.taxes_and_charges_deducted) == 0:
+    # CRITICAL: Don't warn if MIXED Apply WHT mode (taxes calculated per-item)
+    if apply_pph and not has_mixed_pph and flt(pi.taxes_and_charges_deducted) == 0:
         frappe.msgprint(
             _("Warning: PPH was not calculated. Please check Tax Withholding Category '{0}' configuration.").format(
                 getattr(request, "pph_type", "")
