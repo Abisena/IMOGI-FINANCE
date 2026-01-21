@@ -154,23 +154,20 @@ class ExpenseRequest(Document):
         # If budget control is enabled and fails, the entire submit MUST fail
         try:
             handle_expense_request_workflow(self, "Submit", getattr(self, "workflow_state"))
-        except frappe.ValidationError as ve:
+        except frappe.ValidationError:
             # Re-raise validation errors (e.g., budget exceeded) with clear message
-            frappe.logger().error(f"on_submit: Validation error for {self.name}: {str(ve)}")
             raise
         except frappe.DoesNotExistError as de:
             # Handle missing document errors
-            frappe.logger().error(f"on_submit: Document not found for {self.name}: {str(de)}")
             frappe.throw(
                 _("Required document not found during budget control. Please check your setup. Error: {0}").format(str(de)),
                 title=_("Document Not Found")
             )
         except Exception as e:
-            # Log unexpected errors and fail the transaction with detailed message
+            # Log unexpected errors and fail the transaction
             error_msg = str(e)
-            frappe.logger().error(f"on_submit: Budget control error for {self.name}: {error_msg}")
             frappe.log_error(
-                title=f"Budget Control Critical Error for {self.name}",
+                title=f"Budget Control Error: {self.name}",
                 message=f"Failed to handle budget workflow on submit: {error_msg}\n\n{frappe.get_traceback()}"
             )
             frappe.throw(
@@ -199,9 +196,9 @@ class ExpenseRequest(Document):
                 # Re-raise validation errors
                 raise
             except Exception as e:
-                # Log unexpected errors and fail the workflow action
+                # Log and fail the workflow action
                 frappe.log_error(
-                    title=f"Budget Control Critical Error for {self.name}",
+                    title=f"Budget Control Error: {self.name}",
                     message=f"Failed to handle budget workflow on {action}: {str(e)}\n\n{frappe.get_traceback()}"
                 )
                 frappe.throw(

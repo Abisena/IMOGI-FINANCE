@@ -286,7 +286,7 @@ async function checkOcrEnabled(frm) {
     frm.doc.__ocr_enabled = Boolean(ocrEnabled);
     frm.refresh_fields();
   } catch (error) {
-    console.error('Unable to check OCR settings', error);
+    // Silent fail - OCR settings may not be configured yet
     frm.doc.__ocr_enabled = false;
   }
 }
@@ -307,7 +307,7 @@ async function setErUploadQuery(frm) {
     providerReady = Boolean(message?.provider_ready ?? true);
     providerError = message?.provider_error || null;
   } catch (error) {
-    console.error('Unable to load available Tax Invoice uploads', error);
+    // Silent fail - API may not be available yet
   }
 
   frm.taxInvoiceProviderReady = providerReady;
@@ -359,7 +359,7 @@ async function loadDeferrableAccounts(frm) {
     }, {});
     frm.deferrableAccountsLoaded = true;
   } catch (error) {
-    console.error('Failed to load deferrable accounts', error);
+    // Silent fail - feature may not be enabled
   }
 }
 
