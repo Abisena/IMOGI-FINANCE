@@ -340,18 +340,18 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
     elif has_mixed_pph:
         # ⚠️ MIXED MODE: Some items have Apply WHT, some don't
-        # Action: ENABLE TDS at PI level (apply_tds=1) so Frappe can calculate taxes
-        # BUT set supplier category to None to prevent it being used
-        # Item-level apply_tds flags control which items are taxed individually
+        # Action: SET PI's pph_type BUT with apply_tds=0 at PI level
+        # Then set apply_tds=1 ONLY for items with Apply WHT (item-level control)
+        # This ensures only items with Apply WHT get taxed, avoiding supplier override
         pi.tax_withholding_category = request.pph_type
         pi.imogi_pph_type = request.pph_type
-        pi.apply_tds = 1  # ENABLE at PI level (Frappe REQUIRES this to calculate TDS)
+        pi.apply_tds = 0  # Disable at PI level - let items control it
         
         frappe.logger().warning(
             f"[PPh MIXED MODE] PI {pi.name}: "
             f"Mixed Apply WHT detected ({items_with_pph}/{total_items} items). "
             f"Using item-level PPh control with pph_type '{request.pph_type}'. "
-            f"Only items with apply_tds=1 will be taxed. (apply_tds=1 at PI, cleared at hook)"
+            f"Only items with apply_tds=1 will be taxed."
         )
         # NOTE: No user notification for mixed mode - system handles it transparently
     else:
@@ -432,14 +432,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         
         pi_item_doc = pi.append("items", pi_item)
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
-            # CRITICAL: Explicitly set apply_tds for EACH item
-            # In MIXED mode: Only items with is_pph_applicable=1 get apply_tds=1
-            # In CONSISTENT mode: All items follow the same rule
             if not has_item_level_pph or getattr(item, "is_pph_applicable", 0):
                 pi_item_doc.apply_tds = 1
-            else:
-                # EXPLICITLY set to 0 for items WITHOUT Apply WHT
-                pi_item_doc.apply_tds = 0
 
         # Track which items have PPh for later index mapping
         if apply_pph and getattr(item, "is_pph_applicable", 0):
