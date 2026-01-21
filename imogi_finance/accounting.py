@@ -605,3 +605,5 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 ).format(pi.name),
                 alert=True,
             )
+            
+    return pi.name
