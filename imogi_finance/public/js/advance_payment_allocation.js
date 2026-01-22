@@ -21,7 +21,7 @@ const allocationUI = {
                     frm.dashboard.clear();
                 }
                 frm.dashboard.add_indicator(
-                    `${frappe.utils.format_currency(totalAllocated, frm.doc.currency || rows[0].reference_currency || rows[0].advance_currency)} allocated from advances`,
+                    `${frappe.format(totalAllocated, {fieldtype: "Currency", currency: frm.doc.currency || rows[0].reference_currency || rows[0].advance_currency})} allocated from advances`,
                     "blue",
                 );
 
@@ -30,8 +30,8 @@ const allocationUI = {
                         (row) => `
                         <tr>
                             <td>${row.parent}</td>
-                            <td>${frappe.utils.format_currency(row.allocated_amount, row.reference_currency || frm.doc.currency)}</td>
-                            <td>${row.advance_unallocated != null ? frappe.utils.format_currency(row.advance_unallocated, row.advance_currency) : "-"}</td>
+                            <td>${frappe.format(row.allocated_amount, {fieldtype: "Currency", currency: row.reference_currency || frm.doc.currency})}</td>
+                            <td>${row.advance_unallocated != null ? frappe.format(row.advance_unallocated, {fieldtype: "Currency", currency: row.advance_currency}) : "-"}</td>
                         </tr>`
                     )
                     .join("");
@@ -169,7 +169,7 @@ const allocationUI = {
                     <td><input type="checkbox" checked /></td>
                     <td>${row.name}</td>
                     <td>${frappe.datetime.str_to_user(row.posting_date)}</td>
-                    <td>${frappe.utils.format_currency(row.unallocated_amount, row.currency)}</td>
+                    <td>${frappe.format(row.unallocated_amount, {fieldtype: "Currency", currency: row.currency})}</td>
                     <td><input data-fieldname="allocated_amount" type="number" min="0" max="${row.unallocated_amount}" step="0.01" value="${row.unallocated_amount}" class="input-with-feedback form-control" /></td>
                 </tr>`
             )
