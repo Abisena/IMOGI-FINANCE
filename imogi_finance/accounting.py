@@ -532,35 +532,49 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             set_tax_withholding()
             pi.save(ignore_permissions=True)
     
-    # Set PPN template AFTER PPh is set, so both coexist
+    # IMPORTANT: Manually add PPN tax rows from template (don't use taxes_and_charges field)
+    # Using field causes rows to replace/override PPh rows
+    # Manual append ensures PPh + PPN coexist
     if apply_ppn and request.ppn_template:
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
-        )
-        # Set template field
-        pi.taxes_and_charges = request.ppn_template
-        
         try:
-            # Save with template
-            pi.save(ignore_permissions=True)
+            frappe.logger().info(
+                f"[PPN] PI {pi.name}: Adding PPN rows from template '{request.ppn_template}'"
+            )
             
-            # Reload to refresh all calculated fields
+            # Get template document
+            ppn_template_doc = frappe.get_doc("Sales Taxes and Charges Template", request.ppn_template)
+            
+            if ppn_template_doc and ppn_template_doc.taxes:
+                # Add each tax row from template
+                for tax_row in ppn_template_doc.taxes:
+                    pi.append("taxes", {
+                        "charge_type": tax_row.charge_type,
+                        "account_head": tax_row.account_head,
+                        "description": tax_row.description,
+                        "rate": tax_row.rate,
+                    })
+                
+                frappe.logger().info(
+                    f"[PPN] PI {pi.name}: Added {len(ppn_template_doc.taxes)} PPN tax row(s)"
+                )
+            
+            # Save and recalculate
+            pi.save(ignore_permissions=True)
             pi.reload()
             
-            # Explicitly trigger calculation
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
                 pi.save(ignore_permissions=True)
             
             frappe.logger().info(
-                f"[PPN] PI {pi.name}: PPN applied - Added={flt(pi.taxes_and_charges_added):,.2f}, "
-                f"Deducted={flt(pi.taxes_and_charges_deducted):,.2f}"
+                f"[PPN] PI {pi.name}: PPN calculated - Added={flt(pi.taxes_and_charges_added):,.2f}"
             )
+            
         except Exception as e:
             frappe.logger().error(
-                f"[PPN ERROR] PI {pi.name}: Failed to apply PPN template: {str(e)}"
+                f"[PPN ERROR] PI {pi.name}: {str(e)}"
             )
-            # Still save, but log error
+            # Still save document even if PPN fails
             pi.save(ignore_permissions=True)
     else:
         frappe.logger().info(
