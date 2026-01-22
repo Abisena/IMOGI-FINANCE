@@ -510,35 +510,34 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pi.insert(ignore_permissions=True)
     
-    # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
+    # CRITICAL: Set PPN template and calculate taxes AFTER document exists in DB
+    # This is because Frappe's tax calculation requires the document to be saved first
     if apply_ppn and request.ppn_template:
         frappe.logger().info(
-            f"[PPN DEBUG] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
+            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
         )
         pi.taxes_and_charges = request.ppn_template
+        pi.save(ignore_permissions=True)
         
-        frappe.logger().info(
-            f"[PPN DEBUG] PI {pi.name}: Before set_taxes - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
-        )
+        # Now reload and populate taxes from template
+        pi.reload()
         
-        pi.set_taxes()
+        # Use on_change to trigger tax population from template
+        if hasattr(pi, "on_change"):
+            pi.on_change()
         
-        frappe.logger().info(
-            f"[PPN DEBUG] PI {pi.name}: After set_taxes - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
-        )
+        # Force calculate taxes
+        if hasattr(pi, "calculate_taxes_and_totals"):
+            pi.calculate_taxes_and_totals()
         
         pi.save(ignore_permissions=True)
         
         frappe.logger().info(
-            f"[PPN DEBUG] PI {pi.name}: After save - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
-        )
-    elif apply_ppn and not request.ppn_template:
-        frappe.logger().warning(
-            f"[PPN DEBUG] PI {pi.name}: apply_ppn=True BUT ppn_template is None/empty!"
+            f"[PPN] PI {pi.name}: PPN applied - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
         )
     else:
         frappe.logger().info(
-            f"[PPN DEBUG] PI {pi.name}: apply_ppn={apply_ppn} - PPN not set"
+            f"[PPN] PI {pi.name}: apply_ppn={apply_ppn} - PPN not applicable"
         )
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
