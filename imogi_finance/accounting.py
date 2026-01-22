@@ -257,6 +257,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # Header checkbox indicates whether to use ER's category or supplier's category
     header_apply_wht = bool(getattr(request, "is_pph_applicable", 0))
     
+    # Log tax configuration for debugging
+    frappe.logger().info(
+        f"[TAX CONFIG] ER {request.name}: "
+        f"is_ppn_applicable={is_ppn_applicable}, apply_ppn={apply_ppn}, "
+        f"ppn_template={getattr(request, 'ppn_template', None)}, "
+        f"apply_pph={apply_pph}, items_with_pph={items_with_pph}"
+    )
+    
     # ============================================================================
     # VALIDATION: If items have Apply WHT, Header must provide PPh category
     # ============================================================================
@@ -504,9 +512,34 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     
     # Set PPN template AFTER insert so ERPNext can properly populate the taxes table
     if apply_ppn and request.ppn_template:
+        frappe.logger().info(
+            f"[PPN DEBUG] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
+        )
         pi.taxes_and_charges = request.ppn_template
+        
+        frappe.logger().info(
+            f"[PPN DEBUG] PI {pi.name}: Before set_taxes - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
+        )
+        
         pi.set_taxes()
+        
+        frappe.logger().info(
+            f"[PPN DEBUG] PI {pi.name}: After set_taxes - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
+        )
+        
         pi.save(ignore_permissions=True)
+        
+        frappe.logger().info(
+            f"[PPN DEBUG] PI {pi.name}: After save - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
+        )
+    elif apply_ppn and not request.ppn_template:
+        frappe.logger().warning(
+            f"[PPN DEBUG] PI {pi.name}: apply_ppn=True BUT ppn_template is None/empty!"
+        )
+    else:
+        frappe.logger().info(
+            f"[PPN DEBUG] PI {pi.name}: apply_ppn={apply_ppn} - PPN not set"
+        )
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
