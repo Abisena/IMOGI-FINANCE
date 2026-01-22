@@ -291,11 +291,26 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             )
         
         # Validate template exists in system
+        # Try exact match first, then try with stripped whitespace
         template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template)
+        
         if not template_exists:
-            frappe.throw(
-                _("PPN Template '{0}' does not exist in system").format(ppn_template)
-            )
+            # Try with stripped whitespace in case there's spacing issue
+            ppn_template_stripped = ppn_template.strip()
+            template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template_stripped)
+            
+            if template_exists:
+                # Update the value to use stripped version
+                ppn_template = ppn_template_stripped
+            else:
+                # Still doesn't exist - throw error with helpful message
+                frappe.logger().error(
+                    f"[PPN ERROR] ER {request.name}: Template '{ppn_template}' not found. "
+                    f"Available templates: {frappe.db.get_list('Sales Taxes and Charges Template', pluck='name')}"
+                )
+                frappe.throw(
+                    _("PPN Template '{0}' does not exist in system. Please select a valid template from the dropdown.").format(ppn_template)
+                )
 
     # Validate PPh category exists in system when PPh applicable
     if apply_pph:
