@@ -525,42 +525,47 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pi.insert(ignore_permissions=True)
     
-    # CRITICAL: Set PPN template and calculate taxes AFTER document exists in DB
-    # This is because Frappe's tax calculation requires the document to be saved first
-    if apply_ppn and request.ppn_template:
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
-        )
-        pi.taxes_and_charges = request.ppn_template
-        pi.save(ignore_permissions=True)
-        
-        # Now reload and populate taxes from template
-        pi.reload()
-        
-        # Use on_change to trigger tax population from template
-        if hasattr(pi, "on_change"):
-            pi.on_change()
-        
-        # Force calculate taxes
-        if hasattr(pi, "calculate_taxes_and_totals"):
-            pi.calculate_taxes_and_totals()
-        
-        pi.save(ignore_permissions=True)
-        
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: PPN applied - taxes_and_charges_added={flt(pi.taxes_and_charges_added):,.2f}"
-        )
-    else:
-        frappe.logger().info(
-            f"[PPN] PI {pi.name}: apply_ppn={apply_ppn} - PPN not applicable"
-        )
-
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
         set_tax_withholding = getattr(pi, "set_tax_withholding", None)
         if callable(set_tax_withholding):
             set_tax_withholding()
             pi.save(ignore_permissions=True)
+    
+    # Set PPN template AFTER PPh is set, so both coexist
+    if apply_ppn and request.ppn_template:
+        frappe.logger().info(
+            f"[PPN] PI {pi.name}: Setting PPN template '{request.ppn_template}'"
+        )
+        # Set template field
+        pi.taxes_and_charges = request.ppn_template
+        
+        try:
+            # Save with template
+            pi.save(ignore_permissions=True)
+            
+            # Reload to refresh all calculated fields
+            pi.reload()
+            
+            # Explicitly trigger calculation
+            if hasattr(pi, "calculate_taxes_and_totals"):
+                pi.calculate_taxes_and_totals()
+                pi.save(ignore_permissions=True)
+            
+            frappe.logger().info(
+                f"[PPN] PI {pi.name}: PPN applied - Added={flt(pi.taxes_and_charges_added):,.2f}, "
+                f"Deducted={flt(pi.taxes_and_charges_deducted):,.2f}"
+            )
+        except Exception as e:
+            frappe.logger().error(
+                f"[PPN ERROR] PI {pi.name}: Failed to apply PPN template: {str(e)}"
+            )
+            # Still save, but log error
+            pi.save(ignore_permissions=True)
+    else:
+        frappe.logger().info(
+            f"[PPN] PI {pi.name}: apply_ppn={apply_ppn} - PPN not applicable"
+        )
     
     # Recalculate taxes and totals after insert to ensure PPN and PPh are properly calculated
     # This is critical because:
