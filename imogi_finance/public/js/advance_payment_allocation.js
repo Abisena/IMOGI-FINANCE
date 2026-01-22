@@ -294,6 +294,11 @@ frappe.ui.form.on("Purchase Invoice", {
         // const partyInfo = buildPartyInfo(frm);
         // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
+        
+        // Add payment reconciliation helper for cancelled documents
+        if (window.imogi_finance && imogi_finance.payment_reconciliation) {
+            imogi_finance.payment_reconciliation.add_unreconcile_button(frm);
+        }
     },
     after_save(frm) {
         allocationUI.renderAllocations(frm);
@@ -305,6 +310,11 @@ frappe.ui.form.on("Expense Claim", {
         // const partyInfo = buildPartyInfo(frm);
         // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
+        
+        // Add payment reconciliation helper for cancelled documents
+        if (window.imogi_finance && imogi_finance.payment_reconciliation) {
+            imogi_finance.payment_reconciliation.add_unreconcile_button(frm);
+        }
     },
     after_save(frm) {
         allocationUI.renderAllocations(frm);
@@ -316,6 +326,11 @@ frappe.ui.form.on("Payroll Entry", {
         // const partyInfo = buildPartyInfo(frm);
         // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
+        
+        // Add payment reconciliation helper for cancelled documents
+        if (window.imogi_finance && imogi_finance.payment_reconciliation) {
+            imogi_finance.payment_reconciliation.add_unreconcile_button(frm);
+        }
     },
     after_save(frm) {
         allocationUI.renderAllocations(frm);

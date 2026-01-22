@@ -54,10 +54,20 @@ doctype_js = {
     "Purchase Invoice": [
         "public/js/purchase_invoice_tax_invoice.js",
         "public/js/advance_payment_allocation.js",
+        "public/js/payment_reconciliation_helper.js",
     ],
-    "Expense Claim": "public/js/advance_payment_allocation.js",
-    "Payroll Entry": "public/js/advance_payment_allocation.js",
-    "Sales Invoice": "public/js/sales_invoice_tax_invoice.js",
+    "Expense Claim": [
+        "public/js/advance_payment_allocation.js",
+        "public/js/payment_reconciliation_helper.js",
+    ],
+    "Payroll Entry": [
+        "public/js/advance_payment_allocation.js",
+        "public/js/payment_reconciliation_helper.js",
+    ],
+    "Sales Invoice": [
+        "public/js/sales_invoice_tax_invoice.js",
+        "public/js/payment_reconciliation_helper.js",
+    ],
 }
 doctype_list_js = {
     "BCA Bank Statement Import": "imogi_finance/doctype/bca_bank_statement_import/bca_bank_statement_import_list.js",
@@ -217,7 +227,10 @@ doc_events = {
             "imogi_finance.advance_payment.api.on_reference_update",
             "imogi_finance.events.purchase_invoice.sync_expense_request_status_from_pi",
         ],
-        "before_cancel": "imogi_finance.events.purchase_invoice.before_cancel",
+        "before_cancel": [
+            "imogi_finance.events.purchase_invoice.before_cancel",
+            "imogi_finance.advance_payment.api.on_reference_before_cancel",
+        ],
         "on_cancel": [
             "imogi_finance.events.purchase_invoice.on_cancel",
             "imogi_finance.advance_payment.api.on_reference_cancel",
@@ -234,12 +247,16 @@ doc_events = {
         "on_update_after_submit": [
             "imogi_finance.advance_payment.api.on_reference_update",
         ],
+        "before_cancel": [
+            "imogi_finance.advance_payment.api.on_reference_before_cancel",
+        ],
         "on_cancel": [
             "imogi_finance.advance_payment.api.on_reference_cancel",
         ],
     },
     "Expense Claim": {
         "validate": "imogi_finance.advance_payment.api.on_reference_update",
+        "before_cancel": "imogi_finance.advance_payment.api.on_reference_before_cancel",
         "on_cancel": "imogi_finance.advance_payment.api.on_reference_cancel",
     },
     "Expense Request": {
@@ -384,11 +401,13 @@ doc_events = {
     "Expense Claim": {
         "on_submit": "imogi_finance.advance_payment.api.on_reference_update",
         "on_update_after_submit": "imogi_finance.advance_payment.api.on_reference_update",
+        "before_cancel": "imogi_finance.advance_payment.api.on_reference_before_cancel",
         "on_cancel": "imogi_finance.advance_payment.api.on_reference_cancel",
     },
     "Payroll Entry": {
         "on_submit": "imogi_finance.advance_payment.api.on_reference_update",
         "on_update_after_submit": "imogi_finance.advance_payment.api.on_reference_update",
+        "before_cancel": "imogi_finance.advance_payment.api.on_reference_before_cancel",
         "on_cancel": "imogi_finance.advance_payment.api.on_reference_cancel",
     },
 }

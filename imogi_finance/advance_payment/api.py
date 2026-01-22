@@ -266,10 +266,21 @@ def refresh_linked_advances(reference_doctype: str, reference_name: str) -> None
         advance_doc.save(ignore_permissions=True)
 
 
+def on_reference_before_cancel(doc, method=None):
+    """Auto-unlink payment reconciliation BEFORE document cancellation.
+    
+    This prevents cancellation from being blocked due to linked payments.
+    Must run BEFORE cancel to avoid "Cannot cancel - linked to payments" errors.
+    """
+    frappe.logger().info(f"Auto-unlinking payments before cancel {doc.doctype} {doc.name}")
+    auto_unlink_reconciled_payments(doc)
+
+
 def on_reference_cancel(doc, method=None):
     """Release all advance allocations when reference document is cancelled.
     
     This ensures that when a PI/Invoice is cancelled, the advance becomes available again.
+    Payments should already be unlinked by before_cancel hook.
     """
     frappe.logger().info(f"Releasing allocations for cancelled {doc.doctype} {doc.name}")
     release_allocations(doc.doctype, doc.name)
@@ -587,4 +598,195 @@ def fix_over_allocation(invoice_doctype: str, invoice_name: str):
         "new_total": invoice_total,
         "reduction_ratio": reduction_ratio,
     }
+
+
+def auto_unlink_reconciled_payments(doc):
+    """Automatically unlink all payment reconciliation entries before document cancellation.
+    
+    This prevents "Cannot cancel - linked to payments" errors.
+    Runs in before_cancel hook to ensure smooth cancellation process.
+    """
+    # Get all linked Payment Ledger Entries
+    reconciled_entries = frappe.db.sql(
+        """
+        SELECT DISTINCT
+            ple.voucher_type,
+            ple.voucher_no
+        FROM `tabPayment Ledger Entry` ple
+        WHERE ple.against_voucher_type = %s
+        AND ple.against_voucher_no = %s
+        AND ple.delinked = 0
+        """,
+        (doc.doctype, doc.name),
+        as_dict=True
+    )
+    
+    if not reconciled_entries:
+        frappe.logger().info(f"No reconciled payments found for {doc.doctype} {doc.name}")
+        return
+    
+    success_count = 0
+    failed_payments = []
+    
+    for entry in reconciled_entries:
+        result = unlink_single_payment(
+            entry.voucher_type,
+            entry.voucher_no,
+            doc.doctype,
+            doc.name
+        )
+        
+        if result.get("success"):
+            success_count += 1
+            frappe.logger().info(
+                f"Auto-unlinked {entry.voucher_type} {entry.voucher_no} from {doc.doctype} {doc.name}"
+            )
+        else:
+            failed_payments.append(f"{entry.voucher_no}: {result.get('error', 'Unknown error')}")
+            frappe.logger().error(
+                f"Failed to auto-unlink {entry.voucher_type} {entry.voucher_no}: {result.get('error')}"
+            )
+    
+    # Show summary message
+    if success_count > 0:
+        frappe.msgprint(
+            _(
+                "<b>Payment Reconciliation Auto-Unlinked:</b><br>"
+                "Successfully unlinked {0} payment(s) before cancellation.<br>"
+                "Advance allocations will be cleared after cancel completes."
+            ).format(success_count),
+            indicator="blue",
+            alert=True,
+            title=_("Auto-Unlink Successful")
+        )
+    
+    # If some failed, show warning but allow cancellation to proceed
+    # (Payment Entry might already be cancelled, which is OK)
+    if failed_payments:
+        frappe.msgprint(
+            _(
+                "<b>Note:</b> Some payments could not be auto-unlinked:<br>{0}<br>"
+                "This is usually OK if those payments are already cancelled. "
+                "Cancellation will proceed."
+            ).format("<br>".join(failed_payments)),
+            indicator="orange",
+            alert=True
+        )
+
+
+@frappe.whitelist()
+def get_reconciled_payments_for_cancelled_doc(doctype: str, docname: str):
+    """Get list of reconciled payments for a cancelled document.
+    
+    Used to show user which payments need to be unlinked.
+    """
+    if not frappe.db.exists(doctype, docname):
+        frappe.throw(_("{0} {1} not found.").format(doctype, docname))
+    
+    reconciled = frappe.db.sql(
+        """
+        SELECT 
+            ple.voucher_type,
+            ple.voucher_no,
+            ple.account,
+            ple.amount,
+            ple.account_currency as currency,
+            ple.posting_date,
+            ple.creation
+        FROM `tabPayment Ledger Entry` ple
+        WHERE ple.against_voucher_type = %s
+        AND ple.against_voucher_no = %s
+        AND ple.delinked = 0
+        ORDER BY ple.posting_date DESC, ple.creation DESC
+        """,
+        (doctype, docname),
+        as_dict=True
+    )
+    
+    return reconciled
+
+
+@frappe.whitelist()
+def unlink_single_payment(voucher_type: str, voucher_no: str, reference_doctype: str, reference_name: str):
+    """Attempt to unlink a single payment from a cancelled reference document.
+    
+    This uses ERPNext's standard unlink mechanism.
+    """
+    try:
+        # Import ERPNext's unlink function
+        from erpnext.accounts.doctype.payment_entry.payment_entry import unlink_ref_doc_from_payment_entries
+        
+        # Attempt to unlink
+        unlink_ref_doc_from_payment_entries(voucher_type, voucher_no, reference_doctype, reference_name)
+        
+        frappe.logger().info(
+            f"Successfully unlinked {voucher_type} {voucher_no} from {reference_doctype} {reference_name}"
+        )
+        
+        return {
+            "success": True,
+            "message": f"Unlinked {voucher_no} successfully"
+        }
+    
+    except ImportError:
+        # ERPNext function not available, try manual method
+        return unlink_payment_manual(voucher_type, voucher_no, reference_doctype, reference_name)
+    
+    except Exception as e:
+        frappe.logger().error(
+            f"Failed to unlink {voucher_type} {voucher_no} from {reference_doctype} {reference_name}: {str(e)}"
+        )
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def unlink_payment_manual(voucher_type: str, voucher_no: str, reference_doctype: str, reference_name: str):
+    """Manual unlinking by removing reference from Payment Entry.
+    
+    Fallback method if ERPNext standard function not available.
+    """
+    try:
+        if voucher_type != "Payment Entry":
+            return {
+                "success": False,
+                "error": f"Manual unlink only supports Payment Entry, not {voucher_type}"
+            }
+        
+        pe = frappe.get_doc(voucher_type, voucher_no)
+        
+        # Remove reference from references table
+        original_count = len(pe.references or [])
+        pe.references = [
+            ref for ref in (pe.references or [])
+            if not (ref.reference_doctype == reference_doctype and ref.reference_name == reference_name)
+        ]
+        
+        if len(pe.references) == original_count:
+            return {
+                "success": False,
+                "error": "Reference not found in Payment Entry"
+            }
+        
+        # Recalculate amounts
+        pe.flags.ignore_validate_update_after_submit = True
+        pe.set_amounts()
+        pe.save(ignore_permissions=True)
+        
+        frappe.logger().info(
+            f"Manually unlinked {voucher_type} {voucher_no} from {reference_doctype} {reference_name}"
+        )
+        
+        return {
+            "success": True,
+            "message": f"Manually unlinked {voucher_no} successfully"
+        }
+    
+    except Exception as e:
+        frappe.logger().error(f"Manual unlink failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
