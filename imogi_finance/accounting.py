@@ -417,9 +417,16 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         pi_item_doc = pi.append("items", pi_item)
         # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
-            # CRITICAL: Only items with is_pph_applicable = 1 get taxed
+            # CRITICAL: Explicitly set apply_tds for EACH item
+            # Only items with is_pph_applicable = 1 get apply_tds = 1 (taxed)
+            # Items without Apply WHT must get apply_tds = 0 (NOT taxed)
             if getattr(item, "is_pph_applicable", 0):
                 pi_item_doc.apply_tds = 1
+            else:
+                # EXPLICITLY set to 0 for items WITHOUT Apply WHT
+                # Without this, Frappe defaults to PI-level apply_tds (which is 1)
+                # and ALL items would be taxed (WRONG!)
+                pi_item_doc.apply_tds = 0
 
         # Track which items have PPh for later index mapping
         if apply_pph and getattr(item, "is_pph_applicable", 0):
