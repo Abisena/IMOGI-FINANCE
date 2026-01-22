@@ -20,9 +20,30 @@ const allocationUI = {
                 if (frm.dashboard.clear) {
                     frm.dashboard.clear();
                 }
+                
+                // Get outstanding amount to show allocation status
+                const outstanding = allocationUI.getOutstandingAmount(frm);
+                const remaining = outstanding ? flt(outstanding) - flt(totalAllocated) : null;
+                
+                // Determine indicator color based on allocation status
+                let indicator = "blue";
+                let statusMsg = "";
+                
+                if (remaining !== null) {
+                    if (remaining <= 0.01) {
+                        indicator = "green";
+                        statusMsg = __(" (Fully Allocated)");
+                    } else if (totalAllocated > 0) {
+                        indicator = "orange";
+                        statusMsg = __(" (Partial: {0} remaining)", [
+                            frappe.format(remaining, {fieldtype: "Currency", currency: frm.doc.currency})
+                        ]);
+                    }
+                }
+                
                 frm.dashboard.add_indicator(
-                    `${frappe.format(totalAllocated, {fieldtype: "Currency", currency: frm.doc.currency || rows[0].reference_currency || rows[0].advance_currency})} allocated from advances`,
-                    "blue",
+                    `${frappe.format(totalAllocated, {fieldtype: "Currency", currency: frm.doc.currency || rows[0].reference_currency || rows[0].advance_currency})} allocated from advances${statusMsg}`,
+                    indicator,
                 );
 
                 const tableRows = rows
@@ -75,25 +96,26 @@ const allocationUI = {
         return (rows || []).reduce((acc, row) => acc + flt(row.allocated_amount), 0);
     },
 
-    addButton(frm, partyInfo) {
-        if (!partyInfo.party || frm.doc.docstatus === 2) {
-            return;
-        }
-
-        const label = __("Get Advances");
-        const group = __("Payments");
-
-        frm.add_custom_button(
-            label,
-            () => {
-                if (frm.is_dirty()) {
-                    frappe.throw(__("Please save the document before allocating advances."));
-                }
-                allocationUI.openDialog(frm, partyInfo);
-            },
-            group,
-        );
-    },
+    // DISABLED: Button "Get Advances" removed - all allocations now done from Advance Payment Entry
+    // addButton(frm, partyInfo) {
+    //     if (!partyInfo.party || frm.doc.docstatus !== 0) {
+    //         return;
+    //     }
+    //
+    //     const label = __("Get Advances");
+    //     const group = __("Payments");
+    //
+    //     frm.add_custom_button(
+    //         label,
+    //         () => {
+    //             if (frm.is_dirty()) {
+    //                 frappe.throw(__("Please save the document before allocating advances."));
+    //             }
+    //             allocationUI.openDialog(frm, partyInfo);
+    //         },
+    //         group,
+    //     );
+    // },
 
     async openDialog(frm, partyInfo) {
         const [advances, existingAllocations] = await Promise.all([
@@ -269,8 +291,8 @@ const buildPartyInfo = (frm) => {
 
 frappe.ui.form.on("Purchase Invoice", {
     refresh(frm) {
-        const partyInfo = buildPartyInfo(frm);
-        allocationUI.addButton(frm, partyInfo);
+        // const partyInfo = buildPartyInfo(frm);
+        // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
     },
     after_save(frm) {
@@ -280,8 +302,8 @@ frappe.ui.form.on("Purchase Invoice", {
 
 frappe.ui.form.on("Expense Claim", {
     refresh(frm) {
-        const partyInfo = buildPartyInfo(frm);
-        allocationUI.addButton(frm, partyInfo);
+        // const partyInfo = buildPartyInfo(frm);
+        // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
     },
     after_save(frm) {
@@ -291,8 +313,8 @@ frappe.ui.form.on("Expense Claim", {
 
 frappe.ui.form.on("Payroll Entry", {
     refresh(frm) {
-        const partyInfo = buildPartyInfo(frm);
-        allocationUI.addButton(frm, partyInfo);
+        // const partyInfo = buildPartyInfo(frm);
+        // allocationUI.addButton(frm, partyInfo); // DISABLED: Allocate from Advance Payment Entry instead
         allocationUI.renderAllocations(frm);
     },
     after_save(frm) {

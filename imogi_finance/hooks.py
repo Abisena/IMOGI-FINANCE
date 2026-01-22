@@ -229,7 +229,18 @@ doc_events = {
         "validate": [
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
-        ]
+            "imogi_finance.advance_payment.api.on_reference_update",
+        ],
+        "on_update_after_submit": [
+            "imogi_finance.advance_payment.api.on_reference_update",
+        ],
+        "on_cancel": [
+            "imogi_finance.advance_payment.api.on_reference_cancel",
+        ],
+    },
+    "Expense Claim": {
+        "validate": "imogi_finance.advance_payment.api.on_reference_update",
+        "on_cancel": "imogi_finance.advance_payment.api.on_reference_cancel",
     },
     "Expense Request": {
         "validate": [

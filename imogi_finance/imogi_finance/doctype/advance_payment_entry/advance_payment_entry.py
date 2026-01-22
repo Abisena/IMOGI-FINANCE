@@ -17,6 +17,7 @@ class AdvancePaymentEntry(Document):
         self._set_defaults()
         self._set_amounts()
         self._validate_allocations()
+        self._validate_allocation_rules()
         self._update_status()
 
     def on_submit(self):
@@ -147,6 +148,48 @@ class AdvancePaymentEntry(Document):
             if flt(row.allocated_amount) <= 0:
                 frappe.throw(_("Allocated Amount must be greater than zero in row {0}.").format(row.idx))
             if not row.invoice_doctype or not row.invoice_name:
+                frappe.throw(_("Invoice reference is required in row {0}.").format(row.idx))
+    
+    def _validate_allocation_rules(self) -> None:
+        """Validate allocation business rules (draft invoices, cross-company, cancelled docs)."""
+        for row in self.references:
+            if not row.invoice_doctype or not row.invoice_name:
+                continue
+            
+            # Check if invoice exists
+            if not frappe.db.exists(row.invoice_doctype, row.invoice_name):
+                frappe.throw(
+                    _("Reference {0} {1} in row {2} does not exist.").format(
+                        row.invoice_doctype, row.invoice_name, row.idx
+                    )
+                )
+            
+            # Validate invoice status (draft warning, cancelled error)
+            invoice_docstatus = frappe.db.get_value(row.invoice_doctype, row.invoice_name, "docstatus")
+            if invoice_docstatus == 0:
+                frappe.msgprint(
+                    _("Warning: {0} {1} in row {2} is still in draft. Allocation will be tracked but reconciliation should be done after submission.").format(
+                        row.invoice_doctype, row.invoice_name, row.idx
+                    ),
+                    indicator="orange",
+                    alert=True
+                )
+            elif invoice_docstatus == 2:
+                frappe.throw(
+                    _("Cannot allocate to cancelled {0} {1} in row {2}.").format(
+                        row.invoice_doctype, row.invoice_name, row.idx
+                    )
+                )
+            
+            # Validate cross-company allocation
+            if self.company:
+                invoice_company = frappe.db.get_value(row.invoice_doctype, row.invoice_name, "company")
+                if invoice_company and invoice_company != self.company:
+                    frappe.throw(
+                        _("Cannot allocate advance from {0} to invoice from {1} in row {2}. Cross-company allocation is not allowed.").format(
+                            self.company, invoice_company, row.idx
+                        )
+                    )
                 frappe.throw(_("Invoice Reference and Doctype are mandatory in row {0}.").format(row.idx))
 
     def _update_status(self) -> None:

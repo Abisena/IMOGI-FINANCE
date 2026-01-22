@@ -267,10 +267,19 @@ def refresh_linked_advances(reference_doctype: str, reference_name: str) -> None
 
 
 def on_reference_cancel(doc, method=None):
+    """Release all advance allocations when reference document is cancelled.
+    
+    This ensures that when a PI/Invoice is cancelled, the advance becomes available again.
+    """
+    frappe.logger().info(f"Releasing allocations for cancelled {doc.doctype} {doc.name}")
     release_allocations(doc.doctype, doc.name)
 
 
 def on_reference_update(doc, method=None):
+    """Refresh linked advance entries when reference document is updated.
+    
+    This keeps APE in sync with changes to the reference document.
+    """
     refresh_linked_advances(doc.doctype, doc.name)
 
 
@@ -418,3 +427,164 @@ def get_reference_allocations(reference_doctype: str, reference_name: str) -> li
 
 def get_reference_currency(document) -> str | None:
     return getattr(document, "currency", None) or getattr(document, "company_currency", None)
+
+
+@frappe.whitelist()
+def get_payment_reconciliation_data(
+    party_type: str,
+    party: str,
+    payment_entry: str | None = None,
+    invoice_names: list | str | None = None,
+):
+    """Get data needed to pre-fill Payment Reconciliation tool.
+    
+    This helps user quickly reconcile advances with allocated invoices.
+    """
+    if isinstance(invoice_names, str):
+        invoice_names = frappe.parse_json(invoice_names)
+    
+    # Get default receivable/payable account for the party
+    account = None
+    if party_type == "Supplier":
+        account = frappe.get_cached_value("Company", frappe.defaults.get_user_default("Company"), "default_payable_account")
+    elif party_type == "Customer":
+        account = frappe.get_cached_value("Company", frappe.defaults.get_user_default("Company"), "default_receivable_account")
+    
+    return {
+        "party_type": party_type,
+        "party": party,
+        "account": account,
+        "payment_entry": payment_entry,
+        "invoice_names": invoice_names or [],
+    }
+
+
+@frappe.whitelist()
+def check_allocation_coverage(references: list | str):
+    """Check if allocated invoices are fully covered by advances.
+    
+    Returns list of invoices with partial allocations and over-allocations.
+    """
+    if isinstance(references, str):
+        references = frappe.parse_json(references)
+    
+    partial_allocations = []
+    over_allocations = []
+    
+    for ref in references:
+        invoice_doctype = ref.get("invoice_doctype")
+        invoice_name = ref.get("invoice_name")
+        allocated_amount = flt(ref.get("allocated_amount"))
+        
+        if not invoice_doctype or not invoice_name:
+            continue
+        
+        # Get total allocated from all advance payment entries
+        total_allocated = get_existing_allocated_amount(invoice_doctype, invoice_name)
+        
+        # Get invoice outstanding/total
+        try:
+            invoice = frappe.get_doc(invoice_doctype, invoice_name)
+            invoice_total = get_reference_outstanding_amount(invoice)
+            
+            if invoice_total is None:
+                invoice_total = flt(getattr(invoice, "grand_total", 0))
+            
+            # Check for over-allocation (e.g., after credit note)
+            if total_allocated > invoice_total + 0.01:
+                over_allocations.append({
+                    "invoice_doctype": invoice_doctype,
+                    "invoice_name": invoice_name,
+                    "allocated": total_allocated,
+                    "total": invoice_total,
+                    "excess": total_allocated - invoice_total,
+                })
+            # Check for partial allocation
+            elif invoice_total > 0 and total_allocated < invoice_total - 0.01:
+                partial_allocations.append({
+                    "invoice_doctype": invoice_doctype,
+                    "invoice_name": invoice_name,
+                    "allocated": total_allocated,
+                    "total": invoice_total,
+                    "remaining": invoice_total - total_allocated,
+                })
+        except Exception:
+            # Skip if invoice not found or error
+            continue
+    
+    return {
+        "partial_allocations": partial_allocations,
+        "over_allocations": over_allocations,
+        "has_partial": len(partial_allocations) > 0,
+        "has_over": len(over_allocations) > 0,
+    }
+
+
+@frappe.whitelist()
+def fix_over_allocation(invoice_doctype: str, invoice_name: str):
+    """Fix over-allocation by proportionally reducing allocations.
+    
+    This can happen when credit note is issued after advance allocation.
+    """
+    # Get invoice current total
+    invoice = frappe.get_doc(invoice_doctype, invoice_name)
+    invoice_total = get_reference_outstanding_amount(invoice)
+    
+    if invoice_total is None:
+        invoice_total = flt(getattr(invoice, "grand_total", 0))
+    
+    # Get all allocations for this invoice
+    allocations = frappe.db.sql(
+        """
+        SELECT apr.parent, apr.allocated_amount, apr.name as ref_name
+        FROM `tabAdvance Payment Reference` apr
+        JOIN `tabAdvance Payment Entry` ape ON apr.parent = ape.name
+        WHERE apr.invoice_doctype = %s 
+        AND apr.invoice_name = %s 
+        AND ape.docstatus = 1
+        ORDER BY apr.creation
+        """,
+        (invoice_doctype, invoice_name),
+        as_dict=True,
+    )
+    
+    if not allocations:
+        return {"success": False, "message": "No allocations found"}
+    
+    total_allocated = sum(flt(a.allocated_amount) for a in allocations)
+    
+    if total_allocated <= invoice_total + 0.01:
+        return {"success": False, "message": "No over-allocation detected"}
+    
+    # Calculate proportional reduction
+    reduction_ratio = invoice_total / total_allocated
+    
+    adjusted_count = 0
+    for alloc in allocations:
+        ape = frappe.get_doc("Advance Payment Entry", alloc.parent)
+        ape.flags.ignore_validate_update_after_submit = True
+        
+        for row in ape.references:
+            if row.invoice_doctype == invoice_doctype and row.invoice_name == invoice_name:
+                old_amount = flt(row.allocated_amount)
+                new_amount = flt(old_amount * reduction_ratio, 2)
+                row.allocated_amount = new_amount
+                adjusted_count += 1
+                
+                frappe.logger().info(
+                    f"Adjusted allocation in {ape.name}: {old_amount} → {new_amount}"
+                )
+        
+        ape._set_amounts()
+        ape._validate_allocations()
+        ape._update_status()
+        ape.save(ignore_permissions=True)
+    
+    return {
+        "success": True,
+        "message": f"Adjusted {adjusted_count} allocations proportionally",
+        "old_total": total_allocated,
+        "new_total": invoice_total,
+        "reduction_ratio": reduction_ratio,
+    }
+

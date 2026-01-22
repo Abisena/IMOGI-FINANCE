@@ -58,6 +58,10 @@ def on_payment_entry_cancel(doc, method=None):
         advance.cancel()
     else:
         advance.delete()
+    
+    # Check if this PE is being amended (has amended_to)
+    if doc.amended_to:
+        frappe.logger().info(f"Payment Entry {doc.name} is being amended to {doc.amended_to}. New APE will be created on submit.")
 
 
 def upsert_advance_payment(doc) -> AdvancePaymentEntry:
