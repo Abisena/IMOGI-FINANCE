@@ -86,6 +86,23 @@ class AdvancePaymentEntry(Document):
         self._set_amounts()
         self._validate_allocations()
         self._update_status()
+        
+        # NATIVE BRIDGE: Sync to ERPNext native advances table
+        if self.payment_entry and invoice_doctype in ["Purchase Invoice", "Sales Invoice"]:
+            from imogi_finance.advance_payment.native_bridge import sync_allocation_to_native_advances
+            
+            result = sync_allocation_to_native_advances(
+                payment_entry=self.payment_entry,
+                invoice_doctype=invoice_doctype,
+                invoice_name=invoice_name,
+                allocated_amount=allocated_amount,
+                reference_exchange_rate=reference_exchange_rate or self.exchange_rate
+            )
+            
+            if not result.get("success"):
+                frappe.logger().warning(
+                    f"Native bridge sync failed for {invoice_doctype} {invoice_name}: {result.get('message')}"
+                )
 
     def clear_reference_allocations(self, invoice_doctype: str, invoice_name: str) -> None:
         self.set(
@@ -98,6 +115,21 @@ class AdvancePaymentEntry(Document):
         )
         self._set_amounts()
         self._update_status()
+        
+        # NATIVE BRIDGE: Remove from ERPNext native advances table
+        if self.payment_entry and invoice_doctype in ["Purchase Invoice", "Sales Invoice"]:
+            from imogi_finance.advance_payment.native_bridge import remove_allocation_from_native_advances
+            
+            result = remove_allocation_from_native_advances(
+                payment_entry=self.payment_entry,
+                invoice_doctype=invoice_doctype,
+                invoice_name=invoice_name
+            )
+            
+            if not result.get("success"):
+                frappe.logger().warning(
+                    f"Native bridge removal failed for {invoice_doctype} {invoice_name}: {result.get('message')}"
+                )
 
     def _set_defaults(self) -> None:
         if not self.status:
