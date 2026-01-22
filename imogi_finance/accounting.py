@@ -541,8 +541,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 f"[PPN] PI {pi.name}: Adding PPN rows from template '{request.ppn_template}'"
             )
             
-            # Get template document
-            ppn_template_doc = frappe.get_doc("Sales Taxes and Charges Template", request.ppn_template)
+            # Get template document - MUST use Purchase template for PI (not Sales)
+            ppn_template_doc = frappe.get_doc("Purchase Taxes and Charges Template", request.ppn_template)
             
             if ppn_template_doc and ppn_template_doc.taxes:
                 # Add each tax row from template
