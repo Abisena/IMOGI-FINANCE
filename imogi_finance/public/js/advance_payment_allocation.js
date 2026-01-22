@@ -72,7 +72,7 @@ const allocationUI = {
     },
 
     getAllocatedTotal(rows) {
-        return (rows || []).reduce((acc, row) => acc + frappe.utils.flt(row.allocated_amount), 0);
+        return (rows || []).reduce((acc, row) => acc + flt(row.allocated_amount), 0);
     },
 
     addButton(frm, partyInfo) {
@@ -118,7 +118,7 @@ const allocationUI = {
                     const isChecked = $row.find('input[type="checkbox"]').is(":checked");
                     if (!isChecked) return;
 
-                    const amount = frappe.utils.flt($row.find('input[data-fieldname="allocated_amount"]').val());
+                    const amount = flt($row.find('input[data-fieldname="allocated_amount"]').val());
                     if (amount > 0) {
                         allocations.push({
                             advance_payment_entry: $row.data("name"),
@@ -133,7 +133,7 @@ const allocationUI = {
 
                 const outstanding = allocationUI.getOutstandingAmount(frm);
                 const remainingOutstanding = allocationUI.getRemainingOutstanding(outstanding, alreadyAllocated);
-                const totalAllocation = allocations.reduce((acc, row) => acc + frappe.utils.flt(row.allocated_amount), 0);
+                const totalAllocation = allocations.reduce((acc, row) => acc + flt(row.allocated_amount), 0);
                 if (remainingOutstanding != null && totalAllocation - remainingOutstanding > 0.005) {
                     frappe.throw(
                         __("Allocations of {0} exceed remaining outstanding {1} (already allocated {2}).", [
@@ -193,8 +193,8 @@ const allocationUI = {
 
         dialog.$wrapper.on("input", 'input[data-fieldname="allocated_amount"]', (event) => {
             const $input = $(event.currentTarget);
-            const max = frappe.utils.flt($input.attr("max"));
-            const val = frappe.utils.flt($input.val());
+            const max = flt($input.attr("max"));
+            const val = flt($input.val());
             if (val > max) {
                 $input.val(max);
             }
@@ -219,16 +219,16 @@ const allocationUI = {
 
     getOutstandingAmount(frm) {
         if (frm.doc.doctype === "Purchase Invoice") {
-            return frappe.utils.flt(frm.doc.outstanding_amount || frm.doc.rounded_total || frm.doc.grand_total || 0);
+            return flt(frm.doc.outstanding_amount || frm.doc.rounded_total || frm.doc.grand_total || 0);
         }
         if (frm.doc.doctype === "Expense Claim") {
-            const total = frappe.utils.flt(frm.doc.grand_total || frm.doc.total_sanctioned_amount || frm.doc.total_claimed_amount || 0);
-            const reimbursed = frappe.utils.flt(frm.doc.total_amount_reimbursed || 0);
-            const advances = frappe.utils.flt(frm.doc.total_advance_amount || frm.doc.total_advance || 0);
+            const total = flt(frm.doc.grand_total || frm.doc.total_sanctioned_amount || frm.doc.total_claimed_amount || 0);
+            const reimbursed = flt(frm.doc.total_amount_reimbursed || 0);
+            const advances = flt(frm.doc.total_advance_amount || frm.doc.total_advance || 0);
             return total - reimbursed - advances;
         }
         if (frm.doc.doctype === "Payroll Entry") {
-            return frappe.utils.flt(frm.doc.total_deduction || frm.doc.total_payment || 0);
+            return flt(frm.doc.total_deduction || frm.doc.total_payment || 0);
         }
         return null;
     },
@@ -237,7 +237,7 @@ const allocationUI = {
         if (outstanding == null) {
             return null;
         }
-        const remaining = frappe.utils.flt(outstanding) - frappe.utils.flt(alreadyAllocated);
+        const remaining = flt(outstanding) - flt(alreadyAllocated);
         return Math.max(remaining, 0);
     },
 };
