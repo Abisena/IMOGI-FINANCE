@@ -145,13 +145,15 @@
     {
       "fieldname": "section_break_references",
       "fieldtype": "Section Break",
-      "label": "Allocations"
+      "label": "Allocations",
+      "collapsible": 0
     },
     {
       "fieldname": "references",
       "fieldtype": "Table",
       "label": "Advance Payment References",
-      "options": "Advance Payment Reference"
+      "options": "Advance Payment Reference",
+      "hidden": 0
     },
     {
       "fieldname": "remarks",
