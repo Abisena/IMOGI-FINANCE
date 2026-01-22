@@ -102,23 +102,29 @@ function open_payment_reconciliation(frm) {
         },
         callback: function(r) {
             if (r.message) {
-                // Open Payment Reconciliation tool
-                frappe.set_route("Form", "Payment Reconciliation", "Payment Reconciliation");
+                // Set route options to pre-fill form fields
+                frappe.route_options = {
+                    "company": frm.doc.company,
+                    "party_type": frm.doc.party_type,
+                    "party": frm.doc.party,
+                    "receivable_payable_account": r.message.account
+                };
                 
-                // Wait for form to load, then set filters
+                // Open Payment Reconciliation tool (will auto-populate from route_options)
+                frappe.new_doc("Payment Reconciliation");
+                
+                // Auto-trigger "Get Unreconciled Entries" after form loads
                 setTimeout(() => {
-                    const pr_form = cur_frm;
-                    if (pr_form && pr_form.doctype === "Payment Reconciliation") {
-                        pr_form.set_value("party_type", frm.doc.party_type);
-                        pr_form.set_value("party", frm.doc.party);
-                        pr_form.set_value("receivable_payable_account", r.message.account);
+                    if (cur_frm && cur_frm.doctype === "Payment Reconciliation") {
+                        // Trigger the get_unreconciled_entries method
+                        cur_frm.trigger("get_unreconciled_entries");
                         
                         frappe.show_alert({
-                            message: __("Payment Reconciliation opened. Click 'Get Unreconciled Entries' to proceed."),
+                            message: __("Loading invoices and payments automatically..."),
                             indicator: "blue"
                         }, 5);
                     }
-                }, 500);
+                }, 1000);
             }
         }
     });
