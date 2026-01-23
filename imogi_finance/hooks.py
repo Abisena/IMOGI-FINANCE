@@ -56,6 +56,7 @@ doctype_js = {
         "public/js/payment_reconciliation_helper.js",
     ],
     "Expense Claim": [
+        "public/js/expense_claim.js",
         "public/js/payment_reconciliation_helper.js",
     ],
     "Payroll Entry": [
@@ -140,6 +141,7 @@ fixtures = [
     {"doctype": "Letter Template Settings", "filters": {"name": ["=", "Letter Template Settings"]}},
     {"doctype": "Tax Invoice Type", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Workspace", "filters": {"module": "Imogi Finance"}},
+    {"doctype": "Report", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Client Script", "filters": {"dt": ["in", ["Purchase Invoice", "Payment Entry"]]}},
     # DocTypes for deferred expense and tax export functionality
     {"doctype": "Expense Deferred Settings"},
@@ -359,9 +361,6 @@ doc_events = {
         "before_cancel": "imogi_finance.events.bank_transaction.before_cancel",
         "on_submit": "imogi_finance.transfer_application.matching.handle_bank_transaction",
         "on_update_after_submit": "imogi_finance.transfer_application.matching.handle_bank_transaction",
-    },
-    "Expense Claim": {
-        "on_submit": "imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances",
     },
     "Payroll Entry": {},
 }
