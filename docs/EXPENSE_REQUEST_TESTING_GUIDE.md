@@ -783,7 +783,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-## UI Actions Testing
+## UI Actions TestinG
 
 ### Skenario 42: Check Approval Route Button
 
