@@ -173,6 +173,7 @@ class ApprovalService:
             )
 
         session_user = frappe.session.user
+
         if session_user != expected_user:
             frappe.throw(
                 _("You are not authorized to approve at level {0}. Required: {1}.").format(current_level, expected_user),
