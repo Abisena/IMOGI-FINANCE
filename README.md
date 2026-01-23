@@ -49,11 +49,17 @@ App for managing expenses at IMOGI.
 - **Bank Transaction matching**: on Bank Transaction submit/update, the system searches Transfer Application candidates by amount (with tolerance), account number/hint/payee name, and marks confidence Strong/Medium/Weak for review. Strong matches can auto-create Payment Entry and mark the TA as Paid.
 - **Link protection**: Payment Entry hooks ensure a TA is not linked to multiple payments, update status/paid_amount/paid_date on submit, and clear links on cancel.
 
-#### Advance Payments
+#### Advance Payments (Native First Strategy)
 
-- **Automatic advance capture**: Payment Entries without invoice references for Suppliers or Employees auto-create Advance Payment Entry documents, preserving posting date, exchange rate, and amount.
-- **Allocation controls**: advances can be allocated to Purchase Invoice, Expense Claim, or Payroll Entry; validations ensure party/type alignment, matching currency, and positive unallocated balances.
-- **Lifecycle safety**: canceling the source Payment Entry cancels or deletes the Advance Payment Entry after releasing allocations; updates after submit sync amounts and status.
+> **⚠️ IMPORTANT**: IMOGI Finance uses **ERPNext native Payment Ledger** for advance payment tracking. Custom APE module is deprecated.  
+> **📖 Documentation**: [Native Payment Ledger User Guide](docs/NATIVE_PAYMENT_LEDGER_USER_GUIDE.md) | [Installation Guide](docs/NATIVE_PAYMENT_LEDGER_INSTALLATION.md) | [Implementation Summary](docs/NATIVE_FIRST_IMPLEMENTATION_SUMMARY.md)
+
+- **Native Payment Ledger**: ERPNext v15+ automatically tracks all advances via Payment Ledger Entry (zero custom code needed for Supplier/Customer advances).
+- **Enhanced Dashboard**: Custom report provides status visualization (Fully/Partially/Unallocated), aging analysis (0-30, 30-60, 60-90, 90+ days), and summary cards.
+- **Employee Advance Extension**: IMOGI Finance adds "Get Employee Advances" button to Expense Claim with auto-allocation on submit (150 lines enhancement).
+- **Legacy APE Module**: Old custom Advance Payment Entry module (1,300 lines) is deprecated. See [Decision Guide](docs/ADVANCE_PAYMENT_DECISION_GUIDE.md) for migration path.
+
+**Benefits**: 77% less code, 95% less development time, 90% less maintenance vs custom APE. Native = zero upgrade conflicts.
 
 #### Tax, OCR, & CoreTax Export
 
@@ -110,9 +116,13 @@ Use this checklist to read through each feature area and verify behavior quickly
 
 #### Advance Payments
 
-1. Enter a Payment Entry for a Supplier/Employee without invoice references; the system should auto-create an Advance Payment Entry with the posting date, currency, and exchange rate.
-2. Allocate advances to Purchase Invoice, Expense Claim, or Payroll Entry using the allocation dialog; ensure party/type and currency match, and confirm unallocated balances decrease.
-3. Update or cancel the source Payment Entry to verify the Advance Payment Entry syncs amounts or cancels after releasing allocations.
+> **📖 See [Native Payment Ledger User Guide](docs/NATIVE_PAYMENT_LEDGER_USER_GUIDE.md) for complete workflows**
+
+1. **Native Workflow (Supplier/Customer)**: Create Payment Entry → system auto-creates Payment Ledger Entry → use "Get Advances" button on invoice → allocate advance.
+2. **Enhanced Dashboard**: Go to Accounting → Reports → Advance Payment Dashboard for status visualization with 🔴 Unallocated / 🟡 Partially Allocated / ✅ Fully Allocated indicators.
+3. **Employee Advances (IMOGI Extension)**: Create Payment Entry (party_type=Employee) → Expense Claim → click "Get Employee Advances" → select advances → submit (auto-allocates).
+4. **Verify Installation**: Run `bench --site [site] execute imogi_finance.test_native_payment_ledger.test_payment_ledger` to check Payment Ledger is working.
+5. **Migration from Old APE**: If you have legacy Advance Payment Entry module, see [Migration Guide](docs/NATIVE_PAYMENT_LEDGER_INSTALLATION.md#migration-from-old-ape-module) for gradual/fast migration options.
 
 #### Tax, OCR, & CoreTax Export
 

@@ -206,20 +206,6 @@ def get_data():
                     "label": "Branch Expense Request",
                     "description": "Request and track branch level expenses.",
                 },
-                {
-                    "type": "doctype",
-                    "name": "Advance Payment Entry",
-                    "label": "Advance Payment Entry",
-                    "description": "Record and allocate advance payments for suppliers and employees.",
-                },
-                {
-                    "type": "report",
-                    "is_query_report": False,
-                    "name": "Advance Payment Report",
-                    "label": "Advance Payment Report",
-                    "doctype": "Advance Payment Entry",
-                    "description": "Track advance balances and allocations across documents.",
-                },
             ],
         }
     ]

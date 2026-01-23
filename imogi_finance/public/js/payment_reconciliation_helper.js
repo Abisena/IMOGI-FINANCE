@@ -25,6 +25,9 @@ imogi_finance.payment_reconciliation.add_unreconcile_button = function(frm) {
     }
     
     // Check if document has reconciled payments
+    // NOTE: Old advance_payment.api module deleted - native Payment Ledger Entry used instead
+    // This functionality is now handled by ERPNext's native Payment Reconciliation tool
+    /* 
     frappe.call({
         method: "imogi_finance.advance_payment.api.get_reconciled_payments_for_cancelled_doc",
         args: {
@@ -53,6 +56,7 @@ imogi_finance.payment_reconciliation.add_unreconcile_button = function(frm) {
             }
         }
     });
+    */
 };
 
 /**
@@ -174,7 +178,8 @@ function unlink_all_payments(frm, payments) {
             let errors = [];
             
             payments.forEach((payment, index) => {
-                frappe.call({
+                // NOTE: Old advance_payment.api module deleted - native Payment Ledger Entry used instead
+                /* frappe.call({
                     method: "imogi_finance.advance_payment.api.unlink_single_payment",
                     args: {
                         voucher_type: payment.voucher_type,
@@ -182,7 +187,7 @@ function unlink_all_payments(frm, payments) {
                         reference_doctype: frm.doc.doctype,
                         reference_name: frm.doc.name
                     },
-                    callback: function(r) {
+                    callback: function(r) { */
                         completed++;
                         
                         if (r.message && r.message.success) {
