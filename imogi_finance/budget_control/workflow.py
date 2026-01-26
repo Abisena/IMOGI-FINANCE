@@ -231,9 +231,21 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
             title=_("Fiscal Year Required")
         )
 
-    total_amount, account_totals = _get_account_totals(getattr(expense_request, "items", []) or [])
+    items = getattr(expense_request, "items", []) or []
+    total_amount, account_totals = _get_account_totals(items)
+    
     if not account_totals:
-        frappe.logger().warning(f"_build_allocation_slices: No account totals for {getattr(expense_request, 'name', 'Unknown')}")
+        # Log detailed info for debugging
+        item_details = []
+        for idx, item in enumerate(items):
+            acc = accounting._get_item_value(item, "expense_account")
+            amt = accounting._get_item_value(item, "amount")
+            item_details.append(f"Item {idx+1}: account={acc}, amount={amt}")
+        
+        frappe.logger().warning(
+            f"_build_allocation_slices: No account totals for {getattr(expense_request, 'name', 'Unknown')}. "
+            f"Items: {item_details}"
+        )
         return []
     
     frappe.logger().info(f"_build_allocation_slices for {getattr(expense_request, 'name', 'Unknown')}: total={total_amount}, accounts={list(account_totals.keys())}")
@@ -391,15 +403,35 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         return
 
     ic_doc = None
-    if getattr(expense_request, "allocation_mode", "Direct") == "Allocated via Internal Charge":
-        try:
-            ic_doc = _require_internal_charge_ready(expense_request, settings)
-        except Exception as e:
-            frappe.logger().error(f"reserve_budget_for_request: Internal Charge validation failed for {getattr(expense_request, 'name', 'Unknown')}: {str(e)}")
-            frappe.throw(
-                _("Internal Charge validation failed. {0}").format(str(e)),
-                title=_("Internal Charge Required")
+    allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
+    if allocation_mode == "Allocated via Internal Charge":
+        # Check if ICR exists - if not, skip IC validation during Submit
+        # ICR is generated AFTER submit, so we can't require it at submit time
+        ic_name = getattr(expense_request, "internal_charge_request", None)
+        if ic_name:
+            # ICR exists, validate it's ready (must be Approved before ER can be fully processed)
+            try:
+                ic_doc = _require_internal_charge_ready(expense_request, settings)
+            except Exception as e:
+                frappe.logger().error(f"reserve_budget_for_request: Internal Charge validation failed for {getattr(expense_request, 'name', 'Unknown')}: {str(e)}")
+                frappe.throw(
+                    _("Internal Charge validation failed. {0}").format(str(e)),
+                    title=_("Internal Charge Required")
+                )
+        else:
+            # ICR not yet created - this is expected at Submit time
+            # Skip budget reservation for now, will be done when ICR is approved and ER is approved
+            frappe.logger().info(
+                f"reserve_budget_for_request: {getattr(expense_request, 'name', 'Unknown')} uses Internal Charge "
+                f"but ICR not yet created. Skipping budget reservation until ICR is generated and approved."
             )
+            frappe.msgprint(
+                _("Internal Charge allocation mode detected. Please generate Internal Charge Request after submit, "
+                  "then approve ICR before approving this Expense Request."),
+                indicator="blue",
+                alert=True
+            )
+            return
 
     try:
         slices = _build_allocation_slices(expense_request, settings=settings, ic_doc=ic_doc)
@@ -411,9 +443,40 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         )
     
     if not slices:
-        frappe.logger().warning(f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}")
+        # Build detailed error message
+        items = getattr(expense_request, "items", []) or []
+        allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
+        cost_center = getattr(expense_request, "cost_center", None)
+        
+        missing_info = []
+        if not cost_center:
+            missing_info.append(_("Cost Center is not set on Expense Request"))
+        
+        items_without_account = []
+        items_without_amount = []
+        for idx, item in enumerate(items):
+            acc = accounting._get_item_value(item, "expense_account")
+            amt = accounting._get_item_value(item, "amount")
+            if not acc:
+                items_without_account.append(str(idx + 1))
+            if not amt or float(amt or 0) <= 0:
+                items_without_amount.append(str(idx + 1))
+        
+        if items_without_account:
+            missing_info.append(_("Items without Expense Account: Row {0}").format(", ".join(items_without_account)))
+        if items_without_amount:
+            missing_info.append(_("Items without valid Amount: Row {0}").format(", ".join(items_without_amount)))
+        if not items:
+            missing_info.append(_("No expense items found"))
+        
+        error_detail = "<br>".join(missing_info) if missing_info else _("Unknown reason - please check expense items")
+        
+        frappe.logger().warning(
+            f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}. "
+            f"Mode={allocation_mode}, CC={cost_center}, Items={len(items)}, Details={missing_info}"
+        )
         frappe.throw(
-            _("No budget allocation slices could be created. Please ensure expense items have valid accounts and cost centers."),
+            _("No budget allocation slices could be created.<br><br><b>Issues found:</b><br>{0}").format(error_detail),
             title=_("Budget Allocation Failed")
         )
 
@@ -616,6 +679,24 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
     workflow_state = getattr(expense_request, "workflow_state", None)
     
     if next_state == target_state or workflow_state == target_state or status == target_state:
+        # For Internal Charge allocation mode, validate ICR is approved before ER approval
+        allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
+        if allocation_mode == "Allocated via Internal Charge":
+            ic_name = getattr(expense_request, "internal_charge_request", None)
+            if not ic_name:
+                frappe.throw(
+                    _("Please generate Internal Charge Request first before approving this Expense Request. "
+                      "Use the 'Generate Internal Charge' button."),
+                    title=_("Internal Charge Required")
+                )
+            try:
+                _require_internal_charge_ready(expense_request, settings)
+            except Exception as e:
+                frappe.throw(
+                    _("Internal Charge Request must be approved before approving Expense Request. {0}").format(str(e)),
+                    title=_("Internal Charge Not Ready")
+                )
+        
         # Check if already reserved
         existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
         if existing:
