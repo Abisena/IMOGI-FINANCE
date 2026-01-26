@@ -160,7 +160,10 @@ function generate_payments_table_html(payments) {
 
 /**
  * Attempt to unlink all payments (requires Payment Entry write permission)
+ * NOTE: This function is disabled - old advance_payment.api module was deleted.
+ * Native Payment Ledger Entry is used instead via ERPNext's Payment Reconciliation tool.
  */
+/*
 function unlink_all_payments(frm, payments) {
     frappe.confirm(
         __("This will attempt to automatically unlink {0} payment(s) from this cancelled {1}. Continue?", 
@@ -178,8 +181,7 @@ function unlink_all_payments(frm, payments) {
             let errors = [];
             
             payments.forEach((payment, index) => {
-                // NOTE: Old advance_payment.api module deleted - native Payment Ledger Entry used instead
-                /* frappe.call({
+                frappe.call({
                     method: "imogi_finance.advance_payment.api.unlink_single_payment",
                     args: {
                         voucher_type: payment.voucher_type,
@@ -187,7 +189,7 @@ function unlink_all_payments(frm, payments) {
                         reference_doctype: frm.doc.doctype,
                         reference_name: frm.doc.name
                     },
-                    callback: function(r) { */
+                    callback: function(r) {
                         completed++;
                         
                         if (r.message && r.message.success) {
@@ -225,3 +227,4 @@ function unlink_all_payments(frm, payments) {
         }
     );
 }
+*/
