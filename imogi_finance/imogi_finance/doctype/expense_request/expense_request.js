@@ -728,6 +728,25 @@ function maybeRenderInternalChargeButton(frm) {
 }
 
 async function maybeRenderPurchaseInvoiceButton(frm) {
+  // Don't show button if active PI exists (not cancelled)
+  if (frm.doc.linked_purchase_invoice) {
+    // Check if the linked PI is cancelled
+    try {
+      const piStatus = await frappe.db.get_value(
+        'Purchase Invoice',
+        frm.doc.linked_purchase_invoice,
+        'docstatus'
+      );
+      // If PI exists and is submitted (docstatus = 1), don't show button
+      if (piStatus?.message?.docstatus === 1) {
+        return;
+      }
+      // If PI is cancelled (docstatus = 2) or draft (docstatus = 0), allow new PI
+    } catch (error) {
+      // If PI doesn't exist anymore, allow creating new one
+    }
+  }
+  
   const [ocrEnabled, requireVerified] = await Promise.all([
     frappe.db.get_single_value('Tax Invoice OCR Settings', 'enable_tax_invoice_ocr'),
     frappe.db.get_single_value(

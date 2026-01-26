@@ -44,20 +44,27 @@ def get_employee_advances(employee, company, expense_claim=None):
     # Query Payment Ledger for employee advances
     query = """
         SELECT 
-            ple.voucher_no as payment_entry,
+            ple.voucher_type,
+            ple.voucher_no,
             ple.posting_date,
-            SUM(ple.amount) as advance_amount,
-            SUM(COALESCE(ple.allocated_amount, 0)) as allocated_amount,
-            SUM(ple.amount) - SUM(COALESCE(ple.allocated_amount, 0)) as unallocated_amount
+            SUM(ple.amount) as amount,
+            SUM(COALESCE(allocated.allocated, 0)) as allocated_amount,
+            SUM(ple.amount) - SUM(COALESCE(allocated.allocated, 0)) as outstanding_amount
         FROM `tabPayment Ledger Entry` ple
+        LEFT JOIN (
+            SELECT against_voucher_type, against_voucher_no, SUM(ABS(amount)) as allocated
+            FROM `tabPayment Ledger Entry`
+            WHERE docstatus = 1 AND against_voucher_type != ''
+            GROUP BY against_voucher_type, against_voucher_no
+        ) allocated ON allocated.against_voucher_type = ple.voucher_type 
+                    AND allocated.against_voucher_no = ple.voucher_no
         WHERE ple.party_type = 'Employee'
           AND ple.party = %(employee)s
           AND ple.company = %(company)s
-          AND ple.delinked = 0
           AND ple.docstatus = 1
-          AND ple.against_voucher_type IS NULL
-        GROUP BY ple.voucher_no, ple.posting_date
-        HAVING unallocated_amount > 0
+          AND ple.against_voucher_type = ''
+        GROUP BY ple.voucher_type, ple.voucher_no, ple.posting_date
+        HAVING outstanding_amount > 0
         ORDER BY ple.posting_date
     """
     
@@ -67,6 +74,42 @@ def get_employee_advances(employee, company, expense_claim=None):
     }, as_dict=True)
     
     return advances
+
+
+@frappe.whitelist()
+def get_allocated_advances(expense_claim):
+    """
+    Get advances that have been allocated to an expense claim
+    
+    Args:
+        expense_claim: Expense Claim name
+    
+    Returns:
+        List of allocated advances with details
+    """
+    
+    if not expense_claim:
+        return []
+    
+    query = """
+        SELECT 
+            ple.against_voucher_type,
+            ple.against_voucher_no,
+            ple.posting_date,
+            ple.amount
+        FROM `tabPayment Ledger Entry` ple
+        WHERE ple.voucher_type = 'Expense Claim'
+          AND ple.voucher_no = %(expense_claim)s
+          AND ple.docstatus = 1
+          AND ple.against_voucher_type != ''
+        ORDER BY ple.posting_date
+    """
+    
+    allocations = frappe.db.sql(query, {
+        "expense_claim": expense_claim
+    }, as_dict=True)
+    
+    return allocations
 
 
 @frappe.whitelist()

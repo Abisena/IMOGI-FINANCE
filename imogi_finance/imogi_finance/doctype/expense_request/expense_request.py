@@ -212,20 +212,47 @@ class ExpenseRequest(Document):
         approval_service.guard_status_changes(self)
 
     def before_cancel(self):
-        """Validate permissions before cancel.
+        """Validate permissions and linked documents before cancel.
         
-        Note: We don't check downstream links (PE, PI) because:
-        1. They are endpoint documents - can be cancelled freely
-        2. Frappe's "Cancel All Linked Docs" needs to work smoothly
-        3. Audit trail is preserved through cancelled documents
-        
-        If manual cancellation is needed, user should cancel in reverse order:
-        Payment Entry → Purchase Invoice → Expense Request
+        Check for linked Purchase Invoice and Payment Entry to prevent
+        accidental cancellation. Guide users to either:
+        1. Cancel documents in reverse order manually (PE → PI → ER), or
+        2. Use 'Cancel All Linked Documents' feature for bulk cancellation
         """
+        # Check permissions
         allowed_roles = {roles.SYSTEM_MANAGER, roles.EXPENSE_APPROVER}
         current_roles = set(frappe.get_roles())
         if not (current_roles & allowed_roles):
             frappe.throw(_("Only System Manager or Expense Approver can cancel."), title=_("Not Allowed"))
+        
+        # Check for linked documents
+        linked_pi = frappe.db.get_value(
+            "Purchase Invoice",
+            {"imogi_expense_request": self.name, "docstatus": 1},
+            "name"
+        )
+        
+        linked_pe = frappe.db.get_value(
+            "Payment Entry",
+            {"imogi_expense_request": self.name, "docstatus": 1},
+            "name"
+        )
+        
+        if linked_pi or linked_pe:
+            docs = []
+            if linked_pe:
+                docs.append(f"Payment Entry {linked_pe}")
+            if linked_pi:
+                docs.append(f"Purchase Invoice {linked_pi}")
+            
+            frappe.throw(
+                _("Cannot cancel Expense Request - linked documents exist: {0}.<br><br>"
+                  "Please either:<br>"
+                  "1. Cancel linked documents first in reverse order (PE → PI → ER), or<br>"
+                  "2. Use 'Cancel All Linked Documents' from the menu to cancel everything at once."
+                ).format(", ".join(docs)),
+                title=_("Linked Documents Exist")
+            )
 
     def on_cancel(self):
         """Clean up: release budget reservations.
@@ -384,10 +411,13 @@ class ExpenseRequest(Document):
             
             if ocr_npwp and supplier_npwp_normalized and ocr_npwp != supplier_npwp_normalized:
                 errors.append(
-                    _("NPWP dari OCR ({0}) tidak sesuai dengan NPWP Supplier ({1})").format(
+                    _("NPWP from OCR ({0}) does not match Supplier NPWP ({1})").format(
                         getattr(self, "ti_fp_npwp", ""), supplier_npwp
                     )
                 )
+            elif ocr_npwp and supplier_npwp_normalized:
+                # NPWP matches - set verification flag
+                self.ti_npwp_match = 1
 
         # 2. Validate DPP, PPN, PPnBM with tolerance
         # Get tolerance from settings (both fixed IDR and percentage)

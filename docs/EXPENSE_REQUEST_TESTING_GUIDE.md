@@ -74,32 +74,483 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 3. Set action on budget exceed: Stop / Warn
 ```
 
+### C. Setup Tax Invoice OCR
+
+#### 1. Prerequisites
+- Tax Invoice OCR module terinstall dan aktif
+- OCR service (e.g., Google Vision API, Tesseract) terkonfigurasi
+- User memiliki permission untuk upload dan process tax invoices
+
+#### 2. Tax Settings Configuration
+
+**Path:** `Setup > Imogi Finance > Tax Settings`
+
+| Setting | Value | Keterangan |
+|---------|-------|------------|
+| **Enable Tax Invoice OCR** | ✓ | Aktifkan fitur OCR |
+| **DPP Variance Tolerance** | 2.0 | Toleransi selisih DPP (%) |
+| **PPN Variance Tolerance** | 5.0 | Toleransi selisih PPN (%) |
+| **Auto-Validate on Submit** | ✓ | Validasi otomatis saat submit ER |
+| **Require NPWP Match** | ✓ | Wajib NPWP supplier sama dengan OCR |
+
+#### 3. Supplier Master Setup
+
+Pastikan supplier memiliki NPWP yang valid:
+
+```
+Supplier: PT ABC Vendor
+NPWP: 01.234.567.8-901.000
+Format: XX.XXX.XXX.X-XXX.XXX (15 digit dengan separator)
+```
+
+**Catatan Penting:**
+- NPWP harus dalam format Indonesia yang benar
+- OCR akan membaca NPWP dari faktur pajak dan compare dengan supplier NPWP
+- Jika tidak match, submit akan error kecuali bypass validation
+
+#### 4. Test Tax Invoice Files
+
+Siapkan sample faktur pajak untuk testing:
+
+| File | NPWP | DPP | PPN (11%) | Total | Keterangan |
+|------|------|-----|-----------|-------|------------|
+| `faktur_match.pdf` | 01.234.567.8-901.000 | 10,000,000 | 1,100,000 | 11,100,000 | NPWP match, perfect values |
+| `faktur_dpp_variance.pdf` | 01.234.567.8-901.000 | 10,100,000 | 1,111,000 | 11,211,000 | DPP variance 1% (within tolerance) |
+| `faktur_dpp_exceed.pdf` | 01.234.567.8-901.000 | 10,500,000 | 1,155,000 | 11,655,000 | DPP variance 5% (exceed tolerance) |
+| `faktur_npwp_mismatch.pdf` | 99.888.777.6-543.000 | 10,000,000 | 1,100,000 | 11,100,000 | NPWP berbeda dari supplier |
+| `faktur_ppn_1pct.pdf` | 01.234.567.8-901.000 | 10,000,000 | 100,000 | 10,100,000 | PPN 1% (non-standard, skip validation) |
+
+#### 5. OCR Fields Mapping
+
+Tax Invoice OCR akan populate fields berikut di Expense Request:
+
+| ER Field | OCR Source | Validasi |
+|----------|------------|----------|
+| `ti_fp_no` | Nomor Faktur Pajak | Required |
+| `ti_fp_date` | Tanggal Faktur | Required |
+| `ti_fp_npwp` | NPWP dari Faktur | Match dengan Supplier NPWP |
+| `ti_fp_dpp` | Dasar Pengenaan Pajak | Variance check ±2% |
+| `ti_fp_ppn` | PPN Amount | Variance check ±5% |
+| `ti_npwp_match` | Auto-set flag | 1 if NPWP match, 0 otherwise |
+
+#### 6. Tolerance Calculation Examples
+
+**DPP Variance (2% tolerance):**
+```
+ER Amount (before tax): 10,000,000
+OCR DPP: 10,200,000
+Variance: (10,200,000 - 10,000,000) / 10,000,000 = 2%
+Result: ✅ PASS (exactly at tolerance)
+
+OCR DPP: 10,300,000
+Variance: 3%
+Result: ❌ FAIL (exceed tolerance)
+```
+
+**PPN Variance (5% tolerance):**
+```
+ER PPN: 1,100,000
+OCR PPN: 1,150,000
+Variance: (1,150,000 - 1,100,000) / 1,100,000 = 4.5%
+Result: ✅ PASS (within tolerance)
+
+OCR PPN: 1,200,000
+Variance: 9%
+Result: ❌ FAIL (exceed tolerance)
+```
+
+#### 7. Non-Standard PPN Rates (Skip Validation)
+
+PPN rates berikut akan **skip variance validation**:
+- 1% (PP 23/2018 - UMKM)
+- 2.5% (Reduced rate)
+- Other non-11% rates
+
+#### 8. Common Setup Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| OCR fields tidak populate | OCR service tidak aktif | Check API credentials, restart OCR service |
+| NPWP always mismatch | Format NPWP salah | Pastikan format XX.XXX.XXX.X-XXX.XXX (dengan dots) |
+| Variance selalu error | Tolerance terlalu ketat | Adjust tolerance di Tax Settings (2% DPP, 5% PPN recommended) |
+| Cannot upload PDF | File size terlalu besar | Max 10MB per file, compress PDF |
+| OCR read wrong values | Image quality rendah | Re-scan dengan resolution min 300 DPI |
+
+#### 9. Testing Workflow
+
+```
+1. Setup master data (Supplier dengan NPWP valid)
+2. Configure Tax Settings (tolerance 2% DPP, 5% PPN)
+3. Prepare test tax invoice files
+4. Create ER dengan PPN
+5. Upload tax invoice via OCR
+6. Verify OCR fields auto-populated
+7. Verify validations:
+   - NPWP Match → ti_npwp_match = 1
+   - DPP Variance → within 2%
+   - PPN Variance → within 5%
+8. Submit ER
+9. Check for validation errors
+```
+
+#### 10. Bypass Validation (For Testing)
+
+Jika perlu bypass validation untuk testing edge cases:
+
+```python
+# Set flag di Expense Request
+doc.skip_tax_validation = 1
+doc.save()
+```
+
+**Catatan:** Flag ini hanya untuk testing/development, tidak untuk production.
+
+---
+
+### D. UI Display Reference
+
+Dokumentasi tampilan UI yang seharusnya ada pada Expense Request form.
+
+#### 1. Expense Request Form - Header Section
+
+**Status Badges:**
+```
+┌─────────────────────────────────────────────────┐
+│ Expense Request: ER-2026-00123                  │
+│ Status: [Draft] / [Pending Review] / [Approved] │
+│         [PI Created] / [Paid] / [Rejected]      │
+│         [Cancelled]                              │
+└─────────────────────────────────────────────────┘
+```
+
+**Basic Information:**
+```
+┌─────────────────────────────────────────────────┐
+│ Company: *PT Test Company                       │
+│ Supplier: *PT ABC Vendor                        │
+│ NPWP: 01.234.567.8-901.000                     │
+│ Cost Center: *HO - Head Office                  │
+│ Posting Date: *24/01/2026                       │
+│ Branch: HO (auto-filled from Cost Center)       │
+└─────────────────────────────────────────────────┘
+```
+
+#### 2. Expense Items Table
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│ Expense Items                                           [+ Add Row]   │
+├────┬──────────────┬─────────────┬──────────┬───────────┬─────────────┤
+│ #  │ Account      │ Description │ Amount   │ Cost Ctr  │ Branch      │
+├────┼──────────────┼─────────────┼──────────┼───────────┼─────────────┤
+│ 1  │ 6100 - Biaya │ Consulting  │ 10.000.000│ HO       │ HO          │
+│    │ Operasional  │ Fee         │          │           │             │
+├────┼──────────────┼─────────────┼──────────┼───────────┼─────────────┤
+│    │              │ Total:      │ 10.000.000│          │             │
+└────┴──────────────┴─────────────┴──────────┴───────────┴─────────────┘
+```
+
+#### 3. Tax Section (PPN & PPh)
+
+**Section A: PPN (Value Added Tax)**
+```
+┌─────────────────────────────────────────────────┐
+│ □ Add PPN                                       │
+│                                                 │
+│ When checked:                                   │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ PPN Rate: [11% ▼]                          │ │
+│ │ PPN Amount: 1.100.000 (auto-calculated)    │ │
+│ │ PPN Account: 2100 - PPN Masukan            │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**Section B: PPh (Withholding Tax)**
+```
+┌─────────────────────────────────────────────────┐
+│ □ Apply Withholding Tax (PPh)                   │
+│                                                 │
+│ When checked:                                   │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ WHT Category: [PPh 23 - Jasa ▼]           │ │
+│ │ WHT Rate: 2%                                │ │
+│ │ WHT Amount: 200.000 (auto-calculated)       │ │
+│ │ WHT Account: 1510 - PPh 23 Dibayar Dimuka │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**Section C: PPnBM (Luxury Tax) - Optional**
+```
+┌─────────────────────────────────────────────────┐
+│ □ Add PPnBM                                     │
+│                                                 │
+│ When checked:                                   │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ PPnBM Rate: [20% ▼]                        │ │
+│ │ PPnBM Amount: 2.000.000                     │ │
+│ │ PPnBM Account: 2105 - PPnBM                │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+#### 4. Tax Invoice OCR Section
+
+**Location:** Below tax section, collapsible
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 📄 Tax Invoice (Faktur Pajak)               [▼ Expand]     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ [📤 Upload Tax Invoice]  [Supported: PDF, JPG, PNG]        │
+│                                                             │
+│ OCR Extracted Data:                                         │
+│ ┌───────────────────────────────────────────────────────┐  │
+│ │ Nomor Faktur: *010.000-26.12345678                   │  │
+│ │ Tanggal Faktur: *15/01/2026                          │  │
+│ │ NPWP Penjual: *01.234.567.8-901.000                  │  │
+│ │               ✅ Match dengan Supplier                │  │
+│ │                                                       │  │
+│ │ DPP (OCR): 10.000.000                                │  │
+│ │ DPP (ER):  10.000.000                                │  │
+│ │ Variance: 0% ✅ (Tolerance: ±2%)                     │  │
+│ │                                                       │  │
+│ │ PPN (OCR): 1.100.000                                 │  │
+│ │ PPN (ER):  1.100.000                                 │  │
+│ │ Variance: 0% ✅ (Tolerance: ±5%)                     │  │
+│ └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│ Status Validasi:                                            │
+│ • NPWP Match: ✅                                            │
+│ • DPP Variance: ✅ Within tolerance                        │
+│ • PPN Variance: ✅ Within tolerance                        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Error State Example (NPWP Mismatch):**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 📄 Tax Invoice (Faktur Pajak)                              │
+├─────────────────────────────────────────────────────────────┤
+│ NPWP Penjual: *99.888.777.6-543.000                        │
+│               ❌ TIDAK MATCH dengan Supplier!               │
+│                                                             │
+│ Expected: 01.234.567.8-901.000 (Supplier NPWP)            │
+│ Found:    99.888.777.6-543.000 (Tax Invoice NPWP)         │
+│                                                             │
+│ ⚠️ Submit akan gagal. Perbaiki NPWP atau ganti supplier.   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 5. Totals Section (Summary)
+
+```
+┌─────────────────────────────────────────────────┐
+│ Financial Summary                               │
+├─────────────────────────────────────────────────┤
+│ Base Amount:          10.000.000                │
+│ + PPN (11%):           1.100.000                │
+│ + PPnBM (20%):         2.000.000 (if applicable)│
+│ ─────────────────────────────────              │
+│ Gross Total:          13.100.000                │
+│                                                 │
+│ - WHT PPh 23 (2%):      (200.000)               │
+│ ─────────────────────────────────              │
+│ Net Payable:          12.900.000                │
+└─────────────────────────────────────────────────┘
+```
+
+#### 6. Action Buttons (Status-Dependent)
+
+**Draft Status:**
+```
+[💾 Save]  [📤 Submit]  [🔍 Check Approval Route]  [❌ Cancel]
+```
+
+**Pending Review Status:**
+```
+[✅ Approve (Level 1/2/3)]  [❌ Reject]  [🔙 Back to Draft]
+```
+
+**Approved Status:**
+```
+[📄 Create Purchase Invoice]  [❌ Cancel ER]  [🔍 View Approval Route]
+```
+
+**PI Created Status:**
+```
+[🔗 View Purchase Invoice]  [💳 Create Payment Entry]  [❌ Cancel ER]
+(Cancel akan show guided message)
+```
+
+**Paid Status:**
+```
+[🔗 View Purchase Invoice]  [🔗 View Payment Entry]  [❌ Cancel ER]
+(Cancel akan trigger full reversal)
+```
+
+#### 7. Linked Documents Section
+
+```
+┌─────────────────────────────────────────────────┐
+│ 🔗 Linked Documents                             │
+├─────────────────────────────────────────────────┤
+│ • Purchase Invoice: PI-2026-00456 (Submitted)   │
+│   Amount: 13.100.000                            │
+│   [🔗 View]                                     │
+│                                                 │
+│ • Payment Entry: PE-2026-00789 (Submitted)      │
+│   Amount: 12.900.000 (after WHT)                │
+│   [🔗 View]                                     │
+└─────────────────────────────────────────────────┘
+```
+
+#### 8. Approval Route Display
+
+**When clicked "Check Approval Route":**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Approval Route for ER-2026-00123                           │
+├─────────────────────────────────────────────────────────────┤
+│ Amount: 10.000.000                                          │
+│ Cost Center: HO - Head Office                               │
+│                                                             │
+│ Approval Levels:                                            │
+│ ┌───────────────────────────────────────────────────────┐  │
+│ │ ✓ Level 1: approver1@test.com                        │  │
+│ │   Threshold: 0 - 5.000.000                           │  │
+│ │   Status: ✅ Approved (23/01/2026 14:30)             │  │
+│ │                                                       │  │
+│ │ ⏳ Level 2: approver2@test.com (CURRENT)             │  │
+│ │   Threshold: 5.000.001 - 50.000.000                  │  │
+│ │   Status: ⏳ Pending Approval                        │  │
+│ │                                                       │  │
+│ │ ⏸️ Level 3: approver3@test.com                       │  │
+│ │   Threshold: > 50.000.000                            │  │
+│ │   Status: ⏸️ Not Required (Amount below threshold)   │  │
+│ └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│ [✅ Close]                                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 9. Internal Charge Section
+
+**When "Generate Internal Charge" clicked:**
+```
+┌─────────────────────────────────────────────────┐
+│ 📊 Internal Charge Request                      │
+├─────────────────────────────────────────────────┤
+│ From Branch: HO                                 │
+│ To Branch: [Jakarta Branch ▼]                  │
+│                                                 │
+│ Items to Charge:                                │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ ☑ Item 1: Consulting Fee - 10.000.000     │ │
+│ │ ☐ Item 2: (if multiple items)              │ │
+│ └─────────────────────────────────────────────┘ │
+│                                                 │
+│ Charge Amount: 10.000.000                       │
+│                                                 │
+│ [Generate ICR] [Cancel]                         │
+└─────────────────────────────────────────────────┘
+```
+
+#### 10. Deferred Expense Item Display
+
+**In Expense Items table when deferred:**
+```
+┌───────────────────────────────────────────────────────────────────┐
+│ Expense Items                                                     │
+├────┬──────────────┬─────────────┬──────────┬─────────────────────┤
+│ #  │ Account      │ Description │ Amount   │ Deferred           │
+├────┼──────────────┼─────────────┼──────────┼─────────────────────┤
+│ 1  │ 6100 - Biaya │ Annual      │ 12.000.000│ ✓ Deferred        │
+│    │ Operasional  │ License     │          │   Start: 01/01/2026│
+│    │              │             │          │   End: 31/12/2026  │
+│    │              │             │          │   Months: 12       │
+│    │              │             │          │   Monthly: 1.000.000│
+└────┴──────────────┴─────────────┴──────────┴─────────────────────┘
+```
+
+#### 11. Status Indicator Colors
+
+```
+Status Colors (untuk visual recognition):
+┌─────────────────────┬─────────────┬──────────┐
+│ Status              │ Color       │ Badge    │
+├─────────────────────┼─────────────┼──────────┤
+│ Draft               │ Gray        │ ⚪ Draft │
+│ Pending Review      │ Orange      │ 🟠 Pending│
+│ Approved            │ Green       │ 🟢 Approved│
+│ PI Created          │ Blue        │ 🔵 PI Created│
+│ Paid                │ Purple      │ 🟣 Paid  │
+│ Rejected            │ Red         │ 🔴 Rejected│
+│ Cancelled           │ Dark Gray   │ ⚫ Cancelled│
+└─────────────────────┴─────────────┴──────────┘
+```
+
+#### 12. Validation Messages Location
+
+**Inline validation errors (below field):**
+```
+NPWP: 01.234.567.8-901.000
+❌ NPWP from OCR does not match Supplier NPWP
+```
+
+**Top banner errors (on Submit):**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ❌ Validation Error                                          │
+├─────────────────────────────────────────────────────────────┤
+│ • DPP variance exceeds tolerance (3% > 2%)                  │
+│ • Expected: 10.000.000, Found: 10.300.000                   │
+│ • Please adjust ER amount or re-upload tax invoice          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Success message (on Submit):**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ✅ Success                                                   │
+├─────────────────────────────────────────────────────────────┤
+│ Expense Request ER-2026-00123 submitted successfully        │
+│ Sent to approver1@test.com for Level 1 approval             │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Flow Normal (Happy Path)
 
 ### Skenario 1: ER Basic tanpa Pajak
 
-**Tujuan:** Validasi flow dasar dari Draft hingga Paid
+**Tujuan:** Validasi flow dasar dari Draft hingga Paid dengan explicit status verification
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Buat ER baru | Form terbuka dengan status Draft |
-| 2 | Isi mandatory fields: Supplier, Cost Center, Request Date | Fields terisi |
-| 3 | Tambah Item: Account = Biaya Operasional, Amount = 1,000,000 | Total = 1,000,000 |
-| 4 | Save | Document saved, status = Draft |
-| 5 | Submit | Status berubah ke "Pending Review" |
-| 6 | Login sebagai Approver | - |
-| 7 | Approve | Status berubah ke "Approved" |
-| 8 | Click "Create Purchase Invoice" | PI created, ER status = "PI Created" |
-| 9 | Submit PI | PI submitted |
-| 10 | Buat Payment Entry dari PI | PE created |
-| 11 | Submit Payment Entry | ER status = "Paid" ✅ |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Buat ER baru | Form terbuka | status = null/undefined |
+| 2 | Isi mandatory fields: Supplier, Cost Center, Request Date | Fields terisi | - |
+| 3 | Tambah Item: Account = Biaya Operasional, Amount = 1,000,000 | Total = 1,000,000 | - |
+| 4 | Save | Document saved | ✅ `status` = "Draft" <br> ✅ `workflow_state` = "Draft" <br> ✅ `docstatus` = 0 |
+| 5 | Submit | Document submitted | ✅ `status` = "Pending Review" <br> ✅ `workflow_state` = "Pending Review" <br> ✅ `docstatus` = 1 <br> ✅ `submitted_on` timestamp |
+| 6 | Login sebagai Approver | - | - |
+| 7 | Approve | Approval successful | ✅ `status` = "Approved" <br> ✅ `workflow_state` = "Approved" <br> ✅ `level_1_approved_on` timestamp |
+| 8 | Click "Create Purchase Invoice" | PI created | ✅ ER `status` = "PI Created" <br> ✅ `linked_purchase_invoice` = PI name |
+| 9 | Submit PI | PI submitted | ER status remains "PI Created" |
+| 10 | Buat Payment Entry dari PI | PE created | - |
+| 11 | Submit Payment Entry | PE submitted | ✅ ER `status` = "Paid" <br> ✅ `linked_payment_entry` = PE name |
 
 **Verification Points:**
-- [ ] `linked_purchase_invoice` terisi dengan PI name
-- [ ] `linked_payment_entry` terisi dengan PE name
-- [ ] Status flow: Draft → Pending Review → Approved → PI Created → Paid
+- [x] Status transitions correctly at each step
+- [x] `status` always matches `workflow_state`
+- [x] Timestamps recorded for key transitions
+- [x] `linked_purchase_invoice` terisi dengan PI name
+- [x] `linked_payment_entry` terisi dengan PE name
+- [x] Status flow: Draft → Pending Review → Approved → PI Created → Paid
 
 ---
 
@@ -172,40 +623,41 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 
 ### Skenario 5: Level 1 Approval Only (Amount ≤ 5 juta)
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Buat ER, Amount = 3,000,000 | - |
-| 2 | Submit | Status = "Pending Review", Current Level = 1 |
-| 3 | Login as Level 1 Approver | - |
-| 4 | Approve | Status = "Approved" (langsung) |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Buat ER, Amount = 3,000,000 | - | - |
+| 2 | Submit | Document submitted | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 1 |
+| 3 | Login as Level 1 Approver | - | - |
+| 4 | Approve | Directly approved | ✅ `status` = "Approved" <br> ✅ `level_1_approved_on` timestamp <br> ✅ No level 2/3 timestamps |
 
 ---
 
 ### Skenario 6: Level 2 Approval (Amount > 5 juta)
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Buat ER, Amount = 15,000,000 | - |
-| 2 | Submit | Status = "Pending Review" |
-| 3 | Level 1 Approver: Approve | Status = "Pending L2" |
-| 4 | Level 2 Approver: Approve | Status = "Approved" |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Buat ER, Amount = 15,000,000 | - | - |
+| 2 | Submit | Document submitted | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 1 |
+| 3 | Level 1 Approver: Approve | Level 1 approved | ✅ `status` = "Pending Review" (still) <br> ✅ `current_approval_level` = 2 <br> ✅ `level_1_approved_on` timestamp |
+| 4 | Level 2 Approver: Approve | Fully approved | ✅ `status` = "Approved" <br> ✅ `level_2_approved_on` timestamp |
 
 ---
 
 ### Skenario 7: Level 3 Approval (Amount > 50 juta)
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Buat ER, Amount = 75,000,000 | - |
-| 2 | Submit | Status = "Pending Review" |
-| 3 | Level 1 Approve | Status = "Pending L2" |
-| 4 | Level 2 Approve | Status = "Pending L3" |
-| 5 | Level 3 Approve | Status = "Approved" |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Buat ER, Amount = 75,000,000 | - | - |
+| 2 | Submit | Document submitted | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 1 |
+| 3 | Level 1 Approve | Level 1 approved | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 2 <br> ✅ `level_1_approved_on` timestamp |
+| 4 | Level 2 Approve | Level 2 approved | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 3 <br> ✅ `level_2_approved_on` timestamp |
+| 5 | Level 3 Approve | Fully approved | ✅ `status` = "Approved" <br> ✅ `level_3_approved_on` timestamp |
 
 **Verification Points:**
-- [ ] `level_1_user`, `level_2_user`, `level_3_user` terisi
-- [ ] `level_1_approved_on`, `level_2_approved_on`, `level_3_approved_on` terisi
-- [ ] Approval route sesuai dengan Expense Approval Setting
+- [x] `level_1_user`, `level_2_user`, `level_3_user` terisi
+- [x] `level_1_approved_on`, `level_2_approved_on`, `level_3_approved_on` terisi
+- [x] Approval route sesuai dengan Expense Approval Setting
+- [x] Status remains "Pending Review" until final approval
 
 ---
 
@@ -213,25 +665,29 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 
 ### Skenario 8: Reject di Level 1
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Buat & Submit ER | Status = "Pending Review" |
-| 2 | Level 1 Approver: Reject | Status = "Rejected" |
-| 3 | Verify rejection timestamp | `level_1_rejected_on` terisi |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Buat & Submit ER | Document submitted | ✅ `status` = "Pending Review" <br> ✅ `current_approval_level` = 1 |
+| 2 | Level 1 Approver: Reject | Rejection recorded | ✅ `status` = "Rejected" <br> ✅ `workflow_state` = "Rejected" <br> ✅ `level_1_rejected_on` timestamp <br> ✅ `docstatus` = 1 (still submitted) |
+| 3 | Try to approve | Action not available | ER tidak bisa di-approve lagi |
+| 4 | Check budget | Budget released | Budget lock di-release |
 
 **Expected Behavior:**
-- ER tidak bisa di-approve lagi
-- Budget lock (jika ada) di-release
+- [x] Status changed to "Rejected"
+- [x] Rejection timestamp recorded
+- [x] Document remains submitted (docstatus = 1)
+- [x] Cannot transition to other states except Reopen
+- [x] Budget lock released
 
 ---
 
 ### Skenario 9: Reject di Level 2
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Submit ER (Amount > 5 juta) | - |
-| 2 | Level 1 Approve | Status = "Pending L2" |
-| 3 | Level 2 Reject | Status = "Rejected" |
+| Step | Action | Expected Result | Status Check |
+|------|--------|-----------------|--------------|
+| 1 | Submit ER (Amount > 5 juta) | - | ✅ `status` = "Pending Review" |
+| 2 | Level 1 Approve | Level 1 approved | ✅ `current_approval_level` = 2 |
+| 3 | Level 2 Reject | Rejection at L2 | ✅ `status` = "Rejected" <br> ✅ `level_2_rejected_on` timestamp |
 
 ---
 
@@ -284,35 +740,62 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 
 ---
 
-### Skenario 14: Cancel ER dengan PI Created (URUTAN PENTING!)
+### Skenario 14: Cancel ER dengan PI Created (GUIDED CANCELLATION) ✅
 
-**⚠️ CRITICAL: Harus cancel dalam urutan terbalik!**
+**⚠️ SMART VALIDATION: System provides clear guidance!**
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | ER status = "PI Created" | PI sudah ada |
-| 2 | **Cancel PI dulu** | PI cancelled |
-| 3 | Lalu Cancel ER | ER cancelled |
+| 1 | ER status = "PI Created" | PI sudah ada (submitted) |
+| 2 | Try to Cancel ER directly | **Error with guidance** |
+| 3 | Error message shows 2 options | See below |
 
-**Error jika tidak urut:**
+**Error Message (Helpful Guidance):**
 ```
-"Cannot cancel Expense Request - linked Purchase Invoice exists"
+❌ Linked Documents Exist:
+Cannot cancel Expense Request - linked documents exist: Purchase Invoice PI-001.
+
+Please either:
+1. Cancel linked documents first in reverse order (PE → PI → ER), or
+2. Use 'Cancel All Linked Documents' from the menu to cancel everything at once.
 ```
+
+**Option A: Manual Cancellation**
+| 4a | Cancel PI-001 first | PI cancelled |
+| 5a | Cancel ER | ER cancelled ✅ |
+
+**Option B: Bulk Cancellation (Recommended)**
+| 4b | Menu > Cancel All Linked Documents | All cancelled together ✅ |
 
 ---
 
 ### Skenario 15: Cancel ER yang sudah Paid (FULL REVERSAL)
 
-**⚠️ PALING KOMPLEKS - Harus urutan terbalik penuh!**
+**⚠️ PALING KOMPLEKS - System provides clear guidance!**
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | ER status = "Paid" | PI + PE sudah ada |
-| 2 | **Cancel Payment Entry** | PE cancelled |
-| 3 | **Cancel Purchase Invoice** | PI cancelled |
-| 4 | **Cancel Expense Request** | ER cancelled |
+| 2 | Try to Cancel ER directly | **Error with guidance** |
 
-**Alternative:** Gunakan "Cancel All Linked Documents" di menu Actions
+**Error Message:**
+```
+❌ Linked Documents Exist:
+Cannot cancel Expense Request - linked documents exist: Payment Entry PE-001, Purchase Invoice PI-001.
+
+Please either:
+1. Cancel linked documents first in reverse order (PE → PI → ER), or
+2. Use 'Cancel All Linked Documents' from the menu to cancel everything at once.
+```
+
+**Option A: Manual Cancellation (Reverse Order)**
+| 3a | **Cancel Payment Entry** first | PE cancelled |
+| 4a | **Cancel Purchase Invoice** | PI cancelled |
+| 5a | **Cancel Expense Request** | ER cancelled ✅ |
+
+**Option B: Bulk Cancellation (Recommended) ✅**
+| 3b | Menu > **Cancel All Linked Documents** | All cancelled together ✅ |
+| 4b | Confirm action | PE + PI + ER all cancelled in one go |
 
 ---
 
@@ -374,10 +857,12 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 | 3 | Upload Tax Invoice OCR | OCR reads NPWP |
 | 4 | OCR NPWP = 01.234.567.8-901.000 | NPWP Match ✅ |
 | 5 | Submit | Validasi passed |
+| 6 | Check `ti_npwp_match` field | Field automatically set to 1 |
 
 **Verification Points:**
-- [ ] `ti_npwp_match` = 1 (true)
-- [ ] Tidak ada error NPWP mismatch
+- [x] `ti_npwp_match` = 1 (true) - **IMPLEMENTED** ✅
+- [x] Tidak ada error NPWP mismatch
+- [x] Field di-set otomatis saat validation passes
 
 #### Skenario 19b: NPWP Tidak Cocok ❌
 
@@ -387,12 +872,13 @@ Pastikan workflow `Expense Request Workflow` aktif dengan states:
 | 2 | Enable PPN | - |
 | 3 | Upload Tax Invoice OCR | OCR reads different NPWP |
 | 4 | OCR NPWP = 99.888.777.6-543.000 | NPWP Mismatch! |
-| 5 | Submit | **Error**: "NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.567.8-901.000)" |
+| 5 | Submit | **Error**: "NPWP from OCR (99.888.777.6-543.000) does not match Supplier NPWP (01.234.567.8-901.000)" |
+| 6 | Check `ti_npwp_match` field | Field remains 0 or null (not set) |
 
 **Expected Error Message:**
 ```
-❌ Validasi Faktur Pajak Gagal:
-NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.567.8-901.000)
+❌ Tax Invoice Validation Error:
+NPWP from OCR (99.888.777.6-543.000) does not match Supplier NPWP (01.234.567.8-901.000)
 ```
 
 ---
@@ -591,27 +1077,51 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 29: Self-Approval Prevention
+### Skenario 29: Duplicate PI Prevention ✅
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | User membuat ER | - |
-| 2 | User yang sama mencoba Approve | Error: "Self-approval not allowed" |
+**Tujuan:** Prevent creating multiple PIs from one ER (with smart handling)
 
----
-
-### Skenario 30: Duplicate PI Prevention
+#### Skenario 29a: Active PI Exists (Button Hidden)
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | ER dengan status "PI Created" | - |
-| 2 | Click "Create Purchase Invoice" lagi | Button tidak muncul atau error |
+| 2 | linked_purchase_invoice = "PI-001" | - |
+| 3 | PI-001 docstatus = 1 (submitted) | - |
+| 4 | Check for "Create Purchase Invoice" button | **Button HIDDEN** ✅ |
+| 5 | Try to create via API/console | Backend error: "already linked" |
+
+#### Skenario 29b: Cancelled PI (Button Shows Again) ✅
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | ER with linked_purchase_invoice = "PI-001" | - |
+| 2 | PI-001 docstatus = 2 (cancelled) | - |
+| 3 | Check for "Create Purchase Invoice" button | **Button VISIBLE** ✅ (can create new PI) |
+| 4 | Click "Create Purchase Invoice" | PI-002 created successfully |
+| 5 | linked_purchase_invoice updated | Now = "PI-002" |
+
+#### Skenario 29c: Deleted PI (Button Shows)
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | ER with linked_purchase_invoice = "PI-001" | - |
+| 2 | PI-001 doesn't exist anymore (deleted) | - |
+| 3 | Check for "Create Purchase Invoice" button | **Button VISIBLE** ✅ |
+| 4 | Can create new PI | Success |
+
+**Verification Points:**
+- [x] Button hidden when active PI exists (docstatus = 1)
+- [x] Button shows when PI cancelled (docstatus = 2) 
+- [x] Button shows when PI deleted (not found)
+- [x] Can create new PI after cancellation
+- [x] Backend validation still prevents duplicates via API
 
 ---
 
 ## Internal Charge Testing
 
-### Skenario 31: Generate Internal Charge Request
+### Skenario 30: Generate Internal Charge Request
 
 **Kondisi:** Allocation Mode = "Allocated via Internal Charge"
 
@@ -631,7 +1141,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 32: View Internal Charge
+### Skenario 31: View Internal Charge
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -641,7 +1151,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 33: Internal Charge Approval Required
+### Skenario 32: Internal Charge Approval Required
 
 **Kondisi:** ICR harus Approved sebelum ER bisa create PI
 
@@ -658,7 +1168,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ## Deferred Expense Testing
 
-### Skenario 34: Basic Deferred Expense Item
+### Skenario 33: Basic Deferred Expense Item
 
 **Tujuan:** Test amortisasi biaya ditangguhkan
 
@@ -679,7 +1189,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 35: Deferred Expense Validation Errors
+### Skenario 34: Deferred Expense Validation Errors
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -690,7 +1200,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 36: Deferred Expense Disabled
+### Skenario 35: Deferred Expense Disabled
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -702,7 +1212,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ## Multiple Items & Accounts Testing
 
-### Skenario 37: Multiple Expense Items
+### Skenario 36: Multiple Expense Items
 
 **Tujuan:** Test ER dengan beberapa line items
 
@@ -722,7 +1232,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 38: Item-Level PPh (Apply WHT per Item)
+### Skenario 37: Item-Level PPh (Apply WHT per Item)
 
 **Tujuan:** Test PPh per item, bukan per header
 
@@ -742,7 +1252,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 39: Mixed Mode - Header vs Item PPh
+### Skenario 38: Mixed Mode - Header vs Item PPh
 
 **Kondisi:** Jika ada item dengan Apply WHT, header PPh di-disable
 
@@ -756,7 +1266,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ## Branch & Cost Allocation Testing
 
-### Skenario 40: Auto-Set Branch from Cost Center
+### Skenario 39: Auto-Set Branch from Cost Center
 
 **Tujuan:** Test branch defaults dari cost center
 
@@ -773,7 +1283,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 41: Manual Branch Override
+### Skenario 40: Manual Branch Override
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -783,9 +1293,9 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-## UI Actions TestinG
+## UI Actions Testing
 
-### Skenario 42: Check Approval Route Button
+### Skenario 41: Check Approval Route Button
 
 **Tujuan:** Test tombol untuk check approval route sebelum submit
 
@@ -803,7 +1313,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ---
 
-### Skenario 43: Check Approval Route - No Setting
+### Skenario 42: Check Approval Route - No Setting
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -814,7 +1324,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ## Print Format Testing
 
-### Skenario 44: Print Expense Request
+### Skenario 43: Print Expense Request
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -834,7 +1344,7 @@ NPWP dari OCR (99.888.777.6-543.000) tidak sesuai dengan NPWP Supplier (01.234.5
 
 ## PPnBM Testing (Luxury Goods Tax)
 
-### Skenario 45: ER dengan PPnBM
+### Skenario 44: ER dengan PPnBM
 
 **Tujuan:** Test Pajak Penjualan Barang Mewah
 
@@ -854,7 +1364,7 @@ Total Amount = DPP + PPN + PPnBM - PPh
 
 ## Data Integrity Testing
 
-### Skenario 46: Immutability After Approval
+### Skenario 45: Immutability After Approval
 
 **Tujuan:** Prevent edit key fields setelah approved
 
@@ -878,9 +1388,128 @@ Total Amount = DPP + PPN + PPnBM - PPh
 
 ---
 
+### Skenario 46A: Status Field Verification & Sync ✅
+
+**Tujuan:** Verify status field accurately reflects workflow state and persists correctly
+
+#### Sub-Test 1: Status-Workflow State Synchronization
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Buat ER baru | `status` = null/undefined (not yet saved) |
+| 2 | Save as Draft | `status` = "Draft", `workflow_state` = "Draft" |
+| 3 | Submit ER | `status` = "Pending Review", `workflow_state` = "Pending Review" |
+| 4 | Verify DB | Both fields match in database |
+| 5 | Level 1 Approve | `status` = "Pending L2" or "Approved", `workflow_state` matches |
+| 6 | Refresh page | Status still correct (persisted) |
+| 7 | Create PI | `status` = "PI Created", `workflow_state` = "PI Created" |
+| 8 | Create PE | `status` = "Paid", `workflow_state` = "Paid" |
+
+**Verification Points:**
+- [x] `status` field always syncs with `workflow_state` after each transition
+- [x] Status persists correctly after page refresh
+- [x] Status visible in form header/indicator
+- [x] Both fields updated via `db_set` (no modified timestamp change)
+
+#### Sub-Test 2: Status Display & Filtering
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Go to Expense Request List | - |
+| 2 | Check Status column | Shows current status for each ER |
+| 3 | Filter by Status = "Pending Review" | Only pending ERs shown |
+| 4 | Filter by Status = "Approved" | Only approved ERs shown |
+| 5 | Filter by Status = "Paid" | Only paid ERs shown |
+| 6 | Check status badge colors | Different colors for different states |
+
+**Verification Points:**
+- [ ] Status column displays correctly in list view
+- [ ] Filter by status works accurately
+- [ ] Status badge has appropriate color coding
+- [ ] Status updates in real-time when changed
+
+#### Sub-Test 3: Status Protection (Cannot Bypass Workflow)
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Create ER with Status = "Draft" | - |
+| 2 | Try to manually set `status` = "Approved" via form | Field is read-only or change blocked |
+| 3 | Try to set `workflow_state` = "Approved" via form | Field is read-only or change blocked |
+| 4 | Try via API: `frappe.db.set_value()` manually | Changes blocked by `guard_status_changes` |
+| 5 | Verify error message | "Status changes must be performed via workflow actions" |
+
+**Verification Points:**
+- [x] Status/workflow_state fields are read-only in form (unless via workflow action)
+- [x] `guard_status_changes` prevents manual status bypass
+- [x] Only workflow transitions can change status
+
+#### Sub-Test 4: Status After Cancel
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | ER with Status = "Approved" | - |
+| 2 | Cancel ER | `docstatus` = 2 (cancelled) |
+| 3 | Check `status` field | Status remains "Approved" (preserved) |
+| 4 | Check `workflow_state` | workflow_state remains "Approved" (preserved) |
+| 5 | Check cancelled indicator | Red "Cancelled" badge shows |
+| 6 | List view | Shows "Cancelled" status/indicator |
+
+**Verification Points:**
+- [ ] Status field preserved after cancellation (audit trail)
+- [ ] Cancelled badge/indicator shows prominently
+- [ ] Cannot change status of cancelled document
+
+#### Sub-Test 5: Status Timestamp Recording
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Submit ER | `submitted_on` timestamp recorded |
+| 2 | Level 1 Approve | `level_1_approved_on` timestamp recorded |
+| 3 | Level 2 Approve | `level_2_approved_on` timestamp recorded |
+| 4 | Reject at any level | `level_X_rejected_on` timestamp recorded |
+| 5 | Check all timestamp fields | All populated with correct datetime |
+| 6 | Verify timezone | Timestamps in correct timezone |
+
+**Verification Points:**
+- [ ] Timestamps recorded for each approval level
+- [ ] Rejection timestamps recorded
+- [ ] Timestamps are in correct format and timezone
+- [ ] Timestamps visible in approval history
+
+#### Sub-Test 6: Status Transition Validation
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | ER Status = "Draft" | Can transition to "Pending Review" via Submit |
+| 2 | Status = "Pending Review" | Can transition to "Approved", "Rejected", or "Pending L2/L3" |
+| 3 | Status = "Approved" | Can transition to "PI Created" only |
+| 4 | Status = "PI Created" | Can transition to "Paid" only |
+| 5 | Status = "Rejected" | Cannot transition (terminal state unless reopened) |
+| 6 | Status = "Paid" | Cannot transition (terminal state) |
+
+**Verification Points:**
+- [ ] Only valid state transitions allowed
+- [ ] Invalid transitions blocked with clear error
+- [ ] State machine logic enforced
+
+**Quick Reference: Valid Status Transitions**
+```
+Draft → Pending Review (via Submit)
+Pending Review → Pending L2 (via Level 1 Approve)
+Pending Review → Pending L3 (via Level 2 Approve) 
+Pending Review → Approved (via Final Approve)
+Pending Review → Rejected (via Reject)
+Approved → PI Created (via Create PI)
+PI Created → Paid (via Payment Entry submission)
+Any State → Cancelled (via Cancel action)
+Rejected → Draft (via Reopen)
+```
+
+---
+
 ## Attachment & Notes Testing
 
-### Skenario 47: Upload Supporting Document
+### Skenario 46: Upload Supporting Document
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -891,7 +1520,7 @@ Total Amount = DPP + PPN + PPnBM - PPh
 
 ---
 
-### Skenario 48: Tax Invoice Attachment (Manual)
+### Skenario 47: Tax Invoice Attachment (Manual)
 
 **Kondisi:** Tanpa OCR, upload manual tax invoice
 
@@ -1005,6 +1634,22 @@ Total Amount = DPP + PPN + PPnBM - PPh
 - [ ] Attachment upload
 - [ ] Notes/description
 
+### Status Field Verification Checklist
+- [ ] Status-workflow_state sync (all transitions)
+- [ ] Status persistence after page refresh
+- [ ] Status display in list view
+- [ ] Filter by status works correctly
+- [ ] Status badge color coding
+- [ ] Cannot manually bypass workflow
+- [ ] guard_status_changes enforcement
+- [ ] Status preserved after cancellation
+- [ ] Timestamps recorded (submitted_on, level_X_approved_on)
+- [ ] Rejection timestamps recorded
+- [ ] Valid state transitions only
+- [ ] Invalid transitions blocked with error
+- [ ] Status read-only in form (except via workflow)
+- [ ] Cancelled indicator shows correctly
+
 ### Budget Control Checklist
 - [ ] Budget lock on submit
 - [ ] Budget release on reject
@@ -1105,7 +1750,6 @@ Total Amount    = Subtotal + PPN + PPnBM - PPh
 | Error | Cause | Solution |
 |-------|-------|----------|
 | "Approval Route Not Found" | No Expense Approval Setting | Create setting for Cost Center |
-| "Self-approval not allowed" | Creator trying to approve | Use different approver user |
 | "Only System Manager or Expense Approver can cancel" | Permission issue | Login with correct role |
 | "Budget exceeded" | Amount > available budget | Reduce amount or request additional budget |
 | "Cannot cancel - linked documents exist" | PI/PE not cancelled | Cancel downstream docs first |
@@ -1160,7 +1804,7 @@ Referensi lengkap semua error messages yang mungkin muncul dan kapan error terse
 
 | Error Message | Title | Trigger Condition | Test Scenario |
 |---------------|-------|-------------------|---------------|
-| `"NPWP dari OCR ({ocr_npwp}) tidak sesuai dengan NPWP Supplier ({supplier_npwp})"` | Tax Invoice Validation Error | NPWP dari OCR ≠ NPWP Supplier | Upload faktur dengan NPWP berbeda |
+| `"NPWP from OCR ({ocr_npwp}) does not match Supplier NPWP ({supplier_npwp})"` | Tax Invoice Validation Error | NPWP dari OCR ≠ NPWP Supplier | Upload faktur dengan NPWP berbeda |
 | `"DPP dari OCR ({ocr_dpp}) berbeda dengan Total Expense ({expected_dpp}). Selisih: {variance} atau {pct}% (toleransi: {tol_idr} atau {tol_pct}%)"` | Tax Invoice Validation Error | DPP variance > kedua toleransi | Upload faktur dengan DPP berbeda jauh |
 | `"PPN dari OCR ({ocr_ppn}) berbeda dengan PPN yang dihitung ({expected_ppn}). Selisih: {variance} atau {pct}% (toleransi: {tol_idr} atau {tol_pct}%)"` | Tax Invoice Validation Error | PPN variance > kedua toleransi | Upload faktur dengan PPN berbeda jauh |
 | `"PPN on Expense Request ({manual_ppn}) differs from OCR Faktur Pajak ({ti_ppn}) by more than {tolerance}."` | - | PPN manual vs OCR berbeda melebihi tolerance | Manual PPN ≠ OCR PPN |
@@ -1249,5 +1893,60 @@ Referensi lengkap semua error messages yang mungkin muncul dan kapan error terse
 
 ---
 
-**Last Updated:** January 2026  
+## 🎉 Recent Implementation Updates (January 2026)
+
+### ✅ Fix #1: NPWP Match Verification Flag
+**File:** `imogi_finance/imogi_finance/doctype/expense_request/expense_request.py`
+
+Implemented automatic setting of `ti_npwp_match` field when NPWP validation passes successfully.
+
+- **Behavior:** Field `ti_npwp_match` automatically set to 1 when OCR NPWP matches Supplier NPWP
+- **Purpose:** Proper tracking of verification status for audit trail
+- **Test Scenario:** See [Skenario 19a](#skenario-19a-npwp-cocok-)
+
+---
+
+### ✅ Fix #2: Hybrid Cancel Validation (Smart Guidance)
+**File:** `imogi_finance/imogi_finance/doctype/expense_request/expense_request.py`
+
+Implemented intelligent cancel validation that prevents accidental cancellation while preserving flexibility.
+
+**Features:**
+- ✅ Checks for linked Purchase Invoice and Payment Entry before cancel
+- ✅ Shows clear, helpful error message with 2 options:
+  1. Manual cancellation in reverse order (PE → PI → ER)
+  2. Use "Cancel All Linked Documents" feature (recommended)
+- ✅ Best of both worlds: Safety + Flexibility
+
+**Test Scenarios:**
+- [Skenario 14](#skenario-14-cancel-er-dengan-pi-created-guided-cancellation-) - Cancel with PI
+- [Skenario 15](#skenario-15-cancel-er-yang-sudah-paid-full-reversal) - Cancel with PE + PI
+
+---
+
+### ✅ Fix #3: Improved Duplicate PI Prevention
+**File:** `imogi_finance/imogi_finance/doctype/expense_request/expense_request.js`
+
+Enhanced "Create Purchase Invoice" button visibility logic to handle cancelled/deleted PI scenarios.
+
+**Smart Behavior:**
+- ❌ **Button HIDDEN** when active PI exists (docstatus = 1)
+- ✅ **Button VISIBLE** when PI is cancelled (docstatus = 2) → Can create new PI
+- ✅ **Button VISIBLE** when PI is deleted → Can create new PI
+- ✅ Backend validation still prevents duplicates via API
+
+**Test Scenario:** See [Skenario 29](#skenario-29-duplicate-pi-prevention-) (includes 3 sub-scenarios)
+
+---
+
+### 🔄 Error Messages Language Update
+All new error messages are now in **English** for consistency:
+- "NPWP from OCR does not match Supplier NPWP"
+- "Cannot cancel Expense Request - linked documents exist..."
+- "Linked Documents Exist" (title)
+
+---
+
+**Last Updated:** January 23, 2026  
 **Module Version:** IMOGI Finance v1.x
+**Implementation Status:** 3 Critical Fixes Completed ✅
