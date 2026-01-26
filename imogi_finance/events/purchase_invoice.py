@@ -406,6 +406,12 @@ def _handle_branch_expense_request_submit(doc, request_name):
 def before_cancel(doc, method=None):
     if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
         doc.flags.ignore_links = True
+    
+    # Mark that we're cancelling this PI - BCE should allow its cancellation
+    # Store in frappe.local so BCE.before_cancel can check it
+    if not hasattr(frappe.local, "cancelling_purchase_invoices"):
+        frappe.local.cancelling_purchase_invoices = set()
+    frappe.local.cancelling_purchase_invoices.add(doc.name)
 
 
 def before_delete(doc, method=None):

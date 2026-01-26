@@ -79,7 +79,37 @@ Manual entry creation would corrupt budget tracking."""),
                 )
     
     def before_cancel(self):
-        """Prevent manual cancellation of Budget Control Entries."""
+        """Prevent manual cancellation of Budget Control Entries.
+        
+        Budget Control Entries should only be "cancelled" via RELEASE/REVERSAL entries,
+        not by actual document cancellation. This prevents data corruption.
+        
+        However, we need to allow the cancel to proceed if it's triggered by
+        the parent document's cancellation (Expense Request or Purchase Invoice),
+        because Frappe's auto-cancel mechanism will try to cancel linked documents.
+        
+        We check flags and frappe.local to determine if this is a programmatic 
+        cancel (allowed) or manual cancel (blocked).
+        """
+        # Allow programmatic cancellation (from parent document cancel flow)
+        if self.flags.get("ignore_permissions") or self.flags.get("from_parent_cancel"):
+            return
+        
+        # Check if parent document is being cancelled
+        ref_doctype = getattr(self, "ref_doctype", None)
+        ref_name = getattr(self, "ref_name", None)
+        
+        if ref_doctype == "Expense Request" and ref_name:
+            cancelling_ers = getattr(frappe.local, "cancelling_expense_requests", set())
+            if ref_name in cancelling_ers:
+                return
+        
+        if ref_doctype == "Purchase Invoice" and ref_name:
+            cancelling_pis = getattr(frappe.local, "cancelling_purchase_invoices", set())
+            if ref_name in cancelling_pis:
+                return
+        
+        # Block manual cancellation
         frappe.throw(
             _("""Budget Control Entries cannot be cancelled directly.
             
@@ -92,8 +122,13 @@ Manual cancellation would corrupt budget tracking."""),
         )
     
     def on_cancel(self):
-        """This should never be called due to before_cancel block."""
-        frappe.log_error(
-            title="Illegal Budget Control Entry Cancellation",
-            message=f"Budget Control Entry {self.name} was cancelled directly! This should never happen."
-        )
+        """Log cancellation for audit purposes.
+        
+        This is called when cancellation proceeds (either programmatically allowed
+        or if before_cancel somehow didn't block it).
+        """
+        if not self.flags.get("ignore_permissions") and not self.flags.get("from_parent_cancel"):
+            frappe.log_error(
+                title="Unexpected Budget Control Entry Cancellation",
+                message=f"Budget Control Entry {self.name} was cancelled without proper flags! This may indicate a bug."
+            )

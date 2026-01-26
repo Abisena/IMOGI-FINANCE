@@ -253,6 +253,12 @@ class ExpenseRequest(Document):
                 ).format(", ".join(docs)),
                 title=_("Linked Documents Exist")
             )
+        
+        # Mark that we're cancelling this ER - BCE should allow its cancellation
+        # Store in frappe.local so BCE.before_cancel can check it
+        if not hasattr(frappe.local, "cancelling_expense_requests"):
+            frappe.local.cancelling_expense_requests = set()
+        frappe.local.cancelling_expense_requests.add(self.name)
 
     def on_cancel(self):
         """Clean up: release budget reservations.
