@@ -12,11 +12,22 @@ frappe.ui.form.on('Internal Charge Request', {
       frm.trigger('setup_workflow_indicators');
     }
     
-    // Add button to auto-populate lines from ER
+    // Add button to populate lines from ER (for draft documents)
     if (frm.doc.expense_request && frm.doc.docstatus === 0 && !frm.is_new()) {
-      frm.add_custom_button(__('Repopulate from ER'), function() {
+      const lines = frm.doc.internal_charge_lines || [];
+      const buttonLabel = lines.length > 0 ? __('Repopulate from ER') : __('Populate Lines from ER');
+      
+      frm.add_custom_button(buttonLabel, function() {
         frm.trigger('repopulate_lines_from_er');
-      });
+      }, __('Actions'));
+      
+      // Show help message if no lines
+      if (lines.length === 0) {
+        frm.dashboard.add_indicator(
+          __('No allocation lines - click "Populate Lines from ER" to add'),
+          'orange'
+        );
+      }
     }
   },
   
@@ -83,9 +94,53 @@ frappe.ui.form.on('Internal Charge Request', {
       return;
     }
     
-    frappe.confirm(
-      __('This will replace all existing lines with items from the Expense Request. Continue?'),
-      async () => {
+    // First, prompt user to select target cost center
+    const dialog = new frappe.ui.Dialog({
+      title: __('Select Target Cost Center'),
+      fields: [
+        {
+          fieldname: 'info',
+          fieldtype: 'HTML',
+          options: `<p class="text-muted">
+            <strong>Source Cost Center:</strong> ${frm.doc.source_cost_center}<br>
+            <strong>Note:</strong> Target Cost Center must be different from Source for Internal Charge.
+          </p>`
+        },
+        {
+          fieldname: 'target_cost_center',
+          fieldtype: 'Link',
+          label: __('Target Cost Center'),
+          options: 'Cost Center',
+          reqd: 1,
+          get_query: function() {
+            return {
+              filters: {
+                'is_group': 0,
+                'name': ['!=', frm.doc.source_cost_center]
+              }
+            };
+          }
+        },
+        {
+          fieldname: 'replace_existing',
+          fieldtype: 'Check',
+          label: __('Replace existing lines'),
+          default: 1
+        }
+      ],
+      primary_action_label: __('Populate Lines'),
+      primary_action: async function(values) {
+        if (values.target_cost_center === frm.doc.source_cost_center) {
+          frappe.msgprint({
+            title: __('Invalid Target'),
+            message: __('Target Cost Center cannot be the same as Source Cost Center.'),
+            indicator: 'red'
+          });
+          return;
+        }
+        
+        dialog.hide();
+        
         try {
           const { message } = await frappe.call({
             method: 'frappe.client.get',
@@ -96,35 +151,41 @@ frappe.ui.form.on('Internal Charge Request', {
           });
           
           if (message && message.items) {
-            // Clear existing lines
-            frm.clear_table('internal_charge_lines');
+            // Clear existing lines if requested
+            if (values.replace_existing) {
+              frm.clear_table('internal_charge_lines');
+            }
             
-            // Add new lines from ER items
+            // Add new lines from ER items with selected target cost center
             message.items.forEach(item => {
-              const child = frm.add_child('internal_charge_lines');
-              frappe.model.set_value(child.doctype, child.name, 'target_cost_center', frm.doc.source_cost_center);
-              frappe.model.set_value(child.doctype, child.name, 'expense_account', item.expense_account);
-              frappe.model.set_value(child.doctype, child.name, 'description', item.description);
-              frappe.model.set_value(child.doctype, child.name, 'amount', item.amount);
+              if (item.expense_account && item.amount > 0) {
+                const child = frm.add_child('internal_charge_lines');
+                frappe.model.set_value(child.doctype, child.name, 'target_cost_center', values.target_cost_center);
+                frappe.model.set_value(child.doctype, child.name, 'expense_account', item.expense_account);
+                frappe.model.set_value(child.doctype, child.name, 'description', item.description);
+                frappe.model.set_value(child.doctype, child.name, 'amount', item.amount);
+              }
             });
             
             frm.refresh_field('internal_charge_lines');
             calculateLineTotals(frm);
             
             frappe.show_alert({
-              message: __('Lines repopulated from Expense Request'),
+              message: __('Lines populated from Expense Request to {0}', [values.target_cost_center]),
               indicator: 'green'
             });
           }
         } catch (error) {
           frappe.msgprint({
             title: __('Error'),
-            message: error?.message || __('Failed to repopulate lines'),
+            message: error?.message || __('Failed to populate lines'),
             indicator: 'red',
           });
         }
       }
-    );
+    });
+    
+    dialog.show();
   },
   
   setup_workflow_indicators: function(frm) {

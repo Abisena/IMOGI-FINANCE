@@ -981,23 +981,20 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
     ic.total_amount = total
     ic.allocation_mode = "Allocated via Internal Charge"
 
-    # Auto-populate lines from ER items - one line per item to source cost center
-    items = getattr(request, "items", []) or []
-    for item in items:
-        expense_account = getattr(item, "expense_account", None)
-        amount = float(getattr(item, "amount", 0) or 0)
-        description = getattr(item, "description", None)
-        
-        if expense_account and amount:
-            ic.append(
-                "internal_charge_lines",
-                {
-                    "target_cost_center": getattr(request, "cost_center", None),
-                    "expense_account": expense_account,
-                    "description": description,
-                    "amount": amount,
-                },
-            )
+    # NOTE: Lines are NOT auto-populated anymore
+    # User must manually add lines with different target cost centers
+    # This is because Internal Charge is meant to allocate to DIFFERENT cost centers
+    
+    # Store ER items info for reference (user can use "Repopulate from ER" button)
+    ic.flags.er_items_for_reference = [
+        {
+            "expense_account": getattr(item, "expense_account", None),
+            "description": getattr(item, "description", None),
+            "amount": float(getattr(item, "amount", 0) or 0),
+        }
+        for item in items
+        if getattr(item, "expense_account", None) and float(getattr(item, "amount", 0) or 0) > 0
+    ]
 
     ic.insert(ignore_permissions=True)
 

@@ -158,8 +158,14 @@ class InternalChargeRequest(Document):
 
     def _validate_amounts(self):
         lines = getattr(self, "internal_charge_lines", []) or []
+        
+        # Allow empty lines in Draft state (user will add later)
         if not lines:
-            frappe.throw(_("Please add at least one Internal Charge Line."))
+            if getattr(self, "docstatus", 0) == 0:
+                # Draft - ok to have no lines, user will add manually
+                return
+            else:
+                frappe.throw(_("Please add at least one Internal Charge Line before submitting."))
 
         # Validate total amount matches
         total = sum(float(getattr(line, "amount", 0) or 0) for line in lines)

@@ -712,10 +712,12 @@ function maybeRenderInternalChargeButton(frm) {
 
       if (message) {
         frappe.show_alert({ 
-          message: __('Internal Charge Request {0} created with {1} line items.', [message, frm.doc.items?.length || 0]), 
+          message: __('Internal Charge Request {0} created. Please add allocation lines with target cost centers.', [message]), 
           indicator: 'green' 
         });
-        await frm.reload_doc();
+        
+        // Redirect to ICR form so user can add lines with different cost centers
+        frappe.set_route('Form', 'Internal Charge Request', message);
       }
     } catch (error) {
       frappe.msgprint({
