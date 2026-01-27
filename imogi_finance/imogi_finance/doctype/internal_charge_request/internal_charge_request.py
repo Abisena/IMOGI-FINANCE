@@ -23,6 +23,10 @@ except Exception:  # pragma: no cover - fallback for test stubs
 class InternalChargeRequest(Document):
     """Request to allocate an Expense Request across multiple cost centers."""
 
+    def before_validate(self):
+        """Auto-populate company and fiscal_year before validation."""
+        self._auto_populate_company_and_fiscal_year()
+
     def validate(self):
         settings = utils.get_settings()
         if not settings.get("enable_internal_charge"):
@@ -31,6 +35,43 @@ class InternalChargeRequest(Document):
         self._validate_amounts()
         self._populate_line_routes()
         self._sync_status()
+
+    def _auto_populate_company_and_fiscal_year(self):
+        """Auto-populate company from cost center and fiscal_year from posting_date."""
+        # Auto-populate company from source_cost_center
+        if not getattr(self, "company", None) and getattr(self, "source_cost_center", None):
+            try:
+                self.company = frappe.db.get_value("Cost Center", self.source_cost_center, "company")
+            except Exception:
+                pass
+        
+        # If still no company, try from expense_request
+        if not getattr(self, "company", None) and getattr(self, "expense_request", None):
+            try:
+                er_cost_center = frappe.db.get_value("Expense Request", self.expense_request, "cost_center")
+                if er_cost_center:
+                    self.company = frappe.db.get_value("Cost Center", er_cost_center, "company")
+            except Exception:
+                pass
+        
+        # Auto-populate fiscal_year from posting_date and company
+        if not getattr(self, "fiscal_year", None):
+            posting_date = getattr(self, "posting_date", None)
+            company = getattr(self, "company", None)
+            
+            if posting_date:
+                try:
+                    # Try to get fiscal year from posting_date
+                    from erpnext.accounts.utils import get_fiscal_year
+                    fy = get_fiscal_year(posting_date, company=company, as_dict=False)
+                    if fy:
+                        self.fiscal_year = fy[0]  # fy returns (fiscal_year, start_date, end_date)
+                except Exception:
+                    # Fallback: try to resolve from utils
+                    try:
+                        self.fiscal_year = utils.resolve_fiscal_year(None, company=company)
+                    except Exception:
+                        pass
 
     def before_submit(self):
         settings = utils.get_settings()

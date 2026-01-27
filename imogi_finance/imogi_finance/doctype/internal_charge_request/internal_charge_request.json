@@ -44,8 +44,8 @@
       "fieldtype": "Link",
       "options": "Company",
       "reqd": 1,
-      "fetch_from": "source_cost_center.company",
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "posting_date",
@@ -61,7 +61,8 @@
       "fieldtype": "Link",
       "options": "Fiscal Year",
       "reqd": 1,
-      "read_only": 1
+      "read_only": 1,
+      "hidden": 1
     },
     {
       "fieldname": "source_cost_center",
