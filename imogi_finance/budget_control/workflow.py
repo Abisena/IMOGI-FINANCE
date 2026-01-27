@@ -968,7 +968,8 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
     if getattr(request, "internal_charge_request", None):
         return request.internal_charge_request
 
-    total, expense_accounts = accounting.summarize_request_items(getattr(request, "items", []) or [])
+    items = getattr(request, "items", []) or []
+    total, expense_accounts = accounting.summarize_request_items(items)
     company = utils.resolve_company_from_cost_center(getattr(request, "cost_center", None))
     fiscal_year = utils.resolve_fiscal_year(getattr(request, "fiscal_year", None), company=company)
 
