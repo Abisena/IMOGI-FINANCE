@@ -367,11 +367,24 @@ async function setDeferredExpenseQueries(frm) {
   await loadDeferrableAccounts(frm);
 
   const accountNames = Object.keys(frm.deferrableAccountMap || {});
-  frm.set_query('prepaid_account', 'items', () => ({
-    filters: {
-      name: ['in', accountNames.length ? accountNames : ['']],
-    },
-  }));
+  
+  frm.set_query('prepaid_account', 'items', () => {
+    // If whitelist exists, filter to only those accounts
+    if (accountNames.length > 0) {
+      return {
+        filters: {
+          name: ['in', accountNames],
+        },
+      };
+    }
+    // Fallback: if no whitelist configured, allow any Asset account (non-group)
+    return {
+      filters: {
+        root_type: 'Asset',
+        is_group: 0,
+      },
+    };
+  });
 }
 
 async function showDeferredScheduleForItem(row) {
