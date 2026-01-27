@@ -36,8 +36,11 @@ frappe.ui.form.on('Internal Charge Request', {
     setupFieldDependencies(frm);
     
     // Auto-fetch from Expense Request if linked
-    if (frm.doc.expense_request && frm.is_new()) {
-      frm.trigger('fetch_expense_request_details');
+    if (frm.doc.expense_request) {
+      // Always fetch details if company or fiscal_year is missing
+      if (!frm.doc.company || !frm.doc.fiscal_year) {
+        frm.trigger('fetch_expense_request_details');
+      }
     }
   },
   
@@ -63,20 +66,19 @@ frappe.ui.form.on('Internal Charge Request', {
       
       if (message) {
         // Auto-populate fields from ER
-        frm.set_value('company', message.company);
-        frm.set_value('source_cost_center', message.cost_center);
-        frm.set_value('total_amount', message.total_amount);
+        await frm.set_value('company', message.company);
+        await frm.set_value('source_cost_center', message.cost_center);
+        await frm.set_value('total_amount', message.total_amount);
         
         // Set posting_date to ER request_date if available
-        if (message.request_date) {
-          frm.set_value('posting_date', message.request_date);
-        }
+        const postingDate = message.request_date || frm.doc.posting_date || frappe.datetime.get_today();
+        await frm.set_value('posting_date', postingDate);
         
-        // Get fiscal year from ER or current date
-        if (!frm.doc.fiscal_year && message.company) {
-          const fy = await getFiscalYear(message.company, frm.doc.posting_date);
+        // Always try to get fiscal year from company and posting_date
+        if (message.company) {
+          const fy = await getFiscalYear(message.company, postingDate);
           if (fy) {
-            frm.set_value('fiscal_year', fy);
+            await frm.set_value('fiscal_year', fy);
           }
         }
       }
