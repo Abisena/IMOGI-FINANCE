@@ -588,11 +588,6 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):
-    """Release reserved budget when ER is rejected/cancelled.
-    
-    Uses REVERSAL entry type with direction OUT to release the reservation.
-    This effectively "undoes" the RESERVATION by posting an opposite entry.
-    """
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
         return
@@ -610,16 +605,14 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
             project=row.get("project"),
             branch=row.get("branch"),
         )
-        # Use REVERSAL with direction OUT to release/undo the RESERVATION
-        # This makes the reserved amount available again
         ledger.post_entry(
-            "REVERSAL",
+            "RELEASE",
             dims,
             float(row.get("amount") or 0),
-            "OUT",
+            "IN",
             ref_doctype="Expense Request",
             ref_name=getattr(expense_request, "name", None),
-            remarks=_("Release reservation on {0}").format(reason or "cancel"),
+            remarks=_("Release on rejection or cancel"),
         )
 
     if hasattr(expense_request, "db_set"):
@@ -977,8 +970,22 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
 
     items = getattr(request, "items", []) or []
     total, expense_accounts = accounting.summarize_request_items(items)
+    
+    # Resolve company - try from cost center first, then from request, then default
     company = utils.resolve_company_from_cost_center(getattr(request, "cost_center", None))
+    if not company:
+        company = getattr(request, "company", None) or frappe.defaults.get_user_default("Company")
+    if not company:
+        frappe.throw(_("Cannot determine Company. Please set company on Expense Request or Cost Center."))
+    
+    # Resolve fiscal year
     fiscal_year = utils.resolve_fiscal_year(getattr(request, "fiscal_year", None), company=company)
+    if not fiscal_year:
+        fiscal_year = frappe.defaults.get_user_default("fiscal_year") or frappe.db.get_value(
+            "Fiscal Year", {"disabled": 0}, "name", order_by="year_start_date desc"
+        )
+    if not fiscal_year:
+        frappe.throw(_("Cannot determine Fiscal Year. Please set fiscal_year on Expense Request."))
 
     ic = frappe.new_doc("Internal Charge Request")
     ic.expense_request = request.name
@@ -989,14 +996,13 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
     ic.total_amount = total
     ic.allocation_mode = "Allocated via Internal Charge"
 
-    # Populate internal_charge_lines from ER items
-    # User can later modify target_cost_center to allocate to different cost centers
+    # Populate internal_charge_lines from ER items (mandatory field)
     for item in items:
         expense_account = getattr(item, "expense_account", None)
         amount = float(getattr(item, "amount", 0) or 0)
         if expense_account and amount > 0:
             ic.append("internal_charge_lines", {
-                "target_cost_center": getattr(request, "cost_center", None),  # Default to source, user can change
+                "target_cost_center": getattr(request, "cost_center", None),
                 "expense_account": expense_account,
                 "description": getattr(item, "description", None),
                 "amount": amount,
