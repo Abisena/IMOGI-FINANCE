@@ -18,7 +18,6 @@
       "fieldtype": "Link",
       "options": "Account",
       "reqd": 1,
-      "link_filters": "{\"root_type\": \"Asset\"}",
       "in_list_view": 1
     },
     {
@@ -27,7 +26,6 @@
       "fieldtype": "Link",
       "options": "Account",
       "reqd": 1,
-      "link_filters": "{\"root_type\": \"Expense\"}",
       "in_list_view": 1
     },
     {

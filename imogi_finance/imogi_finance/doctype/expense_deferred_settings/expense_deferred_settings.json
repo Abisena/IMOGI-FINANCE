@@ -22,8 +22,7 @@
       "fieldname": "default_prepaid_account",
       "fieldtype": "Link",
       "label": "Default Prepaid Account",
-      "options": "Account",
-      "link_filters": "{\"root_type\": \"Asset\"}"
+      "options": "Account"
     },
     {
       "fieldname": "deferrable_accounts",
