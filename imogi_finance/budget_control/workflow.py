@@ -588,6 +588,11 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):
+    """Release reserved budget when ER is rejected/cancelled.
+    
+    Uses REVERSAL entry type with direction OUT to release the reservation.
+    This effectively "undoes" the RESERVATION by posting an opposite entry.
+    """
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
         return
@@ -605,14 +610,16 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
             project=row.get("project"),
             branch=row.get("branch"),
         )
+        # Use REVERSAL with direction OUT to release/undo the RESERVATION
+        # This makes the reserved amount available again
         ledger.post_entry(
-            "RELEASE",
+            "REVERSAL",
             dims,
             float(row.get("amount") or 0),
-            "IN",
+            "OUT",
             ref_doctype="Expense Request",
             ref_name=getattr(expense_request, "name", None),
-            remarks=_("Release on rejection or cancel"),
+            remarks=_("Release reservation on {0}").format(reason or "cancel"),
         )
 
     if hasattr(expense_request, "db_set"):
