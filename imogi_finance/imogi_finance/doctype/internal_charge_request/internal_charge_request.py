@@ -166,10 +166,21 @@ class InternalChargeRequest(Document):
         if getattr(self, "total_amount", 0) and abs(total - float(self.total_amount)) > 0.0001:
             frappe.throw(_("Sum of line amounts ({0}) must equal Total Amount ({1}).").format(total, self.total_amount))
 
-        # Validate individual line amounts
-        for line in lines:
+        # Validate individual line amounts and target cost center
+        source_cc = getattr(self, "source_cost_center", None)
+        for idx, line in enumerate(lines):
             if getattr(line, "amount", 0) is None or float(line.amount) <= 0:
                 frappe.throw(_("Line amount must be greater than zero."))
+            
+            # Validate target cost center is different from source
+            target_cc = getattr(line, "target_cost_center", None)
+            if target_cc and source_cc and target_cc == source_cc:
+                frappe.throw(
+                    _("Row {0}: Target Cost Center ({1}) cannot be the same as Source Cost Center ({2}). "
+                      "Internal Charge is meant to allocate expenses to different cost centers.").format(
+                        idx + 1, target_cc, source_cc
+                    )
+                )
         
         # Validate per-account totals match ER items
         if getattr(self, "expense_request", None):
