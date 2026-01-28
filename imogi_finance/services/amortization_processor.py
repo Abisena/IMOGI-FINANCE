@@ -49,7 +49,14 @@ def create_amortization_schedule_for_pi(pi_name: str):
 
     for item in deferred_items:
         amount = flt(item.amount)
-        periods = int(item.get("deferred_expense_periods") or 12)
+
+        # Get periods - use default 12 if not set
+        periods_raw = item.get("deferred_expense_periods")
+        if periods_raw and periods_raw != "undefined":
+            periods = int(periods_raw)
+        else:
+            periods = 12
+
         start_date = getdate(item.service_start_date)
         prepaid_account = item.deferred_expense_account
 
@@ -59,6 +66,8 @@ def create_amortization_schedule_for_pi(pi_name: str):
             item.deferred_expense_account,
             "parent_account"
         ) or "Cost of Goods Sold"
+
+        frappe.logger().info(f"Processing item {item.item_code}: amount={amount}, periods={periods}, account={prepaid_account}")
 
         # Generate monthly breakdown
         schedule = _generate_monthly_schedule(
