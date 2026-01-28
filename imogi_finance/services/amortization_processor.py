@@ -36,23 +36,25 @@ def create_amortization_schedule_for_pi(pi_name: str):
     if pi.docstatus != 1:
         frappe.throw(_("Purchase Invoice must be submitted"))
 
-    # Get deferred items - filter berdasarkan keberadaan deferred_expense_account
+    # Get deferred items - convert to dict untuk reliable access
     deferred_items = []
-    for idx, item in enumerate(pi.items):
-        try:
-            # Try berbagai cara access field
-            deferred_acct = (
-                item.get("deferred_expense_account") or
-                getattr(item, "deferred_expense_account", None)
-            )
-            if deferred_acct:
-                deferred_items.append(item)
-                frappe.logger().info(f"Item {idx} ({item.item_code}): deferred_account={deferred_acct}")
-        except Exception as e:
-            frappe.logger().error(f"Item {idx} error: {str(e)}")
 
-    frappe.logger().info(f"Found {len(deferred_items)} deferred items")
+    # Get PI as dict
+    pi_dict = pi.as_dict()
+    items_data = pi_dict.get("items", [])
 
+    frappe.logger().info(f"Processing PI {pi_name} with {len(items_data)} items from dict")
+
+    for idx, item_dict in enumerate(items_data):
+        deferred_acct = item_dict.get("deferred_expense_account")
+        frappe.logger().info(f"Item {idx}: deferred_acct={deferred_acct}")
+
+        if deferred_acct:
+            # Find matching item object from pi.items
+            for item_obj in pi.items:
+                if item_obj.name == item_dict.get("name"):
+                    deferred_items.append(item_obj)
+                    break
     if not deferred_items:
         frappe.throw(_("No deferred items found in this Purchase Invoice"))
 
@@ -75,12 +77,21 @@ def create_amortization_schedule_for_pi(pi_name: str):
 
         start_date = getdate(item.service_start_date)
         prepaid_account = item.deferred_expense_account
-
-        # Gunakan deferred_expense_account untuk expense account juga
-        # (Debit: Prepaid, Credit: Expense - keduanya ke marketing expenses)
         expense_account = prepaid_account
-    # Sort by posting_date
-    all_schedules.sort(key=lambda x: x["posting_date"])
+
+		# Tambahkan:
+        # Generate monthly schedule untuk item ini
+        item_schedules = _generate_monthly_schedule(
+            amount=amount,
+            periods=periods,
+            start_date=start_date,
+            prepaid_account=prepaid_account,
+            expense_account=expense_account,
+            pi_name=pi_name,
+            item_code=item.item_code
+        )
+
+        all_schedules.extend(item_schedules)
 
     # Create Journal Entries
     je_names = []
