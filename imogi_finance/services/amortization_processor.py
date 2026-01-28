@@ -48,7 +48,11 @@ def create_amortization_schedule_for_pi(pi_name: str):
     all_schedules = []
 
     for item in deferred_items:
-        amount = flt(item.amount)
+        # Try different field names untuk amount
+        amount = flt(item.get("net_amount") or item.get("amount") or item.get("line_amount") or item.get("base_net_amount") or 0)
+
+        if amount == 0:
+            frappe.log_error(f"Amount is 0 for item {item.item_code}. Fields: {item.as_dict()}")
 
         # Get periods - use default 12 if not set
         periods_raw = item.get("deferred_expense_periods")
