@@ -220,7 +220,7 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     company = utils.resolve_company_from_cost_center(getattr(expense_request, "cost_center", None))
     # FIX: Expense Request doesn't have fiscal_year field, need to resolve it
     fiscal_year = utils.resolve_fiscal_year(getattr(expense_request, "fiscal_year", None), company=company)
-    
+
     # Validate fiscal year is found
     if not fiscal_year:
         frappe.throw(
@@ -233,7 +233,7 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
 
     items = getattr(expense_request, "items", []) or []
     total_amount, account_totals = _get_account_totals(items)
-    
+
     if not account_totals:
         # Log detailed info for debugging
         item_details = []
@@ -241,13 +241,13 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
             acc = accounting._get_item_value(item, "expense_account")
             amt = accounting._get_item_value(item, "amount")
             item_details.append(f"Item {idx+1}: account={acc}, amount={amt}")
-        
+
         frappe.logger().warning(
             f"_build_allocation_slices: No account totals for {getattr(expense_request, 'name', 'Unknown')}. "
             f"Items: {item_details}"
         )
         return []
-    
+
     frappe.logger().info(f"_build_allocation_slices for {getattr(expense_request, 'name', 'Unknown')}: total={total_amount}, accounts={list(account_totals.keys())}")
 
     slices = []
@@ -263,7 +263,7 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
                 branch=getattr(expense_request, "branch", None),
             )
             slices.append((dims, float(amount)))
-        
+
         frappe.logger().info(f"_build_allocation_slices: Created {len(slices)} slices for direct allocation")
         return slices
 
@@ -279,10 +279,10 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     for line in _iter_internal_charge_lines(ic_doc):
         account = getattr(line, "expense_account", None)
         amount = float(getattr(line, "amount", 0) or 0)
-        
+
         if not account or not amount:
             continue
-        
+
         dims = service.resolve_dims(
             company=company,
             fiscal_year=fiscal_year,
@@ -349,7 +349,7 @@ def _reverse_reservations(expense_request):
 
 def reserve_budget_for_request(expense_request, *, trigger_action: str | None = None, next_state: str | None = None):
     """Reserve budget for an expense request.
-    
+
     Args:
         expense_request: Can be either:
             - An Expense Request doc object
@@ -365,7 +365,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         except Exception as e:
             frappe.logger().error(f"reserve_budget_for_request: Failed to load {expense_request}: {str(e)}")
             frappe.throw(_("Failed to load Expense Request {0}: {1}").format(expense_request, str(e)))
-    
+
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
         frappe.logger().info(f"reserve_budget_for_request: Budget lock disabled for {getattr(expense_request, 'name', 'Unknown')}")
@@ -382,17 +382,17 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             alert=True
         )
         return
-    
+
     # Budget check dilakukan saat submit (docstatus=1), tidak perlu tunggu approved
     docstatus = getattr(expense_request, "docstatus", 0)
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
-    
+
     frappe.logger().info(
         f"reserve_budget_for_request: {getattr(expense_request, 'name', 'Unknown')} "
         f"- docstatus={docstatus}, status={status}, workflow={workflow_state}"
     )
-    
+
     # Allow reservation saat submitted (docstatus=1), tidak perlu tunggu state tertentu
     if docstatus != 1:
         frappe.logger().info(f"reserve_budget_for_request: Document not submitted yet (docstatus={docstatus})")
@@ -441,17 +441,17 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             _("Failed to build budget allocation slices. Please check expense items, accounts, and cost centers. Error: {0}").format(str(e)),
             title=_("Budget Allocation Failed")
         )
-    
+
     if not slices:
         # Build detailed error message
         items = getattr(expense_request, "items", []) or []
         allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
         cost_center = getattr(expense_request, "cost_center", None)
-        
+
         missing_info = []
         if not cost_center:
             missing_info.append(_("Cost Center is not set on Expense Request"))
-        
+
         items_without_account = []
         items_without_amount = []
         for idx, item in enumerate(items):
@@ -461,16 +461,16 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
                 items_without_account.append(str(idx + 1))
             if not amt or float(amt or 0) <= 0:
                 items_without_amount.append(str(idx + 1))
-        
+
         if items_without_account:
             missing_info.append(_("Items without Expense Account: Row {0}").format(", ".join(items_without_account)))
         if items_without_amount:
             missing_info.append(_("Items without valid Amount: Row {0}").format(", ".join(items_without_amount)))
         if not items:
             missing_info.append(_("No expense items found"))
-        
+
         error_detail = "<br>".join(missing_info) if missing_info else _("Unknown reason - please check expense items")
-        
+
         frappe.logger().warning(
             f"reserve_budget_for_request: No allocation slices for {getattr(expense_request, 'name', 'Unknown')}. "
             f"Mode={allocation_mode}, CC={cost_center}, Items={len(items)}, Details={missing_info}"
@@ -506,12 +506,12 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
                 _("Failed to check budget availability. Please contact administrator. Error: {0}").format(str(e)),
                 title=_("Budget Check Failed")
             )
-        
+
         frappe.logger().info(
             f"reserve_budget_for_request: Budget check for {dims.cost_center}/{dims.account}: "
             f"amount={amount}, available={result.available}, ok={result.ok}"
         )
-        
+
         if not result.ok and not allow_overrun:
             # Enhanced error message with details
             frappe.logger().warning(
@@ -570,12 +570,12 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             "Approved",
             reason=_("Budget {0} during reservation.").format("overrun allowed" if any_overrun else "locked"),
         )
-    
+
     frappe.logger().info(
         f"reserve_budget_for_request: ✅ Completed for {getattr(expense_request, 'name', None)} "
         f"with status {lock_status}. Created {len(entries_created)} entries: {', '.join(entries_created)}"
     )
-    
+
     # Show success message to user
     if entries_created:
         frappe.msgprint(
@@ -583,7 +583,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
             indicator="green",
             alert=True
         )
-    
+
     return entries_created
 
 
@@ -636,12 +636,12 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
 
 def handle_expense_request_workflow(expense_request, action: str | None, next_state: str | None):
     """Handle budget workflow state changes for Expense Request.
-    
+
     Simplified flow (no RELEASE needed):
     - Submit: Create RESERVATION
     - Reject/Reopen: Keep RESERVATION (user dapat re-submit, reservation tetap valid)
     - Cancel: Keep RESERVATION (no need to release, will be consumed or expired)
-    
+
     RESERVATION entries remain in database and are only offset by:
     - CONSUMPTION when PI is submitted
     - REVERSAL when PI is cancelled
@@ -672,12 +672,12 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
     if action == "Submit":
         reserve_budget_for_request(expense_request, trigger_action=action, next_state=next_state)
         return
-    
+
     # Skip reserve saat Approve jika sudah ada reservation dari Submit
     # Hanya update state ke Approved
     status = getattr(expense_request, "status", None)
     workflow_state = getattr(expense_request, "workflow_state", None)
-    
+
     if next_state == target_state or workflow_state == target_state or status == target_state:
         # For Internal Charge allocation mode, validate ICR is approved before ER approval
         allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
@@ -696,7 +696,7 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
                     _("Internal Charge Request must be approved before approving Expense Request. {0}").format(str(e)),
                     title=_("Internal Charge Not Ready")
                 )
-        
+
         # Check if already reserved
         existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
         if existing:
@@ -949,7 +949,7 @@ def maybe_post_internal_charge_je(purchase_invoice, expense_request=None):
 @frappe.whitelist()
 def reserve_budget_for_request_api(expense_request):
     """Whitelisted API wrapper for reserve_budget_for_request.
-    
+
     This can be called from browser console or client-side JavaScript.
     """
     return reserve_budget_for_request(expense_request)
@@ -970,14 +970,14 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
 
     items = getattr(request, "items", []) or []
     total, expense_accounts = accounting.summarize_request_items(items)
-    
+
     # Resolve company - try from cost center first, then from request, then default
     company = utils.resolve_company_from_cost_center(getattr(request, "cost_center", None))
     if not company:
         company = getattr(request, "company", None) or frappe.defaults.get_user_default("Company")
     if not company:
         frappe.throw(_("Cannot determine Company. Please set company on Expense Request or Cost Center."))
-    
+
     # Resolve fiscal year
     fiscal_year = utils.resolve_fiscal_year(getattr(request, "fiscal_year", None), company=company)
     if not fiscal_year:
@@ -996,16 +996,27 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
     ic.total_amount = total
     ic.allocation_mode = "Allocated via Internal Charge"
 
-    # Populate internal_charge_lines from ER items (mandatory field)
-    for item in items:
+    # Populate internal_charge_lines from ER items
+    # Use target_cost_center from item if specified, otherwise default to source
+    source_cc = getattr(request, "cost_center", None)
+
+    # Early validation: check if any target_cost_center is specified and different from source
+    has_target_specified = any(getattr(item, "target_cost_center", None) for item in items)
+
+    for idx, item in enumerate(items):
         expense_account = getattr(item, "expense_account", None)
         amount = float(getattr(item, "amount", 0) or 0)
-        if expense_account and amount > 0:
-            ic.append("internal_charge_lines", {
-                "target_cost_center": getattr(request, "cost_center", None),
-                "expense_account": expense_account,
-                "description": getattr(item, "description", None),
-                "amount": amount,
+        target_cc = getattr(item, "target_cost_center", None) or source_cc
+
+        # Validate: if target is specified and equals source, throw error early
+        if target_cc and source_cc and target_cc == source_cc and has_target_specified:
+            frappe.throw(
+                _("Row {0}: Target Cost Center ({1}) cannot be the same as Source Cost Center ({2}). "
+                  "Internal Charge is meant to allocate expenses to different cost centers.").format(
+                    idx + 1, target_cc, source_cc
+                ),
+                title=_("Unable to Generate Internal Charge")
+            )
             })
 
     ic.insert(ignore_permissions=True)
