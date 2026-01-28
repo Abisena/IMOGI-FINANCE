@@ -11,6 +11,7 @@ from frappe import _
 from datetime import date
 
 
+@frappe.whitelist()
 def create_amortization_schedule_for_pi(pi_name: str):
     """
     Generate dan create amortization schedule untuk Purchase Invoice.
