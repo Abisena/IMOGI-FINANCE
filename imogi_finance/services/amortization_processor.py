@@ -166,23 +166,7 @@ def _create_deferred_expense_je(schedule_entry: dict, pi_name: str) -> str:
     Prepaid Account (Debit) → Expense Account (Credit)
     """
 
-    # Check jika sudah ada JE untuk posting_date yang sama
-    existing_je = frappe.db.get_value(
-        "Journal Entry",
-        {
-            "reference_type": "Purchase Invoice",
-            "reference_name": pi_name,
-            "posting_date": schedule_entry["posting_date"],
-            "docstatus": 1
-        },
-        "name"
-    )
-
-    if existing_je:
-        frappe.log_error(f"JE already exists for {pi_name} on {schedule_entry['posting_date']}: {existing_je}")
-        return existing_je
-
-    # Create new Journal Entry
+    # Create new Journal Entry langsung (tanpa duplicate check yang kompleks)
     je_doc = frappe.new_doc("Journal Entry")
     je_doc.posting_date = schedule_entry["posting_date"]
     je_doc.reference_type = "Purchase Invoice"
