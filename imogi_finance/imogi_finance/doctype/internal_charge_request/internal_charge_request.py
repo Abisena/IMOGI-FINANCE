@@ -90,9 +90,14 @@ class InternalChargeRequest(Document):
         if not settings.get("enable_internal_charge"):
             return
 
+        # Force workflow_state to Draft before submit to allow workflow transition
+        # Workflow system will set the correct state after submit based on transitions
+        self.workflow_state = "Draft"
+
         self._populate_line_routes()
         self._sync_status()
-        self._sync_workflow_state()
+        # Do NOT sync workflow_state here - let workflow system handle it
+        # _sync_workflow_state() should only be called after workflow actions (Approve/Reject)
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow transitions by cost-centre-based approval routes.

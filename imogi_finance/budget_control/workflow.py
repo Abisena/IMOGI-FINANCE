@@ -1000,20 +1000,21 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
     # Use target_cost_center from item if specified, otherwise default to source
     source_cc = getattr(request, "cost_center", None)
 
-    # Early validation: check if any target_cost_center is specified and different from source
-    has_target_specified = any(getattr(item, "target_cost_center", None) for item in items)
-
     for idx, item in enumerate(items):
         expense_account = getattr(item, "expense_account", None)
         amount = float(getattr(item, "amount", 0) or 0)
-        target_cc = getattr(item, "target_cost_center", None) or source_cc
 
-        # Validate: if target is specified and equals source, throw error early
-        if target_cc and source_cc and target_cc == source_cc and has_target_specified:
+        # Get explicit target (not default)
+        explicit_target = getattr(item, "target_cost_center", None)
+        target_cc = explicit_target or source_cc
+
+        # Validate: only throw error if user EXPLICITLY set target = source
+        # If target is empty (None), it will default to source without error
+        if explicit_target and source_cc and explicit_target == source_cc:
             frappe.throw(
                 _("Row {0}: Target Cost Center ({1}) cannot be the same as Source Cost Center ({2}). "
                   "Internal Charge is meant to allocate expenses to different cost centers.").format(
-                    idx + 1, target_cc, source_cc
+                    idx + 1, explicit_target, source_cc
                 ),
                 title=_("Unable to Generate Internal Charge")
             )
