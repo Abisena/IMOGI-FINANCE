@@ -95,9 +95,9 @@ class InternalChargeRequest(Document):
         self.workflow_state = "Draft"
 
         self._populate_line_routes()
-        self._sync_status()
+        # Do NOT sync status here - workflow system will handle it with override_status=1
         # Do NOT sync workflow_state here - let workflow system handle it
-        # _sync_workflow_state() should only be called after workflow actions (Approve/Reject)
+        # These syncs should only happen after workflow actions (Approve/Reject)
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow transitions by cost-centre-based approval routes.
