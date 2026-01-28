@@ -1017,6 +1017,13 @@ def create_internal_charge_from_expense_request(er_name: str) -> str:
                 ),
                 title=_("Unable to Generate Internal Charge")
             )
+
+        if expense_account and amount > 0:
+            ic.append("internal_charge_lines", {
+                "target_cost_center": target_cc,
+                "expense_account": expense_account,
+                "description": getattr(item, "description", None),
+                "amount": amount,
             })
 
     ic.insert(ignore_permissions=True)
