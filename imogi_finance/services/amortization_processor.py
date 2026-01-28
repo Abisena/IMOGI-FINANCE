@@ -37,10 +37,16 @@ def create_amortization_schedule_for_pi(pi_name: str):
         frappe.throw(_("Purchase Invoice must be submitted"))
 
     # Get deferred items
-    deferred_items = [
-        item for item in pi.items
-        if item.get("enable_deferred_expense") in (1, True, "1", "Yes")
-    ]
+    frappe.logger().info(f"Total items in PI {pi_name}: {len(pi.items)}")
+
+    deferred_items = []
+    for idx, item in enumerate(pi.items):
+        enable_deferred = item.get("enable_deferred_expense")
+        frappe.logger().info(f"Item {idx}: code={item.item_code}, enable_deferred={enable_deferred}, type={type(enable_deferred)}")
+        if enable_deferred in (1, True, "1", "Yes"):
+            deferred_items.append(item)
+
+    frappe.logger().info(f"Found {len(deferred_items)} deferred items")
 
     if not deferred_items:
         frappe.throw(_("No deferred items found in this Purchase Invoice"))
