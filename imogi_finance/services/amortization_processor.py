@@ -52,7 +52,13 @@ def create_amortization_schedule_for_pi(pi_name: str):
         periods = int(item.get("deferred_expense_periods") or 12)
         start_date = getdate(item.service_start_date)
         prepaid_account = item.deferred_expense_account
-        expense_account = item.expense_head  # dari item configuration
+
+        # Get expense account dari item atau dari account master
+        expense_account = item.get("deferred_revenue_account") or frappe.db.get_value(
+            "Account",
+            item.deferred_expense_account,
+            "parent_account"
+        ) or "Cost of Goods Sold"
 
         # Generate monthly breakdown
         schedule = _generate_monthly_schedule(
