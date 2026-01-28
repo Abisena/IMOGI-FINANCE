@@ -92,6 +92,7 @@ def create_amortization_schedule_for_pi(pi_name: str):
     # Create Journal Entries
     je_names = []
     total_amount = 0
+    je_errors = []
 
     for schedule_entry in all_schedules:
         try:
@@ -99,13 +100,16 @@ def create_amortization_schedule_for_pi(pi_name: str):
             je_names.append(je_name)
             total_amount += schedule_entry["amount"]
         except Exception as e:
-            frappe.log_error(f"Error creating JE for {schedule_entry['posting_date']}: {str(e)}")
+            error_msg = f"Error creating JE for {schedule_entry['posting_date']}: {str(e)}"
+            frappe.log_error(error_msg)
+            je_errors.append(error_msg)
 
     return {
         "pi_name": pi_name,
         "total_schedules": len(all_schedules),
         "total_amount": total_amount,
         "journal_entries": je_names,
+        "errors": je_errors,
         "status": "success" if je_names else "failed"
     }
 
