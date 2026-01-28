@@ -39,7 +39,7 @@ def create_amortization_schedule_for_pi(pi_name: str):
     # Get deferred items
     deferred_items = [
         item for item in pi.items
-        if item.get("enable_deferred_expense")
+        if item.get("enable_deferred_expense") in (1, True, "1", "Yes")
     ]
 
     if not deferred_items:
