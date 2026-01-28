@@ -552,7 +552,6 @@ class ExpenseRequest(Document):
                 frappe.throw(_("Deferred Expense is disabled in settings."))
             return
 
-        valid_prepaid_accounts = sorted(deferrable_accounts)
         for item in self.get("items", []):
             if not getattr(item, "is_deferred_expense", 0):
                 continue
@@ -560,10 +559,26 @@ class ExpenseRequest(Document):
             if not getattr(item, "prepaid_account", None):
                 frappe.throw(_("Prepaid Account is required for deferred expense items."))
 
-            if item.prepaid_account not in deferrable_accounts:
+            account = frappe.db.get_value(
+                "Account",
+                item.prepaid_account,
+                ["account_type", "is_group", "company"],
+                as_dict=True,
+            )
+            if not account:
+                frappe.throw(_("Prepaid Account {0} does not exist.").format(item.prepaid_account))
+            if account.is_group:
+                frappe.throw(_("Prepaid Account {0} cannot be a group account.").format(item.prepaid_account))
+            if account.account_type != "Current Asset":
                 frappe.throw(
-                    _("Prepaid Account {0} is not in deferrable accounts. Valid accounts: {1}").format(
-                        item.prepaid_account, ", ".join(valid_prepaid_accounts) or _("None")
+                    _("Prepaid Account {0} must have Account Type Current Asset.").format(
+                        item.prepaid_account
+                    )
+                )
+            if self.company and account.company and account.company != self.company:
+                frappe.throw(
+                    _("Prepaid Account {0} must belong to company {1}.").format(
+                        item.prepaid_account, self.company
                     )
                 )
 
