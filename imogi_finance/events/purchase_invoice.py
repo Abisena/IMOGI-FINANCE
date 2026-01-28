@@ -191,6 +191,48 @@ def _validate_npwp_match(doc):
         )
 
 
+def _generate_deferred_expense_schedule(doc):
+    """Generate deferred expense schedule for Purchase Invoice items.
+    
+    This function triggers ERPNext's built-in deferred expense schedule generation
+    for items that have Enable Deferred Expense checked.
+    
+    ERPNext requires:
+    - enable_deferred_expense = 1
+    - service_start_date is set
+    - service_stop_date is set (CRITICAL!)
+    - deferred_expense_account is set
+    
+    Without this trigger, schedule won't be auto-generated and amortization won't work.
+    """
+    has_deferred_items = any(
+        cint(item.get("enable_deferred_expense"))
+        for item in doc.get("items", [])
+    )
+    
+    if not has_deferred_items:
+        return
+    
+    try:
+        # Call ERPNext's built-in method to calculate deferred schedule
+        if hasattr(doc, "calculate_deferred_expense_schedule"):
+            doc.calculate_deferred_expense_schedule()
+            frappe.logger().info(
+                f"[DEFERRED] Generated deferred expense schedule for PI {doc.name}"
+            )
+        else:
+            frappe.logger().warning(
+                f"[DEFERRED] PI {doc.name} has deferred items but calculate_deferred_expense_schedule method not found. "
+                "This might be an ERPNext version issue."
+            )
+    except Exception as e:
+        frappe.logger().error(
+            f"[DEFERRED] Failed to generate deferred expense schedule for PI {doc.name}: {str(e)}"
+        )
+        # Don't throw error - let PI submit succeed even if deferred schedule fails
+        # User can manually regenerate schedule later
+
+
 def _prevent_double_wht(doc):
     """Prevent double WHT calculation with ON/OFF logic for PPh.
     
@@ -291,6 +333,9 @@ def _prevent_double_wht(doc):
 
 
 def on_submit(doc, method=None):
+    # CRITICAL: Generate deferred expense schedule for items with deferred expense enabled
+    _generate_deferred_expense_schedule(doc)
+    
     # Check for Expense Request or Branch Expense Request
     expense_request = doc.get("imogi_expense_request")
     branch_request = doc.get("branch_expense_request")
