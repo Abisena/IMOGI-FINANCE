@@ -42,9 +42,9 @@ class InternalChargeRequest(Document):
         if not getattr(self, "company", None) and getattr(self, "expense_request", None):
             try:
                 er_data = frappe.db.get_value(
-                    "Expense Request", 
-                    self.expense_request, 
-                    ["company", "cost_center"], 
+                    "Expense Request",
+                    self.expense_request,
+                    ["company", "cost_center"],
                     as_dict=True
                 )
                 if er_data:
@@ -54,24 +54,24 @@ class InternalChargeRequest(Document):
                         self.company = frappe.db.get_value("Cost Center", er_data.cost_center, "company")
             except Exception:
                 pass
-        
+
         # Fallback: try from source_cost_center
         if not getattr(self, "company", None) and getattr(self, "source_cost_center", None):
             try:
                 self.company = frappe.db.get_value("Cost Center", self.source_cost_center, "company")
             except Exception:
                 pass
-        
+
         # Auto-populate fiscal_year from posting_date and company
         if not getattr(self, "fiscal_year", None):
             posting_date = getattr(self, "posting_date", None)
             company = getattr(self, "company", None)
-            
+
             # Use today's date if posting_date is not set
             if not posting_date:
                 import datetime
                 posting_date = datetime.date.today()
-            
+
             try:
                 # Try to get fiscal year from posting_date
                 from erpnext.accounts.utils import get_fiscal_year
@@ -96,9 +96,9 @@ class InternalChargeRequest(Document):
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow transitions by cost-centre-based approval routes.
-        
+
         Each internal_charge_line targets a different cost_center with its own approval route.
-        Permission enforcement happens per-line based on current user's roles and the 
+        Permission enforcement happens per-line based on current user's roles and the
         dynamically resolved approval route for that cost_center.
         """
         settings = utils.get_settings()
@@ -123,8 +123,8 @@ class InternalChargeRequest(Document):
 
     def _validate_approve_permission(self):
         """Validate user can approve pending lines based on cost-centre routes.
-        
-        Enforces that current user matches the expected approver (role or user) 
+
+        Enforces that current user matches the expected approver (role or user)
         at the current approval level for each approvable line's target cost_center.
         """
         approvable_lines = []
@@ -145,7 +145,7 @@ class InternalChargeRequest(Document):
 
             role_allowed = not expected_role or expected_role in session_roles
             user_allowed = not expected_user or expected_user == session_user
-            
+
             if role_allowed and user_allowed:
                 approvable_lines.append(line)
 
@@ -163,14 +163,14 @@ class InternalChargeRequest(Document):
 
         self._sync_status()
         self._sync_workflow_state()
-        
+
         if self.status == "Approved":
             self.approved_by = session_user
             self.approved_on = frappe.utils.now_datetime()
 
     def _validate_amounts(self):
         lines = getattr(self, "internal_charge_lines", []) or []
-        
+
         # Allow empty lines in Draft state (user will add later)
         if not lines:
             if getattr(self, "docstatus", 0) == 0:
@@ -189,7 +189,7 @@ class InternalChargeRequest(Document):
         for idx, line in enumerate(lines):
             if getattr(line, "amount", 0) is None or float(line.amount) <= 0:
                 frappe.throw(_("Line amount must be greater than zero."))
-            
+
             # Validate target cost center is different from source
             target_cc = getattr(line, "target_cost_center", None)
             if target_cc and source_cc and target_cc == source_cc:
@@ -199,7 +199,7 @@ class InternalChargeRequest(Document):
                         idx + 1, target_cc, source_cc
                     )
                 )
-        
+
         # Validate per-account totals match ER items
         if getattr(self, "expense_request", None):
             self._validate_per_account_totals()
@@ -210,7 +210,7 @@ class InternalChargeRequest(Document):
             expense_request = frappe.get_doc("Expense Request", self.expense_request)
         except Exception:
             return
-        
+
         # Get ER item totals per account
         er_items = expense_request.get("items") or []
         er_account_totals = {}
@@ -219,7 +219,7 @@ class InternalChargeRequest(Document):
             amount = float(getattr(item, "amount", 0) or 0)
             if account:
                 er_account_totals[account] = er_account_totals.get(account, 0) + amount
-        
+
         # Get ICR line totals per account
         lines = getattr(self, "internal_charge_lines", []) or []
         icr_account_totals = {}
@@ -228,7 +228,7 @@ class InternalChargeRequest(Document):
             amount = float(getattr(line, "amount", 0) or 0)
             if account:
                 icr_account_totals[account] = icr_account_totals.get(account, 0) + amount
-        
+
         # Compare totals
         for account, er_total in er_account_totals.items():
             icr_total = icr_account_totals.get(account, 0)
@@ -238,7 +238,7 @@ class InternalChargeRequest(Document):
                         account, icr_total, er_total
                     )
                 )
-        
+
         # Check for extra accounts in ICR that are not in ER
         for account in icr_account_totals:
             if account not in er_account_totals:
@@ -316,18 +316,24 @@ class InternalChargeRequest(Document):
 
     def _sync_workflow_state(self):
         """Sync workflow_state based on current status and line statuses.
-        
+
         Maps line approval levels to document workflow states for proper
         workflow state management alongside the line-based approval tracking.
         """
+        # In Draft state (docstatus=0), workflow_state must always be "Draft"
+        # regardless of line statuses
+        if getattr(self, "docstatus", 0) == 0:
+            self.workflow_state = "Draft"
+            return
+
         if not getattr(self, "status", None):
             self.workflow_state = "Draft"
             return
 
         status = self.status
         lines = getattr(self, "internal_charge_lines", []) or []
-        
-        # Map status to workflow states
+
+        # Map status to workflow states (only for submitted documents)
         if status == "Approved":
             self.workflow_state = "Approved"
         elif status == "Rejected":
@@ -343,7 +349,7 @@ class InternalChargeRequest(Document):
                     pending_levels.add(2)
                 elif line_status == "Pending L3":
                     pending_levels.add(3)
-            
+
             if 3 in pending_levels:
                 self.workflow_state = "Pending L3 Approval"
             elif 2 in pending_levels:
@@ -351,7 +357,7 @@ class InternalChargeRequest(Document):
             elif 1 in pending_levels:
                 self.workflow_state = "Pending L1 Approval"
             else:
-                self.workflow_state = "Draft"
+                self.workflow_state = "Pending Approval"
         elif status == "Partially Approved":
             self.workflow_state = "Partially Approved"
         else:
