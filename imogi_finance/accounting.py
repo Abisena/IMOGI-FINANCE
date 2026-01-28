@@ -138,7 +138,7 @@ def _validate_no_existing_purchase_invoice(request: frappe.model.document.Docume
         },
         "name"
     )
-    
+
     if existing_pi:
         frappe.throw(
             _("Expense Request is already linked to Purchase Invoice {0}.").format(
@@ -153,10 +153,10 @@ def _update_request_purchase_invoice_links(
     mark_pending: bool = True,
 ) -> None:
     """Legacy function - kept for backward compatibility.
-    
+
     With native connections, PI link is established via imogi_expense_request field
     on Purchase Invoice. Status is determined by querying submitted documents.
-    
+
     This function now only clears pending_purchase_invoice field.
     """
     # Clear pending field only - actual link is via PI.imogi_expense_request
@@ -183,7 +183,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     )
 
     request_items = getattr(request, "items", []) or []
-    
+
     if not request_items:
         frappe.throw(_("Expense Request must have at least one item to create a Purchase Invoice."))
 
@@ -242,21 +242,21 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
     has_item_level_pph = bool(pph_items)
-    
+
     # Count items with Apply WHT to detect MIXED scenario
     items_with_pph = len(pph_items)
     total_items = len(request_items)
     has_mixed_pph = 0 < items_with_pph < total_items  # Some but not all items have Apply WHT
-    
+
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
     # CRITICAL: apply_pph is determined by item-level flags (whether any item has Apply WHT)
     # Header Apply WHT checkbox is only for determining which category to use
     apply_ppn = is_ppn_applicable
     apply_pph = items_with_pph > 0  # Apply PPh if ANY item has Apply WHT checked
-    
+
     # Header checkbox indicates whether to use ER's category or supplier's category
     header_apply_wht = bool(getattr(request, "is_pph_applicable", 0))
-    
+
     # Log tax configuration for debugging
     frappe.logger().info(
         f"[TAX CONFIG] ER {request.name}: "
@@ -264,7 +264,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         f"ppn_template={getattr(request, 'ppn_template', None)}, "
         f"apply_pph={apply_pph}, items_with_pph={items_with_pph}"
     )
-    
+
     # ============================================================================
     # VALIDATION: If items have Apply WHT, Header must provide PPh category
     # ============================================================================
@@ -276,7 +276,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 _("Found {0} item(s) with 'Apply WHT' checked but PPh Type is NOT specified in Tab Tax. "
                   "Please select PPh Type in Tab Tax.").format(items_with_pph)
             )
-    
+
     # CRITICAL: If mixed Apply WHT (some items have, some don't)
     # Then don't use supplier's category at all (it would apply to all items)
     # No need to log this - it's a valid configuration
@@ -289,16 +289,16 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             frappe.throw(
                 _("PPN Template is required in Expense Request {0} before creating Purchase Invoice").format(request.name)
             )
-        
+
         # Validate template exists in system
         # Try exact match first, then try with stripped whitespace
         template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template)
-        
+
         if not template_exists:
             # Try with stripped whitespace in case there's spacing issue
             ppn_template_stripped = ppn_template.strip()
             template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template_stripped)
-            
+
             if template_exists:
                 # Update the value to use stripped version
                 ppn_template = ppn_template_stripped
@@ -324,12 +324,12 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     pi = frappe.new_doc("Purchase Invoice")
     pi.company = company
-    
+
     # IMPORTANT: Set apply_tds = 0 BEFORE assigning supplier
     # This prevents Frappe's TDS controller from auto-calculating supplier's WHT
     # We will set it to 1 later if ER's Apply WHT is checked
     pi.apply_tds = 0
-    
+
     pi.supplier = request.supplier
     # NOTE: After setting supplier, Frappe auto-populates tax_withholding_category
     # BUT since apply_tds=0, Frappe's TDS won't calculate it yet
@@ -343,7 +343,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.imogi_expense_request = request.name
     pi.internal_charge_request = getattr(request, "internal_charge_request", None)
     pi.imogi_request_type = request.request_type
-    
+
     # ============================================================================
     # ON/OFF LOGIC FOR PPh (Withholding Tax)
     # CRITICAL: Control which PPh source to use (ER vs Supplier)
@@ -354,13 +354,13 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # - Jika TIDAK ADA items Apply WHT ❌ → GUNAKAN supplier's category (jika enabled)
     # - TIDAK BOLEH supplier category dipakai saat ada item-level Apply WHT
     # ============================================================================
-    
+
     if apply_pph:
         # ✅ Some items have Apply WHT checked → Enable PPh calculation
         # Use ER's pph_type from Tab Tax
         # CRITICAL: Check if supplier has conflicting category
         supplier_category = pi.tax_withholding_category  # Auto-populated by Frappe after setting supplier
-        
+
         if supplier_category and supplier_category != request.pph_type:
             # ⚠️ CONFLICT: Supplier's category berbeda dengan ER's PPh Type
             frappe.msgprint(
@@ -374,7 +374,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 title=_("WHT Category Conflict"),
                 indicator="orange"
             )
-        
+
         # Override supplier's category with ER's pph_type
         pi.tax_withholding_category = request.pph_type
         pi.imogi_pph_type = request.pph_type
@@ -382,10 +382,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     else:
         # ❌ ER does NOT have Apply WHT set (no items with Apply WHT)
         # Action: MATIKAN ER's pph_type, GUNAKAN supplier's category (jika ada & enabled)
-        
+
         settings = get_settings() if callable(get_settings) else {}
         use_supplier_wht = cint(settings.get("use_supplier_wht_if_no_er_pph", 0))
-        
+
         if use_supplier_wht:
             # Setting enabled: Auto-copy supplier's tax withholding category
             supplier_wht = frappe.db.get_value("Supplier", request.supplier, "tax_withholding_category")
@@ -413,7 +413,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         prepaid_account = getattr(item, "prepaid_account", None)
         deferred_start_date = getattr(item, "deferred_start_date", None)
         deferred_periods = getattr(item, "deferred_periods", None)
-        
+
         # Debug logging for deferred expense
         if is_deferred or prepaid_account:
             frappe.logger().info(
@@ -421,20 +421,20 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 f"prepaid_account={prepaid_account}, expense_account={expense_account}, "
                 f"start_date={deferred_start_date}, periods={deferred_periods}"
             )
-        
+
         qty = getattr(item, "qty", 1) or 1
         item_amount = flt(getattr(item, "amount", 0))
-        
+
         # Determine which account to use for PI item
         pi_expense_account = prepaid_account if (is_deferred and prepaid_account) else expense_account
-        
+
         # Debug: log the decision
         if is_deferred:
             frappe.logger().info(
                 f"[DEFERRED DEBUG] PI Item {idx}: Using expense_account={pi_expense_account} "
                 f"(is_deferred={is_deferred}, prepaid_account={prepaid_account})"
             )
-        
+
         pi_item = {
             "item_name": getattr(item, "asset_name", None)
             or getattr(item, "description", None)
@@ -450,16 +450,18 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         }
 
         if is_deferred and prepaid_account:
+            service_end = add_months(deferred_start_date, deferred_periods or 0)
             pi_item["enable_deferred_expense"] = 1
             pi_item["service_start_date"] = deferred_start_date
-            pi_item["service_end_date"] = add_months(deferred_start_date, deferred_periods or 0)
+            pi_item["service_end_date"] = service_end
+            pi_item["service_stop_date"] = service_end  # CRITICAL: Required for schedule generation
             pi_item["deferred_expense_account"] = expense_account
-            
+
             # Log successful deferred setup
             frappe.logger().info(
                 f"[DEFERRED DEBUG] PI Item {idx} DEFERRED ENABLED: "
                 f"expense_account={pi_expense_account}, deferred_expense_account={expense_account}, "
-                f"service_start={deferred_start_date}, service_end={add_months(deferred_start_date, deferred_periods or 0)}"
+                f"service_start={deferred_start_date}, service_end={service_end}, service_stop={service_end}"
             )
         elif is_deferred and not prepaid_account:
             # Warning: deferred is checked but no prepaid account
@@ -467,7 +469,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 f"[DEFERRED WARNING] Item {idx}: is_deferred_expense=1 but prepaid_account is empty! "
                 f"Falling back to expense_account={expense_account}"
             )
-        
+
         pi_item_doc = pi.append("items", pi_item)
         # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
@@ -495,7 +497,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     dpp_variance = flt(getattr(request, "ti_dpp_variance", 0) or 0)
     if dpp_variance != 0:
         variance_account = settings.get("dpp_variance_account")
-        
+
         if variance_account:
             variance_item = {
                 "item_name": "DPP Variance Adjustment" if dpp_variance > 0 else "DPP Variance Reduction",
@@ -555,14 +557,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     apply_branch(pi, branch)
 
     pi.insert(ignore_permissions=True)
-    
+
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
         set_tax_withholding = getattr(pi, "set_tax_withholding", None)
         if callable(set_tax_withholding):
             set_tax_withholding()
             pi.save(ignore_permissions=True)
-    
+
     # IMPORTANT: Manually add PPN tax rows from template (don't use taxes_and_charges field)
     # Using field causes rows to replace/override PPh rows
     # Manual append ensures PPh + PPN coexist
@@ -571,10 +573,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             frappe.logger().info(
                 f"[PPN] PI {pi.name}: Adding PPN rows from template '{request.ppn_template}'"
             )
-            
+
             # Get template document - MUST use Purchase template for PI (not Sales)
             ppn_template_doc = frappe.get_doc("Purchase Taxes and Charges Template", request.ppn_template)
-            
+
             if ppn_template_doc and ppn_template_doc.taxes:
                 # Add each tax row from template
                 for tax_row in ppn_template_doc.taxes:
@@ -584,23 +586,23 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                         "description": tax_row.description,
                         "rate": tax_row.rate,
                     })
-                
+
                 frappe.logger().info(
                     f"[PPN] PI {pi.name}: Added {len(ppn_template_doc.taxes)} PPN tax row(s)"
                 )
-            
+
             # Save and recalculate
             pi.save(ignore_permissions=True)
             pi.reload()
-            
+
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
                 pi.save(ignore_permissions=True)
-            
+
             frappe.logger().info(
                 f"[PPN] PI {pi.name}: PPN calculated - Added={flt(pi.taxes_and_charges_added):,.2f}"
             )
-            
+
         except Exception as e:
             frappe.logger().error(
                 f"[PPN ERROR] PI {pi.name}: {str(e)}"
@@ -611,14 +613,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         frappe.logger().info(
             f"[PPN] PI {pi.name}: apply_ppn={apply_ppn} - PPN not applicable"
         )
-    
+
     # Recalculate taxes and totals after insert to ensure PPN and PPh are properly calculated
     # This is critical because:
     # 1. Withholding tax (PPh) is calculated by Frappe's TDS controller after save
     # 2. PPN needs to be recalculated from the final item total (including variance)
     # 3. ERPNext's tax calculation requires the document to exist in DB first
     pi.reload()  # Refresh from DB to get any auto-calculated fields
-    
+
     # Now recalculate with all items and settings in place
     if hasattr(pi, "calculate_taxes_and_totals"):
         try:
@@ -638,7 +640,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 indicator="red",
                 alert=True
             )
-    
+
     # Reload again to get final calculated values
     pi.reload()
 
@@ -659,7 +661,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             _("Warning: PPH was not calculated. Please check Tax Withholding Category '{0}' configuration.").format(
                 getattr(request, "pph_type", "")
             ),
-            indicator="orange", 
+            indicator="orange",
             alert=True
         )
 

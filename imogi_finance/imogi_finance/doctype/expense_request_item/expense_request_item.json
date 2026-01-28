@@ -18,7 +18,8 @@
     "deferred_section",
     "prepaid_account",
     "deferred_start_date",
-    "deferred_periods"
+    "deferred_periods",
+    "deferred_end_date"
   ],
   "fields": [
     {
@@ -119,6 +120,14 @@
       "label": "Periods",
       "mandatory_depends_on": "is_deferred_expense",
       "description": "Number of months to amortize over"
+    },
+    {
+      "depends_on": "is_deferred_expense",
+      "fieldname": "deferred_end_date",
+      "fieldtype": "Date",
+      "label": "End Date",
+      "read_only": 1,
+      "description": "Calculated as Start Date + Periods (auto-filled)"
     }
   ],
   "index_web_pages_for_search": 1,
