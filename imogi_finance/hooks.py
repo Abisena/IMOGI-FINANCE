@@ -54,6 +54,7 @@ doctype_js = {
     "Purchase Invoice": [
         "public/js/purchase_invoice_tax_invoice.js",
         "public/js/payment_reconciliation_helper.js",
+        "public/js/purchase_invoice_amortization.js",
     ],
     "Expense Claim": [
         "public/js/expense_claim.js",

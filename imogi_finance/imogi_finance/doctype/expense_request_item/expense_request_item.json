@@ -82,7 +82,7 @@
       "default": "0",
       "fieldname": "is_deferred_expense",
       "fieldtype": "Check",
-      "in_list_view": 1,
+      "in_list_view": 1,  
       "label": "Deferred Expense",
       "columns": 1,
       "description": "Enable for prepaid expenses that require amortization"
