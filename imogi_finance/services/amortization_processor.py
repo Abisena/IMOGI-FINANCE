@@ -65,28 +65,9 @@ def create_amortization_schedule_for_pi(pi_name: str):
         start_date = getdate(item.service_start_date)
         prepaid_account = item.deferred_expense_account
 
-        # Get expense account dari item atau dari account master
-        expense_account = item.get("deferred_revenue_account") or frappe.db.get_value(
-            "Account",
-            item.deferred_expense_account,
-            "parent_account"
-        ) or "Cost of Goods Sold"
-
-        frappe.logger().info(f"Processing item {item.item_code}: amount={amount}, periods={periods}, account={prepaid_account}")
-
-        # Generate monthly breakdown
-        schedule = _generate_monthly_schedule(
-            amount=amount,
-            periods=periods,
-            start_date=start_date,
-            prepaid_account=prepaid_account,
-            expense_account=expense_account,
-            pi_name=pi_name,
-            item_code=item.item_code
-        )
-
-        all_schedules.extend(schedule)
-
+        # Gunakan deferred_expense_account untuk expense account juga
+        # (Debit: Prepaid, Credit: Expense - keduanya ke marketing expenses)
+        expense_account = prepaid_account
     # Sort by posting_date
     all_schedules.sort(key=lambda x: x["posting_date"])
 
