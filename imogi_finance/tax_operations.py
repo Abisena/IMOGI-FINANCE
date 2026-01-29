@@ -137,7 +137,7 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
     # Handle PB1 multi-branch or single account
     pb1_total = 0.0
     pb1_breakdown = {}
-    
+
     if getattr(profile, "enable_pb1_multi_branch", 0) and getattr(profile, "pb1_account_mappings", None):
         # Multi-branch: calculate per branch and aggregate
         for mapping in profile.pb1_account_mappings or []:
@@ -147,7 +147,7 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
                 branch_total = _get_gl_total(company, [pb1_account], date_from, date_to)
                 pb1_breakdown[branch] = branch_total
                 pb1_total += branch_total
-        
+
         # Add default account if exists and not covered by mappings
         default_account = getattr(profile, "pb1_payable_account", None)
         if default_account:
@@ -180,11 +180,11 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
             "profile": profile.name,
         },
     }
-    
+
     # Add pb1_breakdown if multi-branch
     if pb1_breakdown:
         snapshot["pb1_breakdown"] = pb1_breakdown
-    
+
     return snapshot
 
 
@@ -199,7 +199,7 @@ def _get_tax_invoice_fields(doctype: str) -> set[str]:
 
 def _has_locked_period(company: str, posting_date: date | str | None) -> str | None:
     """Check if posting date falls within a closed tax period.
-    
+
     Returns the name of the locked Tax Period Closing document, or None.
     """
     if not posting_date:
@@ -209,13 +209,13 @@ def _has_locked_period(company: str, posting_date: date | str | None) -> str | N
 
     locked = frappe.get_all(
         "Tax Period Closing",
-        filters={
-            "company": company,
-            "status": "Closed",
-            "docstatus": 1,
-            "date_from": ["<=", posting_date],
-            "date_to": [">=", posting_date],
-        },
+        filters=[
+            ["company", "=", company],
+            ["status", "=", "Closed"],
+            ["docstatus", "=", 1],
+            ["date_from", "<=", posting_date],
+            ["date_to", ">=", posting_date],
+        ],
         limit=1,
         pluck="name",
     )
@@ -241,7 +241,7 @@ def validate_tax_period_lock(doc: Document, posting_date_field: str = "posting_d
         cost_center = getattr(doc, "cost_center", None)
         if cost_center:
             company = frappe.db.get_value("Cost Center", cost_center, "company")
-    
+
     # ✅ FIX: Jika company tidak ditemukan, skip validasi
     if not company:
         return
@@ -251,10 +251,10 @@ def validate_tax_period_lock(doc: Document, posting_date_field: str = "posting_d
         or getattr(doc, "request_date", None)
         or getattr(doc, "bill_date", None)
     )
-    
+
     if not posting_date:
         return
-    
+
     locked_name = _has_locked_period(company, posting_date)
     if not locked_name:
         return
