@@ -28,22 +28,22 @@ from frappe.utils import flt
 def get_employee_advances(employee, company, expense_claim=None):
     """
     Get available advances for an employee
-    
+
     Args:
         employee: Employee ID
         company: Company name
         expense_claim: Expense Claim name (to exclude already allocated)
-    
+
     Returns:
         List of unallocated advances
     """
-    
+
     if not employee or not company:
         return []
-    
+
     # Query Payment Ledger for employee advances
     query = """
-        SELECT 
+        SELECT
             ple.voucher_type,
             ple.voucher_no,
             ple.posting_date,
@@ -56,7 +56,7 @@ def get_employee_advances(employee, company, expense_claim=None):
             FROM `tabPayment Ledger Entry`
             WHERE docstatus = 1 AND against_voucher_type != ''
             GROUP BY against_voucher_type, against_voucher_no
-        ) allocated ON allocated.against_voucher_type = ple.voucher_type 
+        ) allocated ON allocated.against_voucher_type = ple.voucher_type
                     AND allocated.against_voucher_no = ple.voucher_no
         WHERE ple.party_type = 'Employee'
           AND ple.party = %(employee)s
@@ -67,12 +67,12 @@ def get_employee_advances(employee, company, expense_claim=None):
         HAVING outstanding_amount > 0
         ORDER BY ple.posting_date
     """
-    
+
     advances = frappe.db.sql(query, {
         "employee": employee,
         "company": company
     }, as_dict=True)
-    
+
     return advances
 
 
@@ -80,19 +80,19 @@ def get_employee_advances(employee, company, expense_claim=None):
 def get_allocated_advances(expense_claim):
     """
     Get advances that have been allocated to an expense claim
-    
+
     Args:
         expense_claim: Expense Claim name
-    
+
     Returns:
         List of allocated advances with details
     """
-    
+
     if not expense_claim:
         return []
-    
+
     query = """
-        SELECT 
+        SELECT
             ple.against_voucher_type,
             ple.against_voucher_no,
             ple.posting_date,
@@ -104,11 +104,11 @@ def get_allocated_advances(expense_claim):
           AND ple.against_voucher_type != ''
         ORDER BY ple.posting_date
     """
-    
+
     allocations = frappe.db.sql(query, {
         "expense_claim": expense_claim
     }, as_dict=True)
-    
+
     return allocations
 
 
@@ -116,38 +116,38 @@ def get_allocated_advances(expense_claim):
 def allocate_advance_to_expense_claim(expense_claim, payment_entry, allocated_amount):
     """
     Allocate employee advance to expense claim
-    
+
     This creates a Payment Ledger Entry linking the advance to expense claim
     (similar to how invoice allocation works)
-    
+
     Args:
         expense_claim: Expense Claim name
         payment_entry: Payment Entry name
         allocated_amount: Amount to allocate
     """
-    
+
     # Validate
     ec = frappe.get_doc("Expense Claim", expense_claim)
     if ec.docstatus != 1:
         frappe.throw(_("Expense Claim must be submitted first"))
-    
+
     pe = frappe.get_doc("Payment Entry", payment_entry)
     if pe.docstatus != 1:
         frappe.throw(_("Payment Entry must be submitted"))
-    
+
     if pe.party_type != "Employee":
         frappe.throw(_("Payment Entry must be for Employee"))
-    
+
     if pe.party != ec.employee:
         frappe.throw(_("Payment Entry employee does not match Expense Claim"))
-    
+
     # Check available advance
     available = get_available_advance_amount(payment_entry, ec.employee, ec.company)
     if flt(allocated_amount) > flt(available):
         frappe.throw(_("Allocated amount {0} exceeds available advance {1}").format(
             allocated_amount, available
         ))
-    
+
     # Create Payment Ledger Entry for allocation
     ple = frappe.get_doc({
         "doctype": "Payment Ledger Entry",
@@ -166,21 +166,19 @@ def allocate_advance_to_expense_claim(expense_claim, payment_entry, allocated_am
         "allocated_amount": flt(allocated_amount),
         "delinked": 0
     })
-    
+
     ple.flags.ignore_permissions = True
     ple.insert()
     ple.submit()
-    
-    frappe.msgprint(_("Advance {0} allocated to Expense Claim").format(payment_entry))
-    
+
     return ple.name
 
 
 def get_available_advance_amount(payment_entry, employee, company):
     """Get available unallocated amount for a payment entry"""
-    
+
     result = frappe.db.sql("""
-        SELECT 
+        SELECT
             SUM(amount) - SUM(COALESCE(allocated_amount, 0)) as available
         FROM `tabPayment Ledger Entry`
         WHERE voucher_no = %(payment_entry)s
@@ -194,36 +192,36 @@ def get_available_advance_amount(payment_entry, employee, company):
         "employee": employee,
         "company": company
     }, as_dict=True)
-    
+
     return flt(result[0].available) if result else 0
 
 
 def link_employee_advances(doc, method=None):
     """
     Automatically link employee advances when Expense Claim is submitted
-    
+
     This is called via doc_events hook
     """
-    
+
     if doc.docstatus != 1:
         return
-    
+
     # Check if there are employee advances to allocate
     advances = get_employee_advances(doc.employee, doc.company, doc.name)
-    
+
     if not advances:
         return
-    
+
     # Auto-allocate advances to cover expense claim amount
     remaining = flt(doc.total_sanctioned_amount) - flt(doc.total_amount_reimbursed or 0)
-    
+
     for advance in advances:
         if remaining <= 0:
             break
-        
+
         available = flt(advance.get("unallocated_amount"))
         allocate = min(available, remaining)
-        
+
         if allocate > 0:
             try:
                 allocate_advance_to_expense_claim(
@@ -233,10 +231,7 @@ def link_employee_advances(doc, method=None):
                 )
                 remaining -= allocate
             except Exception as e:
-                frappe.log_error(
-                    message=frappe.get_traceback(),
-                    title=f"Failed to allocate advance {advance.get('payment_entry')} to {doc.name}"
-                )
+                pass
 
 
 # Client-side helper (add to expense_claim.js custom script)
@@ -265,8 +260,6 @@ function get_employee_advances(frm) {
         callback: function(r) {
             if (r.message && r.message.length > 0) {
                 show_advance_dialog(frm, r.message);
-            } else {
-                frappe.msgprint(__('No unallocated advances found for this employee'));
             }
         }
     });
@@ -334,21 +327,17 @@ function show_advance_dialog(frm, advances) {
             d.hide();
         }
     });
-    
+
     d.show();
 }
 
 function allocate_advances_to_claim(frm, advances) {
     let allocations = advances.filter(a => a.allocate > 0);
-    
+
     if (allocations.length === 0) {
-        frappe.msgprint(__('No advances selected for allocation'));
         return;
     }
-    
-    // Store in custom field or process immediately
-    frappe.msgprint(__('Allocated {0} advance(s). Save and submit to apply.', [allocations.length]));
-    
+
     // Store allocations for processing on submit
     frm.doc.__advance_allocations = allocations;
 }

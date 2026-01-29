@@ -22,11 +22,6 @@ def create_payment_entry_for_transfer_application(
     if transfer_application.payment_entry:
         existing_status = frappe.db.get_value("Payment Entry", transfer_application.payment_entry, "docstatus")
         if existing_status is not None and existing_status != 2:
-            frappe.msgprint(
-                _("Payment Entry {0} already exists for this Transfer Application.").format(
-                    transfer_application.payment_entry
-                )
-            )
             return frappe.get_doc("Payment Entry", transfer_application.payment_entry)
 
     settings = get_transfer_application_settings()
@@ -74,7 +69,7 @@ def create_payment_entry_for_transfer_application(
         first_item = transfer_application.items[0]
         item_party_type = getattr(first_item, "party_type", None)
         item_party = getattr(first_item, "party", None)
-    
+
     if item_party_type and item_party:
         payment_entry.party_type = item_party_type
         payment_entry.party = item_party
@@ -151,11 +146,11 @@ def _get_default_bank_cash_account(company: str, *, account_type: str):
 
 def _resolve_paid_to_account(transfer_application: Document, *, settings=None):
     settings = settings or get_transfer_application_settings()
-    
+
     # Try to get party info from first item (for backward compatibility)
     party_type = None
     party = None
-    
+
     if transfer_application.items and len(transfer_application.items) > 0:
         first_item = transfer_application.items[0]
         party_type = getattr(first_item, "party_type", None)

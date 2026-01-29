@@ -83,16 +83,16 @@ def _match_transfer_application(doc: Document, *, settings):
             filters={"parent": candidate.name},
             fields=["account_number", "beneficiary_name"]
         )
-        
+
         account_match = False
         name_match = False
-        
+
         for item in items:
             if not account_match and _account_matches(item.get("account_number"), remark_text):
                 account_match = True
             if not name_match and _text_matches(item.get("beneficiary_name"), remark_text):
                 name_match = True
-        
+
         hint_match = _text_matches(candidate.bank_reference_hint, remark_text)
         ta_in_remark = _text_matches(candidate.name, remark_text)
 
@@ -123,16 +123,16 @@ def _apply_strong_match(doc: Document, candidate: dict, amount: float, remark_te
         filters={"parent": candidate.name},
         fields=["account_number", "beneficiary_name"]
     )
-    
+
     account_found = False
     beneficiary_found = False
-    
+
     for item in items:
         if _account_matches(item.get("account_number"), remark_text):
             account_found = True
         if _text_matches(item.get("beneficiary_name"), remark_text):
             beneficiary_found = True
-    
+
     if account_found:
         note_parts.append(_("Account number found in bank description."))
     if _text_matches(candidate.get("bank_reference_hint"), remark_text):
@@ -184,10 +184,6 @@ def _apply_strong_match(doc: Document, candidate: dict, amount: float, remark_te
             ignore_permissions=True,
         )
     except Exception:
-        frappe.log_error(
-            title="Transfer Application auto Payment Entry failed",
-            message=frappe.get_traceback(),
-        )
         _append_match_note(doc, _("Auto Payment Entry failed; see error log."))
         return
 
@@ -249,7 +245,7 @@ def _append_match_note(doc: Document, message: str):
     try:
         doc.add_comment("Info", message)
     except Exception:
-        frappe.log_error(f"Failed to append note on Bank Transaction {doc.name}", frappe.get_traceback())
+        pass
 
 
 def _get_transaction_amount(doc: Document) -> float:

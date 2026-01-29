@@ -52,10 +52,7 @@ def on_submit(doc, method=None):
             reference_name=doc.name,
         )
     except Exception:
-        frappe.log_error(
-            message=frappe.get_traceback(),
-            title=f"Failed to log Payment Entry submit for {transfer_application}",
-        )
+        pass
 
 
 def on_cancel(doc, method=None):
@@ -89,7 +86,4 @@ def on_cancel(doc, method=None):
             reference_name=doc.name,
         )
     except Exception:
-        frappe.log_error(
-            message=frappe.get_traceback(),
-            title=f"Failed to log Payment Entry cancel for {transfer_application}",
-        )
+        pass

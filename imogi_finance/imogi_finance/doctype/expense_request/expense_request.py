@@ -98,7 +98,7 @@ def get_approval_route(cost_center: str, accounts, amount: float, *, setting_met
 
 class ExpenseRequest(Document):
     """Expense Request - minimal logic, validation only.
-    
+
     Approval workflow, budget control, and accounting are delegated to:
     - ApprovalService: Multi-level approval state machine
     - budget_control.workflow: Budget locking/reservation
@@ -134,7 +134,7 @@ class ExpenseRequest(Document):
     def before_submit(self):
         """Prepare for submission - resolve approval route and initialize state."""
         self.validate_submit_permission()
-        
+
         # Validate tax invoice OCR data if OCR is enabled and applicable
         self.validate_tax_invoice_ocr_before_submit()
 
@@ -166,10 +166,6 @@ class ExpenseRequest(Document):
         except Exception as e:
             # Log unexpected errors and fail the transaction
             error_msg = str(e)
-            frappe.log_error(
-                title=f"Budget Control Error: {self.name}",
-                message=f"Failed to handle budget workflow on submit: {error_msg}\n\n{frappe.get_traceback()}"
-            )
             frappe.throw(
                 _("Budget control operation failed during submission.<br><br>Error: {0}<br><br>Please contact administrator if the problem persists.").format(error_msg),
                 title=_("Budget Control Error")
@@ -197,10 +193,6 @@ class ExpenseRequest(Document):
                 raise
             except Exception as e:
                 # Log and fail the workflow action
-                frappe.log_error(
-                    title=f"Budget Control Error: {self.name}",
-                    message=f"Failed to handle budget workflow on {action}: {str(e)}\n\n{frappe.get_traceback()}"
-                )
                 frappe.throw(
                     _("Budget control operation failed. Workflow action cannot be completed. Error: {0}").format(str(e)),
                     title=_("Budget Control Error")
@@ -213,7 +205,7 @@ class ExpenseRequest(Document):
 
     def before_cancel(self):
         """Validate permissions and linked documents before cancel.
-        
+
         Check for linked Purchase Invoice and Payment Entry to prevent
         accidental cancellation. Guide users to either:
         1. Cancel documents in reverse order manually (PE → PI → ER), or
@@ -224,27 +216,27 @@ class ExpenseRequest(Document):
         current_roles = set(frappe.get_roles())
         if not (current_roles & allowed_roles):
             frappe.throw(_("Only System Manager or Expense Approver can cancel."), title=_("Not Allowed"))
-        
+
         # Check for linked documents
         linked_pi = frappe.db.get_value(
             "Purchase Invoice",
             {"imogi_expense_request": self.name, "docstatus": 1},
             "name"
         )
-        
+
         linked_pe = frappe.db.get_value(
             "Payment Entry",
             {"imogi_expense_request": self.name, "docstatus": 1},
             "name"
         )
-        
+
         if linked_pi or linked_pe:
             docs = []
             if linked_pe:
                 docs.append(f"Payment Entry {linked_pe}")
             if linked_pi:
                 docs.append(f"Purchase Invoice {linked_pi}")
-            
+
             frappe.throw(
                 _("Cannot cancel Expense Request - linked documents exist: {0}.<br><br>"
                   "Please either:<br>"
@@ -253,7 +245,7 @@ class ExpenseRequest(Document):
                 ).format(", ".join(docs)),
                 title=_("Linked Documents Exist")
             )
-        
+
         # Mark that we're cancelling this ER - BCE should allow its cancellation
         # Store in frappe.local so BCE.before_cancel can check it
         if not hasattr(frappe.local, "cancelling_expense_requests"):
@@ -262,19 +254,15 @@ class ExpenseRequest(Document):
 
     def on_cancel(self):
         """Clean up: release budget reservations.
-        
+
         No need to check links here - already checked in before_cancel.
         Just do cleanup tasks.
         """
-        
+
         # Release budget reservations - MUST succeed or cancel fails
         try:
             release_budget_for_request(self, reason="Cancel")
         except Exception as e:
-            frappe.log_error(
-                title=f"Budget Release Error for {self.name}",
-                message=f"Error releasing budget: {str(e)}\n\n{frappe.get_traceback()}"
-            )
             frappe.throw(
                 _("Failed to release budget. Cancel operation cannot proceed. Error: {0}").format(str(e)),
                 title=_("Budget Release Error")
@@ -414,7 +402,7 @@ class ExpenseRequest(Document):
         if supplier_npwp:
             supplier_npwp_normalized = normalize_npwp(supplier_npwp)
             ocr_npwp = normalize_npwp(getattr(self, "ti_fp_npwp", None))
-            
+
             if ocr_npwp and supplier_npwp_normalized and ocr_npwp != supplier_npwp_normalized:
                 errors.append(
                     _("NPWP from OCR ({0}) does not match Supplier NPWP ({1})").format(
@@ -429,7 +417,7 @@ class ExpenseRequest(Document):
         # Get tolerance from settings (both fixed IDR and percentage)
         tolerance = flt(settings.get("tolerance_idr", 10000))  # Default Rp 10,000
         tolerance_pct = flt(settings.get("tolerance_percentage", 1.0))  # Default 1%
-        
+
         # Get PPN type - only validate amounts for Standard PPN
         ppn_type = getattr(self, "ti_fp_ppn_type", None)
         if ppn_type and ppn_type != "Standard":
@@ -441,15 +429,15 @@ class ExpenseRequest(Document):
                     title=_("Tax Invoice Validation Error")
                 )
             return
-        
+
         # Get OCR values
         ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
         ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
         ocr_ppnbm = flt(getattr(self, "ti_fp_ppnbm", 0) or 0)
-        
+
         # Calculate expected values from expense request
         expected_dpp = flt(getattr(self, "amount", 0) or 0)  # Total expense as DPP
-        
+
         # Expected PPN calculation
         ppn_template = getattr(self, "ppn_template", None)
         ppn_rate = 11  # Default PPN rate
@@ -460,9 +448,9 @@ class ExpenseRequest(Document):
                 if tax.rate:
                     ppn_rate = flt(tax.rate)
                     break
-        
+
         expected_ppn = expected_dpp * ppn_rate / 100
-        
+
         # Check DPP difference
         # Use both fixed IDR tolerance and percentage tolerance (whichever is more lenient)
         if ocr_dpp > 0 and expected_dpp > 0:
@@ -470,10 +458,10 @@ class ExpenseRequest(Document):
             dpp_variance = ocr_dpp - expected_dpp
             dpp_diff = abs(dpp_variance)
             dpp_diff_pct = (dpp_diff / expected_dpp * 100) if expected_dpp > 0 else 0
-            
+
             # Save variance for tax operations (will be used for PPN payable calculation)
             self.ti_dpp_variance = dpp_variance
-            
+
             # Validate using tolerance from settings
             if dpp_diff > tolerance and dpp_diff_pct > tolerance_pct:
                 errors.append(
@@ -494,17 +482,17 @@ class ExpenseRequest(Document):
                         dpp_diff_pct
                     )
                 )
-        
+
         # Check PPN difference
         if ocr_ppn > 0:
             # Calculate variance (OCR - Expected) - can be negative or positive
             ppn_variance = ocr_ppn - expected_ppn
             ppn_diff = abs(ppn_variance)
             ppn_diff_pct = (ppn_diff / expected_ppn * 100) if expected_ppn > 0 else 0
-            
+
             # Save variance for tax operations (will be used for PPN payable calculation)
             self.ti_ppn_variance = ppn_variance
-            
+
             # Validate using tolerance from settings
             if ppn_diff > tolerance and ppn_diff_pct > tolerance_pct:
                 errors.append(
@@ -525,18 +513,10 @@ class ExpenseRequest(Document):
                         ppn_diff_pct
                     )
                 )
-        
+
         # PPnBM validation (if applicable) - usually PPnBM should be 0 or match expected
         # For now, just note if PPnBM exists but we can add validation later if needed
-        
-        # Show warnings as msgprint (non-blocking)
-        if warnings:
-            frappe.msgprint(
-                "<br>".join(["<strong>Peringatan Validasi Faktur Pajak:</strong>"] + warnings),
-                title=_("Tax Invoice Validation Warning"),
-                indicator="orange"
-            )
-        
+
         # Show errors and block submission
         if errors:
             frappe.throw(
@@ -615,7 +595,7 @@ class ExpenseRequest(Document):
 
         key_fields = ("request_type", "supplier", "amount", "cost_center", "branch", "project")
         changed = [f for f in key_fields if self._get_value(previous, f) != getattr(self, f, None)]
-        
+
         if changed:
             frappe.throw(_("Cannot modify after approval: {0}").format(", ".join(changed)))
 
@@ -741,12 +721,12 @@ class ExpenseRequest(Document):
     def _get_route_snapshot(self) -> dict:
         """Get stored approval route."""
         from imogi_finance.approval import parse_route_snapshot
-        
+
         snapshot = getattr(self, "approval_route_snapshot", None)
         parsed = parse_route_snapshot(snapshot)
         if parsed:
             return parsed
-        
+
         # Fallback: build from level_*_user fields
         return {f"level_{l}": {"user": getattr(self, f"level_{l}_user", None)} for l in (1, 2, 3)}
 
