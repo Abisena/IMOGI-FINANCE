@@ -15,35 +15,35 @@ class CashBankDailyReport(Document):
     A document stores the input parameters (date, optional branches filter)
     and a JSON snapshot of the generated report so it can be printed or
     re-opened later without recomputing everything.
-    
+
     Uses Frappe native workflow with states:
     - Draft: Initial state
     - Generated: Snapshot created, can be regenerated
     - Approved: Reviewed by manager, ready to print
     - Printed: Submitted (docstatus=1), locked from modifications
     - Cancelled: Cancelled (docstatus=2)
-    
+
     Supports multiple reprints with tracking.
     """
-    
+
     @property
     def is_submitted(self) -> bool:
         """Check if report has been submitted (Printed state)."""
         return getattr(self, "docstatus", 0) == 1
-    
+
     @property
     def snapshot_data(self) -> dict:
         """Parse and return snapshot JSON as dictionary.
-        
+
         This property is used in print formats to access the parsed data
         without needing custom Jinja filters.
-        
+
         Returns:
             dict: Parsed snapshot data with keys: consolidated, branches, signers
         """
         if not self.snapshot_json:
             return {}
-        
+
         try:
             return json.loads(self.snapshot_json)
         except (json.JSONDecodeError, TypeError, ValueError):
@@ -83,26 +83,26 @@ class CashBankDailyReport(Document):
                 )
             if self.report_date:
                 self.generate_snapshot()
-    
+
     def on_submit(self):
         """Called when report is submitted (transitioned to Printed state).
-        
+
         Records first print timestamp if this is the first print.
         """
         if not self.first_printed_at:
             self.first_printed_at = frappe.utils.now_datetime()
             self.first_printed_by = frappe.session.user
             self._add_print_event("First Print")
-    
+
     def on_cancel(self):
         """Called when report is cancelled.
-        
+
         Validates that no related Payment Entries are dependent on this report.
         """
         # Check if any Payment Entries reference this report date
         posting_date = self.report_date
         account = self.cash_account or self.bank_account
-        
+
         if account:
             pe_count = frappe.db.count(
                 "Payment Entry",
@@ -112,7 +112,7 @@ class CashBankDailyReport(Document):
                     # Check if PE account matches report account
                 }
             )
-            
+
             if pe_count > 0:
                 frappe.msgprint(
                     frappe._(
@@ -122,10 +122,10 @@ class CashBankDailyReport(Document):
                     indicator="orange",
                     alert=True
                 )
-    
+
     def before_workflow_action(self, workflow_state_field=None, action=None, workflow_state=None):
         """Validate workflow actions based on Finance Control Settings.
-        
+
         - Approve: Must be done by designated approver from settings
         - Print & Lock: Must be done by designated approver or System Manager
         """
@@ -133,24 +133,24 @@ class CashBankDailyReport(Document):
             self._validate_approver()
         elif action == "Print & Lock":
             self._validate_print_permission()
-    
+
     def _validate_approver(self):
         """Validate that current user is authorized to approve this report.
-        
+
         Checks:
         1. Per-account rules in Finance Control Settings (daily_report_signer_rules)
         2. Global approver (daily_report_approver)
         3. System Manager (always allowed)
         """
         current_user = frappe.session.user
-        
+
         # System Manager can always approve
         if "System Manager" in frappe.get_roles():
             return
-        
+
         # Get Finance Control Settings
         settings = frappe.get_single("Finance Control Settings")
-        
+
         # Check per-account rules first
         account = self.bank_account or self.cash_account
         if account and settings.daily_report_signer_rules:
@@ -164,7 +164,7 @@ class CashBankDailyReport(Document):
                                 "Only {0} is authorized to approve reports for account {1}"
                             ).format(rule.approved_by, account)
                         )
-        
+
         # Check global approver
         if settings.daily_report_approver:
             if settings.daily_report_approver == current_user:
@@ -176,7 +176,7 @@ class CashBankDailyReport(Document):
                         "Configure approvers in Finance Control Settings."
                     ).format(settings.daily_report_approver)
                 )
-        
+
         # No approver configured - require Accounts Manager role
         if "Accounts Manager" not in frappe.get_roles():
             frappe.throw(
@@ -185,10 +185,10 @@ class CashBankDailyReport(Document):
                     "Or configure specific approvers in Finance Control Settings."
                 )
             )
-    
+
     def _validate_print_permission(self):
         """Validate that current user can print & lock this report.
-        
+
         Same validation as approve - must be authorized approver.
         """
         self._validate_approver()
@@ -254,7 +254,7 @@ class CashBankDailyReport(Document):
 
         This enforces sequential daily reports whenever there are
         consecutive Bank Transactions.
-        
+
         Note: This validation only applies to Bank Account mode.
         Cash Account mode (via GL Entry) does not require sequential validation
         as GL entries are more flexible and can be posted retroactively.
@@ -268,17 +268,17 @@ class CashBankDailyReport(Document):
             "Bank Transaction",
             filters={
                 "bank_account": self.bank_account,
-                "transaction_date": ("<", self.report_date),
+                "date": ("<", self.report_date),
             },
-            fields=["transaction_date"],
-            order_by="transaction_date desc",
+            fields=["date"],
+            order_by="date desc",
             limit=1,
         )
 
         if not prev_tx:
             return
 
-        prev_date = prev_tx[0].get("transaction_date")
+        prev_date = prev_tx[0].get("date")
         if not prev_date:
             return
 
@@ -302,17 +302,17 @@ class CashBankDailyReport(Document):
         report_date_str = (
             self.report_date if isinstance(self.report_date, str) else self.report_date.isoformat()
         )
-        
+
         # Check if previous report exists
         from datetime import timedelta
         from imogi_finance.reporting.data import get_previous_report_closing_balances
-        
+
         if isinstance(self.report_date, str):
             from datetime import date as date_class
             report_date_obj = date_class.fromisoformat(self.report_date)
         else:
             report_date_obj = self.report_date
-        
+
         prev_balances = None
         if self.bank_account:
             prev_balances = get_previous_report_closing_balances(
@@ -322,7 +322,7 @@ class CashBankDailyReport(Document):
             prev_balances = get_previous_report_closing_balances(
                 report_date_obj, cash_account=self.cash_account
             )
-        
+
         if prev_balances:
             self.opening_source = "Previous Report"
         else:
@@ -362,7 +362,7 @@ class CashBankDailyReport(Document):
         # Store full JSON snapshot for print formats / APIs
         self.snapshot_json = frappe.as_json(payload)
         self.status = "Generated"
-        
+
         # Set report type based on account selection
         if self.cash_account:
             self.report_type = "Cash Ledger (GL Entry)"
@@ -377,11 +377,11 @@ class CashBankDailyReport(Document):
         self.inflow = consolidated.get("inflow") or 0
         self.outflow = consolidated.get("outflow") or 0
         self.closing_balance = consolidated.get("closing_balance") or 0
-        
+
         # Validate balance calculation
         expected_closing = self.opening_balance + self.inflow - self.outflow
         tolerance = 0.01  # 1 cent tolerance for rounding
-        
+
         if abs(self.closing_balance - expected_closing) <= tolerance:
             self.balance_status = "Balanced"
         else:
@@ -404,12 +404,12 @@ def regenerate(name: str):
     """Explicit API to regenerate a report snapshot for an existing document.
 
     Can be wired to a custom button on the DocType.
-    
+
     Note: Blocked if report has been submitted (docstatus=1).
     """
 
     doc = frappe.get_doc("Cash Bank Daily Report", name)
-    
+
     # Check if report is submitted
     if doc.is_submitted:
         frappe.throw(
@@ -420,74 +420,74 @@ def regenerate(name: str):
                 doc.first_printed_by or "unknown user"
             )
         )
-    
+
     if not doc.report_date:
         frappe.throw("Report Date is required to regenerate the snapshot")
 
     doc.generate_snapshot()
     doc.save()
-    
+
     frappe.msgprint(
         frappe._("Report snapshot regenerated successfully"),
         indicator="green"
     )
-    
+
     return doc
 
 
 @frappe.whitelist()
 def reprint(name: str):
     """Record a reprint event for tracking purposes.
-    
+
     This is called when user clicks the Reprint button.
     Does NOT regenerate snapshot - uses existing data.
     Only tracks the reprint event for audit trail.
     """
     doc = frappe.get_doc("Cash Bank Daily Report", name)
-    
+
     if not doc.is_submitted:
         frappe.throw(
             frappe._("Can only reprint submitted reports. Please submit the report first.")
         )
-    
+
     # Increment reprint counter
     doc.reprint_count = (doc.reprint_count or 0) + 1
     doc.last_reprinted_at = frappe.utils.now_datetime()
     doc.last_reprinted_by = frappe.session.user
-    
+
     # Add to print history
     doc._add_print_event(f"Reprint #{doc.reprint_count}")
-    
+
     # Save without triggering workflow
     doc.save(ignore_permissions=True)
-    
+
     frappe.msgprint(
         frappe._(
             "Reprint #{0} recorded. Opening print view..."
         ).format(doc.reprint_count),
         indicator="blue"
     )
-    
+
     return doc
 
 
 def _add_print_event(self, event_type: str):
     """Add a print/reprint event to the print history."""
     import json
-    
+
     history = []
     if self.print_history:
         try:
             history = json.loads(self.print_history)
         except Exception:
             history = []
-    
+
     history.append({
         "event": event_type,
         "timestamp": frappe.utils.now_datetime().isoformat(),
         "user": frappe.session.user
     })
-    
+
     self.print_history = json.dumps(history, indent=2)
 
 
