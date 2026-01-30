@@ -14,9 +14,101 @@ from imogi_finance.tax_invoice_ocr import get_tax_invoice_ocr_monitoring
 
 class TaxInvoiceOCRMonitoring(Document):
     def validate(self):
-        """Auto-populate data if Target is Tax Invoice OCR Upload"""
-        if self.target_doctype == "Tax Invoice OCR Upload" and self.target_name:
+        """Auto-populate data based on Target DocType"""
+        if self.target_doctype and self.target_name:
+            self._populate_from_target()
+
+    def _populate_from_target(self):
+        """Fetch and populate data from various target doctypes"""
+        if self.target_doctype == "Tax Invoice OCR Upload":
             self._populate_from_ocr_upload()
+        elif self.target_doctype == "Purchase Invoice":
+            self._populate_from_purchase_invoice()
+        elif self.target_doctype == "Expense Request":
+            self._populate_from_expense_request()
+        elif self.target_doctype == "Branch Expense Request":
+            self._populate_from_branch_expense_request()
+
+    def _populate_from_purchase_invoice(self):
+        """Fetch data from Purchase Invoice and linked OCR Upload"""
+        if not frappe.db.exists("Purchase Invoice", self.target_name):
+            return
+
+        pi = frappe.get_doc("Purchase Invoice", self.target_name)
+
+        # Try to find linked OCR Upload via custom field
+        ocr_upload_name = pi.get("tax_invoice_ocr_upload")
+
+        if ocr_upload_name and frappe.db.exists("Tax Invoice OCR Upload", ocr_upload_name):
+            # Populate from linked OCR Upload
+            temp_target = self.target_name
+            temp_doctype = self.target_doctype
+            self.target_name = ocr_upload_name
+            self._populate_from_ocr_upload()
+            # Restore original target
+            self.target_name = temp_target
+            self.target_doctype = temp_doctype
+        else:
+            # Populate basic data from Purchase Invoice itself
+            self.npwp = pi.get("tax_id")
+            self.dpp = pi.get("net_total")
+            # Calculate PPN from taxes
+            for tax in pi.get("taxes", []):
+                if "PPN" in (tax.get("description") or "") or "VAT" in (tax.get("account_head") or "").upper():
+                    self.ppn = tax.get("tax_amount")
+                    break
+
+    def _populate_from_expense_request(self):
+        """Fetch data from Expense Request and linked OCR/PI"""
+        if not frappe.db.exists("Expense Request", self.target_name):
+            return
+
+        er = frappe.get_doc("Expense Request", self.target_name)
+
+        # Try to find linked Purchase Invoice or OCR Upload
+        pi_name = er.get("purchase_invoice")
+        ocr_name = er.get("tax_invoice_ocr_upload")
+
+        if pi_name:
+            temp_target = self.target_name
+            temp_doctype = self.target_doctype
+            self.target_name = pi_name
+            self._populate_from_purchase_invoice()
+            self.target_name = temp_target
+            self.target_doctype = temp_doctype
+        elif ocr_name:
+            temp_target = self.target_name
+            temp_doctype = self.target_doctype
+            self.target_name = ocr_name
+            self._populate_from_ocr_upload()
+            self.target_name = temp_target
+            self.target_doctype = temp_doctype
+
+    def _populate_from_branch_expense_request(self):
+        """Fetch data from Branch Expense Request"""
+        if not frappe.db.exists("Branch Expense Request", self.target_name):
+            return
+
+        ber = frappe.get_doc("Branch Expense Request", self.target_name)
+
+        # Similar logic as Expense Request
+        pi_name = ber.get("purchase_invoice")
+        ocr_name = ber.get("tax_invoice_ocr_upload")
+
+        if pi_name:
+            temp_target = self.target_name
+            temp_doctype = self.target_doctype
+            self.target_name = pi_name
+            self._populate_from_purchase_invoice()
+            self.target_name = temp_target
+            self.target_doctype = temp_doctype
+        elif ocr_name:
+            temp_target = self.target_name
+            temp_doctype = self.target_doctype
+            self.target_name = ocr_name
+            self._populate_from_ocr_upload()
+            self.target_name = temp_target
+            self.target_doctype = temp_doctype
 
     def _populate_from_ocr_upload(self):
         """Fetch and populate data directly from Tax Invoice OCR Upload"""
@@ -27,28 +119,29 @@ class TaxInvoiceOCRMonitoring(Document):
 
         # Populate basic info
         self.upload_name = ocr_upload.name
-        self.tax_invoice_pdf = ocr_upload.get("file_faktur_pajak")
+        self.tax_invoice_pdf = ocr_upload.get("tax_invoice_pdf")
 
-        # Populate extracted data
-        self.ocr_confidence = ocr_upload.get("confidence_level") or 0
-        self.fp_date = ocr_upload.get("tanggal_faktur_pajak")
-        self.npwp = ocr_upload.get("npwp_supplier")
+        # Populate extracted data - use correct field names from JSON schema
+        self.ocr_confidence = ocr_upload.get("ocr_confidence") or 0
+        self.fp_date = ocr_upload.get("fp_date")
+        self.fp_no = ocr_upload.get("fp_no")
+        self.npwp = ocr_upload.get("npwp")
         self.dpp = ocr_upload.get("dpp")
-        self.ppn = ocr_upload.get("jumlah_ppn")
-        self.ppnbm = ocr_upload.get("jumlah_ppnbm") or 0
-        self.ppn_type = ocr_upload.get("tipe_ppn")
+        self.ppn = ocr_upload.get("ppn")
+        self.ppnbm = ocr_upload.get("ppnbm") or 0
+        self.ppn_type = ocr_upload.get("ppn_type")
 
         # Populate validation flags
-        self.duplicate_flag = 1 if ocr_upload.get("faktur_duplikat") else 0
-        self.npwp_match = 1 if ocr_upload.get("npwp_sesuai") else 0
+        self.duplicate_flag = 1 if ocr_upload.get("duplicate_flag") else 0
+        self.npwp_match = 1 if ocr_upload.get("npwp_match") else 0
 
         # Populate status
-        self.ocr_status = ocr_upload.get("status_ocr")
-        self.verification_status = ocr_upload.get("status_verifikasi")
-        self.verification_notes = ocr_upload.get("catatan_verifikasi")
+        self.ocr_status = ocr_upload.get("ocr_status")
+        self.verification_status = ocr_upload.get("verification_status")
+        self.verification_notes = ocr_upload.get("verification_notes")
 
         # Check if raw JSON exists
-        ocr_json = ocr_upload.get("data_ocr_lengkap_json")
+        ocr_json = ocr_upload.get("ocr_raw_json")
         if ocr_json:
             self.ocr_raw_json_present = 1
             self.ocr_raw_json = ocr_json
@@ -58,13 +151,10 @@ class TaxInvoiceOCRMonitoring(Document):
         if not self.target_doctype or not self.target_name:
             frappe.throw(_("Target DocType and Target Name are required to refresh status."))
 
-        # If target is OCR Upload directly, populate from it
-        if self.target_doctype == "Tax Invoice OCR Upload":
-            self._populate_from_ocr_upload()
-            return {"success": True, "message": "Data refreshed from OCR Upload"}
-
-        # Otherwise use the original logic for Purchase Invoice etc
-        result = get_tax_invoice_ocr_monitoring(self.target_name, self.target_doctype)
+        # Use new populate logic for all supported doctypes
+        self._populate_from_target()
+        self.save(ignore_permissions=True)
+        return {"success": True, "message": _("Data refreshed successfully")}
         doc_info = result.get("doc") or {}
         job_info = result.get("job") or {}
 
