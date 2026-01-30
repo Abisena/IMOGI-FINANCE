@@ -28,6 +28,61 @@ class TaxPaymentBatch(Document):
         self._ensure_payable_account()
         self._refresh_amount_if_needed()
 
+    def on_submit(self):
+        """Auto-create and submit Payment Entry when Tax Payment Batch is submitted"""
+        if self.amount and self.amount > 0:
+            try:
+                payment_entry_name = self._create_and_submit_payment_entry()
+                frappe.msgprint(_("Payment Entry {0} created and submitted successfully").format(payment_entry_name), indicator="green")
+            except Exception as e:
+                frappe.log_error(message=str(e), title="Tax Payment Batch: Failed to create Payment Entry")
+                frappe.throw(_("Failed to create Payment Entry: {0}").format(str(e)))
+
+    def _create_and_submit_payment_entry(self):
+        """Create and submit Payment Entry without requiring Party Type/Party"""
+        # Validate required fields
+        if not self.payable_account:
+            frappe.throw(_("Payable Account is required to create Payment Entry"))
+        if not self.payment_account:
+            frappe.throw(_("Payment Account is required to create Payment Entry"))
+        if not self.amount or self.amount <= 0:
+            frappe.throw(_("Payment Amount must be greater than 0"))
+
+        # Create Payment Entry
+        pe = frappe.new_doc("Payment Entry")
+        pe.company = self.company
+        pe.payment_type = "Pay"
+        # Party Type and Party are optional - leave empty for government payments
+        pe.posting_date = self.payment_date or self.posting_date or nowdate()
+        pe.mode_of_payment = self.payment_mode or "Bank"
+
+        # Paid From = Payment Account (Bank/Cash - where money comes from)
+        # Paid To = Payable Account (Tax liability - where money goes to reduce)
+        pe.paid_from = self.payment_account
+        pe.paid_to = self.payable_account
+        pe.paid_amount = self.amount
+        pe.received_amount = self.amount
+
+        # Reference to Tax Payment Batch
+        pe.reference_no = self.name
+        pe.reference_date = pe.posting_date
+        pe.remarks = _("Tax payment for {0} - Period {1}/{2} - Batch {3}").format(
+            self.tax_type or "Tax",
+            self.period_month or "",
+            self.period_year or "",
+            self.name
+        )
+
+        # Insert and Submit
+        pe.insert(ignore_permissions=True)
+        pe.submit()
+
+        # Update Tax Payment Batch with reference
+        self.db_set("payment_entry", pe.name, update_modified=False)
+        self.db_set("status", "Paid", update_modified=False)
+
+        return pe.name
+
     def _set_period_dates(self):
         if not self.period_month or not self.period_year:
             return
