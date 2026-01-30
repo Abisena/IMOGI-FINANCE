@@ -52,9 +52,10 @@
     },
     {
       "fieldname": "target_name",
-      "fieldtype": "Data",
+      "fieldtype": "Dynamic Link",
       "in_list_view": 1,
       "label": "Target Name",
+      "options": "target_doctype",
       "reqd": 1
     },
     {
