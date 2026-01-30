@@ -87,11 +87,11 @@ def _get_vat_totals(company: str, date_from: date | str | None, date_to: date | 
     profile = _get_tax_profile(company)
 
     # Query directly from GL Entry for VAT Input
-    input_account = getattr(profile, "input_vat_account", None)
+    input_account = getattr(profile, "ppn_input_account", None)
     input_total = _get_gl_total(company, [input_account], date_from, date_to) if input_account else 0.0
 
     # Query directly from GL Entry for VAT Output
-    output_account = getattr(profile, "output_vat_account", None)
+    output_account = getattr(profile, "ppn_output_account", None)
     output_total = _get_gl_total(company, [output_account], date_from, date_to) if output_account else 0.0
 
     return input_total, output_total
