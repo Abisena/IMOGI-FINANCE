@@ -94,5 +94,4 @@ class ExpenseApprovalSetting(Document):
             if level_1_min > 0:
                 account_label = getattr(line, "expense_account", None) or "Default (All Accounts)"
                 # Skip warning message
-                    indicator="orange"
-                )
+                pass
