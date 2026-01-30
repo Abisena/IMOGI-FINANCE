@@ -117,7 +117,7 @@ def _get_gl_total(company: str, accounts: list[str], date_from: date | str | Non
     aggregates = frappe.get_all(
         "GL Entry",
         filters=filters,
-        fields=[["sum", "credit", "credit_total"], ["sum", "debit", "debit_total"]],
+        fields=["sum(credit) as credit_total", "sum(debit) as debit_total"],
     )
     if not aggregates:
         return 0.0
