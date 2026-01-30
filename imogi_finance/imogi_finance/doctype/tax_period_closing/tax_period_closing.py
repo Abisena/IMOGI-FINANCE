@@ -30,7 +30,7 @@ class TaxPeriodClosing(Document):
     def before_submit(self):
         self.status = "Closed"
         if not self.register_snapshot:
-            self.generate_snapshot()
+            self.generate_snapshot(save=False)
         self._update_totals_from_snapshot()
 
     def _ensure_status_default(self):
