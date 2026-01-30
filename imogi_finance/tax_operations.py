@@ -101,18 +101,18 @@ def _get_gl_total(company: str, accounts: list[str], date_from: date | str | Non
     if not accounts:
         return 0.0
 
-    filters: dict[str, object] = {
-        "company": company,
-        "is_cancelled": 0,
-        "account": ["in", accounts],
-    }
+    filters = [
+        ["company", "=", company],
+        ["is_cancelled", "=", 0],
+        ["account", "in", accounts],
+    ]
 
     if date_from and date_to:
-        filters["posting_date"] = ["between", [date_from, date_to]]
+        filters.append(["posting_date", "between", [date_from, date_to]])
     elif date_from:
-        filters["posting_date"] = [">=", date_from]
+        filters.append(["posting_date", ">=", date_from])
     elif date_to:
-        filters["posting_date"] = ["<=", date_to]
+        filters.append(["posting_date", "<=", date_to])
 
     aggregates = frappe.get_all(
         "GL Entry",
