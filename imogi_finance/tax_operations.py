@@ -86,11 +86,11 @@ def _get_vat_totals(company: str, date_from: date | str | None, date_to: date | 
     # Get Tax Profile to retrieve VAT accounts
     profile = _get_tax_profile(company)
 
-    # Query directly from GL Entry for VAT Input
+    # Query VAT Input (Asset account - use debit total)
     input_account = getattr(profile, "ppn_input_account", None)
-    input_total = _get_gl_total(company, [input_account], date_from, date_to) if input_account else 0.0
+    input_total = _get_gl_debit_total(company, [input_account], date_from, date_to) if input_account else 0.0
 
-    # Query directly from GL Entry for VAT Output
+    # Query VAT Output (Liability account - use credit - debit)
     output_account = getattr(profile, "ppn_output_account", None)
     output_total = _get_gl_total(company, [output_account], date_from, date_to) if output_account else 0.0
 
@@ -125,6 +125,36 @@ def _get_gl_total(company: str, accounts: list[str], date_from: date | str | Non
     credit_total = flt(aggregates[0].get("credit_total"))
     debit_total = flt(aggregates[0].get("debit_total"))
     return credit_total - debit_total
+
+
+def _get_gl_debit_total(company: str, accounts: list[str], date_from: date | str | None, date_to: date | str | None) -> float:
+    """Get total debit amount for asset/expense accounts (like PPN Input)"""
+    if not accounts:
+        return 0.0
+
+    filters = [
+        ["company", "=", company],
+        ["is_cancelled", "=", 0],
+        ["account", "in", accounts],
+    ]
+
+    if date_from and date_to:
+        filters.append(["posting_date", "between", [date_from, date_to]])
+    elif date_from:
+        filters.append(["posting_date", ">=", date_from])
+    elif date_to:
+        filters.append(["posting_date", "<=", date_to])
+
+    aggregates = frappe.get_all(
+        "GL Entry",
+        filters=filters,
+        fields=["sum(debit) as debit_total"],
+    )
+    if not aggregates:
+        return 0.0
+
+    debit_total = flt(aggregates[0].get("debit_total"))
+    return debit_total
 
 
 def build_register_snapshot(company: str, date_from: date | str | None, date_to: date | str | None) -> dict:
