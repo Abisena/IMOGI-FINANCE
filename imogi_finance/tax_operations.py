@@ -83,17 +83,17 @@ def _sum_field(rows: Iterable[dict], field: str) -> float:
 
 
 def _get_vat_totals(company: str, date_from: date | str | None, date_to: date | str | None) -> tuple[float, float]:
-    filters = {"company": company}
-    if date_from:
-        filters["from_date"] = date_from
-    if date_to:
-        filters["to_date"] = date_to
+    # Get Tax Profile to retrieve VAT accounts
+    profile = _get_tax_profile(company)
 
-    input_rows = _run_report(INPUT_VAT_REPORT, filters)
-    output_rows = _run_report(OUTPUT_VAT_REPORT, filters)
+    # Query directly from GL Entry for VAT Input
+    input_account = getattr(profile, "input_vat_account", None)
+    input_total = _get_gl_total(company, [input_account], date_from, date_to) if input_account else 0.0
 
-    input_total = _sum_field(input_rows, "tax_row_amount")
-    output_total = _sum_field(output_rows, "tax_row_amount")
+    # Query directly from GL Entry for VAT Output
+    output_account = getattr(profile, "output_vat_account", None)
+    output_total = _get_gl_total(company, [output_account], date_from, date_to) if output_account else 0.0
+
     return input_total, output_total
 
 
