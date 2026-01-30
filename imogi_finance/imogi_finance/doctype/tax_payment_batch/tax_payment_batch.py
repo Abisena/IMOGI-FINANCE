@@ -48,11 +48,18 @@ class TaxPaymentBatch(Document):
         if not self.amount or self.amount <= 0:
             frappe.throw(_("Payment Amount must be greater than 0"))
 
+        # Get or create default tax authority supplier
+        party = self._get_or_create_tax_authority_supplier()
+
         # Create Payment Entry
         pe = frappe.new_doc("Payment Entry")
         pe.company = self.company
         pe.payment_type = "Pay"
-        # Party Type and Party are optional - leave empty for government payments
+
+        # Set Party (required by ERPNext)
+        pe.party_type = "Supplier"
+        pe.party = party
+
         pe.posting_date = self.payment_date or self.posting_date or nowdate()
         pe.mode_of_payment = self.payment_mode or "Bank"
 
@@ -82,6 +89,24 @@ class TaxPaymentBatch(Document):
         self.db_set("status", "Paid", update_modified=False)
 
         return pe.name
+
+    def _get_or_create_tax_authority_supplier(self):
+        """Get or create a default supplier for tax authority payments"""
+        supplier_name = "Government - Tax Authority"
+
+        # Check if supplier exists
+        if frappe.db.exists("Supplier", supplier_name):
+            return supplier_name
+
+        # Create supplier
+        supplier = frappe.new_doc("Supplier")
+        supplier.supplier_name = supplier_name
+        supplier.supplier_group = frappe.db.get_value("Supplier Group", {"is_group": 0}, "name") or "All Supplier Groups"
+        supplier.supplier_type = "Company"
+        supplier.country = "Indonesia"
+        supplier.insert(ignore_permissions=True)
+
+        return supplier.name
 
     def _set_period_dates(self):
         if not self.period_month or not self.period_year:
