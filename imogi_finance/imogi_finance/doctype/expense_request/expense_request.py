@@ -173,6 +173,8 @@ class ExpenseRequest(Document):
 
     def before_workflow_action(self, action, **kwargs):
         """Gate workflow actions using ApprovalService + route validation."""
+        if action == "Reopen" and getattr(self, "workflow_state", None) != "Rejected":
+            frappe.throw(_("Reopen is only allowed for rejected Expense Requests."))
         approval_service = ApprovalService("Expense Request", state_field="workflow_state")
         route = self._get_route_snapshot()
         approval_service.before_workflow_action(self, action, next_state=kwargs.get("next_state"), route=route)

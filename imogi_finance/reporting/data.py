@@ -59,6 +59,44 @@ def _coerce_list(value) -> list[str] | None:
     return [str(v) for v in value if v]
 
 
+def _get_pi_description(row: Mapping[str, object]) -> str | None:
+    return (
+        row.get("remarks")
+        or row.get("title")
+        or row.get("supplier_invoice_no")
+        or row.get("bill_no")
+        or row.get("name")
+    )
+
+
+def _load_purchase_invoice_descriptions(names: Sequence[str]) -> dict[str, str]:
+    if not names or not getattr(frappe, "db", None):
+        return {}
+    rows = frappe.get_all(
+        "Purchase Invoice",
+        filters={"name": ("in", list(names))},
+        fields=["name", "remarks", "title", "supplier_invoice_no", "bill_no"],
+    )
+    return {row["name"]: _get_pi_description(row) for row in rows if row.get("name")}
+
+
+def _load_payment_entry_pi_map(payment_entries: Sequence[str]) -> dict[str, str]:
+    if not payment_entries or not getattr(frappe, "db", None):
+        return {}
+    rows = frappe.get_all(
+        "Payment Entry Reference",
+        filters={"parent": ("in", list(payment_entries)), "reference_doctype": "Purchase Invoice"},
+        fields=["parent", "reference_name"],
+    )
+    mapping: dict[str, str] = {}
+    for row in rows:
+        parent = row.get("parent")
+        reference_name = row.get("reference_name")
+        if parent and reference_name and parent not in mapping:
+            mapping[parent] = reference_name
+    return mapping
+
+
 def fetch_bank_transactions(
     report_date: date | None,
     *,
@@ -306,6 +344,22 @@ def load_daily_inputs(
         if posting_date and posting_date != resolved_date:
             continue
         day_transactions.append(tx)
+
+    references = [tx.get("reference") for tx in day_transactions if tx.get("reference")]
+    reference_names = [str(ref) for ref in references if ref]
+    pi_direct_map = _load_purchase_invoice_descriptions(reference_names)
+    pe_to_pi = _load_payment_entry_pi_map(reference_names)
+    pi_via_payment_map = _load_purchase_invoice_descriptions(list(pe_to_pi.values()))
+
+    for tx in day_transactions:
+        amount = _as_amount(tx.get("amount"))
+        direction = _normalise_direction(tx.get("direction"))
+        reference = str(tx.get("reference") or "")
+        pi_name = pi_direct_map.get(reference) and reference or pe_to_pi.get(reference)
+        description = pi_direct_map.get(reference) or pi_via_payment_map.get(pi_name) or ""
+        tx["description"] = description
+        tx["deposit"] = amount if direction == "in" else 0.0
+        tx["withdrawal"] = amount if direction == "out" else 0.0
 
     # Try to get opening balances from previous report first
     openings = None

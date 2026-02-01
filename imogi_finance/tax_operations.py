@@ -612,9 +612,16 @@ def create_tax_payment_entry(batch: Document) -> str:
     pe.received_amount = batch.amount
     pe.reference_no = batch.name
     pe.reference_date = pe.posting_date
-    pe.remarks = _("Tax payment for {0} period {1}-{2}").format(
-        batch.tax_type or _("Tax"), batch.period_month or "", batch.period_year or ""
+    title = _("Tax Payment {0} {1}/{2} - {3}").format(
+        batch.tax_type or _("Tax"), batch.period_month or "", batch.period_year or "", batch.name
     )
+    pe.remarks = _("Tax payment for {0} period {1}-{2} - Batch {3}").format(
+        batch.tax_type or _("Tax"), batch.period_month or "", batch.period_year or "", batch.name
+    )
+    if getattr(pe, "meta", None) and pe.meta.get_field("title"):
+        pe.title = title
+    elif getattr(pe, "meta", None) and pe.meta.get_field("party_name"):
+        pe.party_name = title
 
     pe.insert(ignore_permissions=True)
     batch.db_set("payment_entry", pe.name)

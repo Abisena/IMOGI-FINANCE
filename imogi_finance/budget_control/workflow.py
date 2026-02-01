@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from typing import Iterable
 
 import frappe
 from frappe import _
+from frappe.utils import get_first_day, get_last_day
 
 from imogi_finance import accounting, roles
 from imogi_finance.budget_control import ledger, service, utils
@@ -185,6 +186,18 @@ def _parse_route_snapshot(raw_snapshot):
         return {}
 
 
+def _get_budget_window(expense_request, settings) -> tuple[date | None, date | None]:
+    basis = (settings.get("budget_check_basis") or "Fiscal Year").lower()
+    if basis.startswith("fiscal period"):
+        posting_date = (
+            getattr(expense_request, "posting_date", None)
+            or getattr(expense_request, "request_date", None)
+        )
+        if posting_date:
+            return get_first_day(posting_date), get_last_day(posting_date)
+    return None, None
+
+
 def _iter_internal_charge_lines(ic_doc) -> Iterable:
     for line in getattr(ic_doc, "internal_charge_lines", []) or []:
         yield line
@@ -347,6 +360,26 @@ def _reverse_reservations(expense_request):
         )
 
 
+def _cancel_existing_reservations(reservations: list[dict]) -> None:
+    for row in reservations or []:
+        entry_name = row.get("name")
+        if not entry_name:
+            continue
+        try:
+            entry = frappe.get_doc("Budget Control Entry", entry_name)
+        except Exception:
+            continue
+        entry.flags.ignore_permissions = True
+        entry.flags.from_parent_cancel = True
+        try:
+            entry.cancel()
+        except Exception:
+            frappe.log_error(
+                title=_("Budget Reservation Recalculation Failed"),
+                message=_("Failed to cancel Budget Control Entry {0} during recalculation.").format(entry_name),
+            )
+
+
 def reserve_budget_for_request(expense_request, *, trigger_action: str | None = None, next_state: str | None = None):
     """Reserve budget for an expense request.
 
@@ -371,17 +404,24 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         frappe.logger().info(f"reserve_budget_for_request: Budget lock disabled for {getattr(expense_request, 'name', 'Unknown')}")
         frappe.msgprint(_("Budget lock is disabled in Budget Control Settings"), indicator="orange")
         return
+    from_date, to_date = _get_budget_window(expense_request, settings)
 
     # Check if already reserved (avoid duplicate)
     existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
     if existing:
-        frappe.logger().info(f"reserve_budget_for_request: Budget already reserved for {getattr(expense_request, 'name', 'Unknown')}")
-        frappe.msgprint(
-            _("Budget already reserved for this request."),
-            indicator="blue",
-            alert=True
-        )
-        return
+        if trigger_action == "Submit":
+            frappe.logger().info(
+                f"reserve_budget_for_request: Recalculating reservations for {getattr(expense_request, 'name', 'Unknown')}"
+            )
+            _cancel_existing_reservations(existing)
+        else:
+            frappe.logger().info(f"reserve_budget_for_request: Budget already reserved for {getattr(expense_request, 'name', 'Unknown')}")
+            frappe.msgprint(
+                _("Budget already reserved for this request."),
+                indicator="blue",
+                alert=True
+            )
+            return
 
     # Budget check dilakukan saat submit (docstatus=1), tidak perlu tunggu approved
     docstatus = getattr(expense_request, "docstatus", 0)
@@ -499,7 +539,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
     any_overrun = False
     for dims, amount in slices:
         try:
-            result = service.check_budget_available(dims, float(amount or 0))
+            result = service.check_budget_available(dims, float(amount or 0), from_date=from_date, to_date=to_date)
         except Exception as e:
             frappe.logger().error(f"reserve_budget_for_request: Failed to check budget availability: {str(e)}")
             frappe.throw(

@@ -43,11 +43,8 @@ def create_amortization_schedule_for_pi(pi_name: str):
     pi_dict = pi.as_dict()
     items_data = pi_dict.get("items", [])
 
-    frappe.logger().info(f"Processing PI {pi_name} with {len(items_data)} items from dict")
-
     for idx, item_dict in enumerate(items_data):
         deferred_acct = item_dict.get("deferred_expense_account")
-        frappe.logger().info(f"Item {idx}: deferred_acct={deferred_acct}")
 
         if deferred_acct:
             # Find matching item object from pi.items
@@ -64,9 +61,6 @@ def create_amortization_schedule_for_pi(pi_name: str):
     for item in deferred_items:
         # Try different field names untuk amount
         amount = flt(item.get("net_amount") or item.get("amount") or item.get("line_amount") or item.get("base_net_amount") or 0)
-
-        if amount == 0:
-            frappe.log_error(f"Amount is 0 for item {item.item_code}. Fields: {item.as_dict()}")
 
         # Get periods - use default 12 if not set
         periods_raw = item.get("deferred_expense_periods")
@@ -105,7 +99,6 @@ def create_amortization_schedule_for_pi(pi_name: str):
             total_amount += schedule_entry["amount"]
         except Exception as e:
             error_msg = f"Error creating JE for {schedule_entry['posting_date']}: {str(e)}"
-            frappe.log_error(error_msg)
             je_errors.append(error_msg)
 
     return {

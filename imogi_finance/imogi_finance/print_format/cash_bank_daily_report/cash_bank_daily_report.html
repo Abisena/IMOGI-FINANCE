@@ -139,10 +139,11 @@
       <table class="cb-tx-table">
         <thead>
           <tr>
-            <th style="width:18%">{{ _("Date") }}</th>
-            <th style="width:32%">{{ _("Reference") }}</th>
-            <th style="width:20%" class="text-right">{{ _("Direction") }}</th>
-            <th style="width:30%" class="text-right">{{ _("Amount") }}</th>
+            <th style="width:16%">{{ _("Date") }}</th>
+            <th style="width:20%">{{ _("Reference") }}</th>
+            <th style="width:34%">{{ _("Description") }}</th>
+            <th style="width:15%" class="text-right">{{ _("Deposit") }}</th>
+            <th style="width:15%" class="text-right">{{ _("Withdrawal") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -150,8 +151,9 @@
           <tr>
             <td>{{ frappe.utils.format_date(tx.get('posting_date')) }}</td>
             <td>{{ tx.get('reference') }}</td>
-            <td class="text-right">{{ (tx.get('direction') or '').upper() }}</td>
-            <td class="text-right">{{ frappe.utils.fmt_money(tx.get('amount') or 0) }}</td>
+            <td>{{ tx.get('description') or "-" }}</td>
+            <td class="text-right">{{ frappe.utils.fmt_money(tx.get('deposit') or 0) }}</td>
+            <td class="text-right">{{ frappe.utils.fmt_money(tx.get('withdrawal') or 0) }}</td>
           </tr>
           {% endfor %}
         </tbody>
