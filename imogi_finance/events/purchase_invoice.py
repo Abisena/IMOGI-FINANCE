@@ -217,20 +217,12 @@ def _generate_deferred_expense_schedule(doc):
         # Call ERPNext's built-in method to calculate deferred schedule
         if hasattr(doc, "calculate_deferred_expense_schedule"):
             doc.calculate_deferred_expense_schedule()
-            frappe.logger().info(
-                f"[DEFERRED] Generated deferred expense schedule for PI {doc.name}"
-            )
         else:
-            frappe.logger().warning(
-                f"[DEFERRED] PI {doc.name} has deferred items but calculate_deferred_expense_schedule method not found. "
-                "This might be an ERPNext version issue."
-            )
+            return
     except Exception as e:
-        frappe.logger().error(
-            f"[DEFERRED] Failed to generate deferred expense schedule for PI {doc.name}: {str(e)}"
-        )
         # Don't throw error - let PI submit succeed even if deferred schedule fails
         # User can manually regenerate schedule later
+        return
 
 
 def _prevent_double_wht(doc):

@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
     "require_budget_controller_review": 1,
     "lock_on_workflow_state": "Approved",
     "enforce_mode": "Both",
+    "budget_check_basis": "Fiscal Year",
     "allow_budget_overrun_role": None,
     "allow_reclass_override_role": None,
     "internal_charge_required_before_er_approval": 1,

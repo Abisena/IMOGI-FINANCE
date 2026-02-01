@@ -414,26 +414,11 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         deferred_start_date = getattr(item, "deferred_start_date", None)
         deferred_periods = getattr(item, "deferred_periods", None)
 
-        # Debug logging for deferred expense
-        if is_deferred or prepaid_account:
-            frappe.logger().info(
-                f"[DEFERRED DEBUG] Item {idx}: is_deferred={is_deferred}, "
-                f"prepaid_account={prepaid_account}, expense_account={expense_account}, "
-                f"start_date={deferred_start_date}, periods={deferred_periods}"
-            )
-
         qty = getattr(item, "qty", 1) or 1
         item_amount = flt(getattr(item, "amount", 0))
 
         # Determine which account to use for PI item
         pi_expense_account = prepaid_account if (is_deferred and prepaid_account) else expense_account
-
-        # Debug: log the decision
-        if is_deferred:
-            frappe.logger().info(
-                f"[DEFERRED DEBUG] PI Item {idx}: Using expense_account={pi_expense_account} "
-                f"(is_deferred={is_deferred}, prepaid_account={prepaid_account})"
-            )
 
         pi_item = {
             "item_name": getattr(item, "asset_name", None)
@@ -457,18 +442,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pi_item["service_stop_date"] = service_end  # CRITICAL: Required for schedule generation
             pi_item["deferred_expense_account"] = expense_account
 
-            # Log successful deferred setup
-            frappe.logger().info(
-                f"[DEFERRED DEBUG] PI Item {idx} DEFERRED ENABLED: "
-                f"expense_account={pi_expense_account}, deferred_expense_account={expense_account}, "
-                f"service_start={deferred_start_date}, service_end={service_end}, service_stop={service_end}"
-            )
         elif is_deferred and not prepaid_account:
-            # Warning: deferred is checked but no prepaid account
-            frappe.logger().warning(
-                f"[DEFERRED WARNING] Item {idx}: is_deferred_expense=1 but prepaid_account is empty! "
-                f"Falling back to expense_account={expense_account}"
-            )
+            # Deferred is enabled but prepaid account missing; fall back to expense account
+            pass
 
         pi_item_doc = pi.append("items", pi_item)
         # Set item-level apply_tds flag if PPh applies

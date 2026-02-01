@@ -73,12 +73,22 @@ class TaxPaymentBatch(Document):
         # Reference to Tax Payment Batch
         pe.reference_no = self.name
         pe.reference_date = pe.posting_date
+        title = _("Tax Payment {0} {1}/{2} - {3}").format(
+            self.tax_type or "Tax",
+            self.period_month or "",
+            self.period_year or "",
+            self.name,
+        )
         pe.remarks = _("Tax payment for {0} - Period {1}/{2} - Batch {3}").format(
             self.tax_type or "Tax",
             self.period_month or "",
             self.period_year or "",
-            self.name
+            self.name,
         )
+        if getattr(pe, "meta", None) and pe.meta.get_field("title"):
+            pe.title = title
+        elif getattr(pe, "meta", None) and pe.meta.get_field("party_name"):
+            pe.party_name = title
 
         # Insert and Submit
         pe.insert(ignore_permissions=True)

@@ -37,7 +37,10 @@ class TaxInvoiceOCRMonitoring(Document):
         pi = frappe.get_doc("Purchase Invoice", self.target_name)
 
         # Try to find linked OCR Upload via custom field
-        ocr_upload_name = pi.get("tax_invoice_ocr_upload")
+        ocr_upload_name = (
+            pi.get("ti_tax_invoice_upload")
+            or pi.get("tax_invoice_ocr_upload")
+        )
 
         if ocr_upload_name and frappe.db.exists("Tax Invoice OCR Upload", ocr_upload_name):
             # Populate from linked OCR Upload
@@ -50,13 +53,21 @@ class TaxInvoiceOCRMonitoring(Document):
             self.target_doctype = temp_doctype
         else:
             # Populate basic data from Purchase Invoice itself
-            self.npwp = pi.get("tax_id")
-            self.dpp = pi.get("net_total")
-            # Calculate PPN from taxes
-            for tax in pi.get("taxes", []):
-                if "PPN" in (tax.get("description") or "") or "VAT" in (tax.get("account_head") or "").upper():
-                    self.ppn = tax.get("tax_amount")
-                    break
+            self.npwp = pi.get("tax_id") or pi.get("supplier_tax_id")
+            items = pi.get("items", []) or []
+            dpp_total = sum(
+                float(item.get("base_net_amount") or item.get("net_amount") or item.get("amount") or 0)
+                for item in items
+            )
+            self.dpp = dpp_total or pi.get("net_total")
+            # Calculate PPN from taxes table
+            ppn_total = 0.0
+            for tax in pi.get("taxes", []) or []:
+                description = (tax.get("description") or "").upper()
+                account_head = (tax.get("account_head") or "").upper()
+                if "PPN" in description or "VAT" in description or "PPN" in account_head or "VAT" in account_head:
+                    ppn_total += float(tax.get("tax_amount") or 0)
+            self.ppn = ppn_total
 
     def _populate_from_expense_request(self):
         """Fetch data from Expense Request and linked OCR/PI"""

@@ -32,12 +32,14 @@ def execute(filters=None):
     if filters.get("company"):
         conditions["company"] = filters.get("company")
 
-    if filters.get("from_date"):
-        conditions["posting_date"] = [">=", filters.get("from_date")]
-
-    if filters.get("to_date"):
-        conditions.setdefault("posting_date", [">=", None])
-        conditions["posting_date"] = ["between", [filters.get("from_date") or "2000-01-01", filters.get("to_date")]]
+    from_date = filters.get("from_date")
+    to_date = filters.get("to_date")
+    if from_date and to_date:
+        conditions["posting_date"] = ["between", [from_date, to_date]]
+    elif from_date:
+        conditions["posting_date"] = [">=", from_date]
+    elif to_date:
+        conditions["posting_date"] = ["<=", to_date]
 
     if filters.get("customer"):
         conditions["customer"] = filters.get("customer")

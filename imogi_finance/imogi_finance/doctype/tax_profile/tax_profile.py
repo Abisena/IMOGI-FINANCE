@@ -61,7 +61,10 @@ class TaxProfile(Document):
             missing.append(_("PPN Input Account"))
         if not getattr(self, "ppn_output_account", None):
             missing.append(_("PPN Output Account"))
-        if not getattr(self, "pb1_payable_account", None):
+        pb1_required = True
+        if getattr(self, "enable_pb1_multi_branch", 0) and getattr(self, "pb1_account_mappings", None):
+            pb1_required = False
+        if pb1_required and not getattr(self, "pb1_payable_account", None):
             missing.append(_("PB1 Payable Account"))
         if not getattr(self, "pph_accounts", None):
             missing.append(_("Withholding Tax (PPh) payable accounts"))

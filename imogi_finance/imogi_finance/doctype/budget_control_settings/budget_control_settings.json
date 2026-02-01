@@ -21,6 +21,7 @@
     "column_break_control",
     "lock_on_workflow_state",
     "enforce_mode",
+    "budget_check_basis",
 
     "dimension_section",
     "dimension_mode",
@@ -113,6 +114,14 @@
       "options": "Approval Only\nPI Submit Only\nBoth",
       "default": "Both",
       "description": "Kapan budget control diberlakukan"
+    },
+    {
+      "fieldname": "budget_check_basis",
+      "label": "Budget Check Basis",
+      "fieldtype": "Select",
+      "options": "Fiscal Year\nFiscal Period (Month)",
+      "default": "Fiscal Year",
+      "description": "Dasar perhitungan budget untuk kontrol budget Expense Request"
     },
 
     {
