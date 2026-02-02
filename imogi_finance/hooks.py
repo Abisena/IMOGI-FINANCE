@@ -328,7 +328,6 @@ doc_events = {
         "validate": [
             "imogi_finance.receipt_control.payment_entry_hooks.validate_customer_receipt_link",
             "imogi_finance.transfer_application.payment_entry_hooks.validate_transfer_application_link",
-            "imogi_finance.events.payment_entry.sync_expense_request_reference",
         ],
         "after_insert": [
             "imogi_finance.events.payment_entry.after_insert",
@@ -337,8 +336,8 @@ doc_events = {
             "imogi_finance.events.payment_entry.on_update",
         ],
         "before_submit": [
+            "imogi_finance.events.payment_entry.before_submit",
             "imogi_finance.receipt_control.payment_entry_hooks.validate_customer_receipt_link",
-            "imogi_finance.events.payment_entry.sync_expense_request_reference",
         ],
         "on_submit": [
             "imogi_finance.events.payment_entry.on_submit",
