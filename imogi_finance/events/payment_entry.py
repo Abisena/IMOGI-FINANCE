@@ -425,14 +425,8 @@ def _revert_pi_status_for_bank_payment(doc):
     # Persist awaiting_bank_reconciliation flag to DB
     frappe.db.set_value("Payment Entry", doc.name, "awaiting_bank_reconciliation", 1, update_modified=False)
 
-            # Also update Expense Request status back to PI Created
-            expense_request = frappe.db.get_value("Purchase Invoice", pi_name, "imogi_expense_request")
-            if expense_request:
-                frappe.db.set_value(
-                    "Expense Request",
-                    expense_request,
-                    {"workflow_state": "PI Created", "status": "PI Created"},
-                    update_modified=False
+
+def on_update_after_submit(doc, method=None):
                 )
                 frappe.logger().info(
                     f"[PE on_submit] Reverted ER {expense_request} status to PI Created"
