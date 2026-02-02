@@ -63,10 +63,21 @@ def _get_pi_description(row: Mapping[str, object]) -> str | None:
     return (
         row.get("remarks")
         or row.get("title")
-        or row.get("supplier_invoice_no")
         or row.get("bill_no")
         or row.get("name")
     )
+
+
+def _load_expense_request_descriptions(er_names: Sequence[str]) -> dict[str, str]:
+    """Load Expense Request descriptions."""
+    if not er_names or not getattr(frappe, "db", None):
+        return {}
+    rows = frappe.get_all(
+        "Expense Request",
+        filters={"name": ("in", list(er_names))},
+        fields=["name", "description", "purpose"],
+    )
+    return {row["name"]: (row.get("description") or row.get("purpose") or row["name"]) for row in rows if row.get("name")}
 
 
 def _load_purchase_invoice_descriptions(names: Sequence[str]) -> dict[str, str]:
@@ -75,7 +86,7 @@ def _load_purchase_invoice_descriptions(names: Sequence[str]) -> dict[str, str]:
     rows = frappe.get_all(
         "Purchase Invoice",
         filters={"name": ("in", list(names))},
-        fields=["name", "remarks", "title", "supplier_invoice_no", "bill_no"],
+        fields=["name", "remarks", "title", "bill_no", "imogi_expense_request"],
     )
     return {row["name"]: _get_pi_description(row) for row in rows if row.get("name")}
 
@@ -347,16 +358,45 @@ def load_daily_inputs(
 
     references = [tx.get("reference") for tx in day_transactions if tx.get("reference")]
     reference_names = [str(ref) for ref in references if ref]
+
+    # Load PI descriptions
     pi_direct_map = _load_purchase_invoice_descriptions(reference_names)
+
+    # Load PE to PI mapping
     pe_to_pi = _load_payment_entry_pi_map(reference_names)
     pi_via_payment_map = _load_purchase_invoice_descriptions(list(pe_to_pi.values()))
+
+    # Extract ER names from PIs
+    all_pi_data = frappe.get_all(
+        "Purchase Invoice",
+        filters={"name": ("in", list(set(list(pi_direct_map.keys()) + list(pi_via_payment_map.keys()))))},
+        fields=["name", "imogi_expense_request"]
+    ) if frappe.db else []
+    pi_to_er = {row["name"]: row.get("imogi_expense_request") for row in all_pi_data if row.get("imogi_expense_request")}
+    er_names = list(set(pi_to_er.values()))
+    er_descriptions = _load_expense_request_descriptions(er_names)
 
     for tx in day_transactions:
         amount = _as_amount(tx.get("amount"))
         direction = _normalise_direction(tx.get("direction"))
         reference = str(tx.get("reference") or "")
+
+        # Get PI name
         pi_name = pi_direct_map.get(reference) and reference or pe_to_pi.get(reference)
-        description = pi_direct_map.get(reference) or pi_via_payment_map.get(pi_name) or ""
+
+        # Get PI description
+        pi_description = pi_direct_map.get(reference) or pi_via_payment_map.get(pi_name) or ""
+
+        # Get ER description if available
+        er_name = pi_to_er.get(pi_name) if pi_name else None
+        er_description = er_descriptions.get(er_name) if er_name else ""
+
+        # Use ER description if available, otherwise PI description
+        description = er_description or pi_description
+
+        tx["description"] = description
+        tx["er_description"] = er_description  # Store separately for print format
+        tx["pi_description"] = pi_description
         tx["description"] = description
         tx["deposit"] = amount if direction == "in" else 0.0
         tx["withdrawal"] = amount if direction == "out" else 0.0
