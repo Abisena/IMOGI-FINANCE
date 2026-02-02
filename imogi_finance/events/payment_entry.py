@@ -312,7 +312,16 @@ def _handle_expense_request_submit(doc, expense_request):
         )
         # Set custom field to mark this PE is waiting for bank reconciliation
         frappe.db.set_value("Payment Entry", doc.name, "awaiting_bank_reconciliation", 1, update_modified=False)
+    else:
+        # Cash payment - PI langsung paid seperti biasa
+        frappe.logger().info(
+            f"[PE on_submit] PE {doc.name} submitted for ER {request.name} via Cash. "
+            f"PI {has_purchase_invoice} will be marked as Paid immediately."
+        )
 
+
+def _handle_branch_expense_request_submit(doc, branch_request):
+    """Handle Payment Entry submit for Branch Expense Request."""
     # Sync link with validation
     request = _sync_expense_request_link(doc, None, branch_request)
     if not request:
