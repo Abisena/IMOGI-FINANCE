@@ -253,41 +253,7 @@ def on_update(doc, method=None):
     _sync_expense_request_link(doc, expense_request, branch_request)
 
 
-def before_submit(doc, method=None):
-    """Handle Payment Entry before submit.
 
-    For Bank payments, we need to prevent ERPNext from allocating the payment to PI
-    by temporarily storing and clearing the references.
-    """
-    # Check if payment is via Bank account
-    is_bank_payment = _is_bank_payment(doc)
-
-    if not is_bank_payment:
-        return  # Cash payment - proceed normally
-
-    # Bank payment - store references and clear them temporarily
-    # This prevents ERPNext from reducing PI outstanding_amount
-    if doc.get("references"):
-        # Store references in a temporary attribute
-        doc._bank_payment_references = []
-        for ref in doc.get("references"):
-            if ref.reference_doctype == "Purchase Invoice":
-                # Store reference data
-                doc._bank_payment_references.append({
-                    "reference_doctype": ref.reference_doctype,
-                    "reference_name": ref.reference_name,
-                    "allocated_amount": ref.allocated_amount,
-                    "total_amount": ref.total_amount,
-                    "outstanding_amount": ref.outstanding_amount
-                })
-
-        # Clear references table to prevent ERPNext allocation
-        doc.set("references", [])
-
-        frappe.logger().info(
-            f"[PE before_submit] Cleared {len(doc._bank_payment_references)} PI references "
-            f"from PE {doc.name} (Bank payment) to prevent auto-allocation"
-        )
 
 
 def on_submit(doc, method=None):
@@ -399,37 +365,52 @@ def _handle_expense_request_submit(doc, expense_request):
 def on_update_after_submit(doc, method=None):
     """Handle Payment Entry updates after submit.
 
-    For Bank payments, restore the references that were cleared in before_submit.
+    For Bank payments, revert PI status back to Unpaid after ERPNext marks it as Paid.
+    This is called AFTER ERPNext native code updates PI.
     """
-    # Check if we have stored references from before_submit
-    if hasattr(doc, "_bank_payment_references") and doc._bank_payment_references:
-        frappe.logger().info(
-            f"[PE on_update_after_submit] Restoring {len(doc._bank_payment_references)} PI references "
-            f"to PE {doc.name} after submit"
-        )
+    # Check if this PE is awaiting bank reconciliation
+    if not getattr(doc, "awaiting_bank_reconciliation", 0):
+        return
 
-        # Restore references to the database directly
-        for ref_data in doc._bank_payment_references:
-            # Insert reference row into Payment Entry Reference child table
-            frappe.get_doc({
-                "doctype": "Payment Entry Reference",
-                "parent": doc.name,
-                "parenttype": "Payment Entry",
-                "parentfield": "references",
-                "reference_doctype": ref_data["reference_doctype"],
-                "reference_name": ref_data["reference_name"],
-                "allocated_amount": 0,  # Keep as 0 to prevent PI status change
-                "total_amount": ref_data["total_amount"],
-                "outstanding_amount": ref_data["outstanding_amount"]
-            }).insert(ignore_permissions=True)
+    # Get linked Purchase Invoices from references
+    linked_pis = []
+    for ref in doc.get("references") or []:
+        if ref.reference_doctype == "Purchase Invoice":
+            linked_pis.append(ref.reference_name)
 
+    if not linked_pis:
+        return
+
+    frappe.logger().info(
+        f"[PE on_update_after_submit] Bank payment detected. "
+        f"Reverting PI status to Unpaid for {len(linked_pis)} invoices"
+    )
+
+    # Force set PI status back to Unpaid
+    for pi_name in linked_pis:
+        # Get PI to check current status
+        pi_status = frappe.db.get_value("Purchase Invoice", pi_name, "status")
+
+        if pi_status == "Paid":
             frappe.logger().info(
-                f"[PE on_update_after_submit] Restored reference to PI {ref_data['reference_name']} "
-                f"with allocated_amount=0 (original was {ref_data['allocated_amount']})"
+                f"[PE on_update_after_submit] Reverting PI {pi_name} from Paid to Unpaid"
             )
 
-        # Clear the temporary storage
-        del doc._bank_payment_references
+            # Update status directly
+            frappe.db.set_value("Purchase Invoice", pi_name, "status", "Unpaid", update_modified=False)
+
+            # Also update Expense Request status back to PI Created
+            expense_request = frappe.db.get_value("Purchase Invoice", pi_name, "imogi_expense_request")
+            if expense_request:
+                frappe.db.set_value(
+                    "Expense Request",
+                    expense_request,
+                    {"workflow_state": "PI Created", "status": "PI Created"},
+                    update_modified=False
+                )
+                frappe.logger().info(
+                    f"[PE on_update_after_submit] Reverted ER {expense_request} status to PI Created"
+                )
 
 
 def before_cancel(doc, method=None):

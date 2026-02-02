@@ -23,21 +23,41 @@ Dalam praktik akuntansi, pembayaran via bank memerlukan konfirmasi dari bank sta
          │
          ├─────────── Check Account Type
          │
-    ┌────▼────┐                    ┌────────┐
-    │  Bank?  │───Yes──────────────►│  Mark  │
-    └────┬────┘                    │ Waiting│
-         │                         └────┬───┘
-         No (Cash)                      │
-         │                              │
-    ┌────▼────────┐              ┌─────▼──────────┐
-    │ Mark PI as  │              │ Bank Transaction│
-    │ Paid        │              │ Reconciliation  │
-    │ immediately │              └─────┬───────────┘
-    └─────────────┘                    │
-                                  ┌────▼────────┐
-                                  │ Mark PI as  │
-                                  │ Paid        │
-                                  └─────────────┘
+    ┌────▼────┐                    ┌────────────┐
+    │  Bank?  │───Yes──────────────►│ ERPNext    │
+    └────┬────┘                    │ Submit PE  │
+         │                         └─────┬──────┘
+         No (Cash)                       │
+         │                         ┌─────▼──────────┐
+    ┌────▼────────┐               │ ERPNext Updates│
+    │ ERPNext     │               │ PI → Paid      │
+    │ Submit PE   │               └─────┬──────────┘
+    └────┬────────┘                     │
+         │                         ┌─────▼──────────┐
+    ┌────▼────────┐               │ Our Hook Runs  │
+    │ PI → Paid   │               │ (on_update_    │
+    │ immediately │               │ after_submit)  │
+    └─────────────┘               └─────┬──────────┘
+                                        │
+                                  ┌─────▼──────────┐
+                                  │ Force Revert   │
+                                  │ PI → Unpaid    │
+                                  └─────┬──────────┘
+                                        │
+                                  ┌─────▼──────────┐
+                                  │ Set awaiting_  │
+                                  │ bank_recon = 1 │
+                                  └─────┬──────────┘
+                                        │
+                                  ┌─────▼──────────┐
+                                  │ Bank Transaction│
+                                  │ Reconciliation │
+                                  └─────┬──────────┘
+                                        │
+                                  ┌─────▼──────────┐
+                                  │ Update PI & ER │
+                                  │ Status → Paid  │
+                                  └────────────────┘
 ```
 
 ## Technical Implementation
@@ -62,12 +82,21 @@ def _is_bank_payment(doc) -> bool:
 
 ##### `_handle_expense_request_submit(doc, expense_request)` (Modified)
 - Check `_is_bank_payment(doc)`
-- Jika Bank: Set flag `awaiting_bank_reconciliation = 1`, PI tetap Unpaid
-- Jika Cash: PI langsung Paid (behavior lama)
+- Jika Bank: Set flag `awaiting_bank_reconciliation = 1`
+- Jika Cash: Proceed normal (PI akan Paid oleh ERPNext)
 
-##### `_handle_branch_expense_request_submit(doc, branch_request)` (Modified)
-- Logic sama dengan expense request
-- Update Branch Expense Request status
+##### `on_update_after_submit(doc, method)` (New)
+Hook yang dipanggil **AFTER** ERPNext native code update PI status:
+- Check jika `awaiting_bank_reconciliation = 1`
+- Get linked PIs from references
+- **Force revert** PI status dari Paid → Unpaid
+- Update ER status kembali ke "PI Created"
+
+**WHY THIS WORKS:**
+1. Payment Entry submit dengan references normal → GL entries dibuat dengan benar ✅
+2. ERPNext update PI status → Paid (native behavior)
+3. Our hook runs AFTER ERPNext → Force revert status to Unpaid ✅
+4. PI tetap Unpaid sampai bank reconciliation ✅
 
 #### `imogi_finance/events/bank_transaction.py`
 
@@ -87,13 +116,21 @@ Match Payment Entry dengan Bank Transaction berdasarkan:
 ##### `_update_invoice_status_after_bank_reconciliation(pe_name, bt_name)` (New)
 - Get Expense Request/Branch Expense Request from PE
 - Clear `awaiting_bank_reconciliation` flag
-- Update status to "Paid"
+- Update PI status to "Paid"
+- Update ER status to "Paid"
 - Add comment to PE
 
 ### 3. Hooks Configuration
 
 **`imogi_finance/hooks.py`**:
 ```python
+"Payment Entry": {
+    "on_submit": [...],
+    "on_update_after_submit": [
+        "imogi_finance.events.payment_entry.on_update_after_submit",
+    ],
+}
+
 "Bank Transaction": {
     "on_update_after_submit": [
         "imogi_finance.events.bank_transaction.on_update_after_submit",

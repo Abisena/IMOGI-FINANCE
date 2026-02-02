@@ -336,7 +336,6 @@ doc_events = {
             "imogi_finance.events.payment_entry.on_update",
         ],
         "before_submit": [
-            "imogi_finance.events.payment_entry.before_submit",
             "imogi_finance.receipt_control.payment_entry_hooks.validate_customer_receipt_link",
         ],
         "on_submit": [
