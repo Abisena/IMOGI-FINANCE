@@ -316,7 +316,7 @@ def _handle_expense_request_submit(doc, expense_request):
             f"PI {has_purchase_invoice} will remain Unpaid until bank transaction is reconciled."
         )
         # Set custom field to mark this PE is waiting for bank reconciliation
-        frappe.db.set_value("Payment Entry", doc.name, "awaiting_bank_reconciliation", 1, update_modified=False)
+        doc.awaiting_bank_reconciliation = 1
     else:
         # Cash payment - PI langsung paid seperti biasa
         frappe.logger().info(
@@ -361,7 +361,7 @@ def _handle_branch_expense_request_submit(doc, branch_request):
             f"Status will remain unchanged until bank transaction is reconciled."
         )
         # Set custom field to mark this PE is waiting for bank reconciliation
-        frappe.db.set_value("Payment Entry", doc.name, "awaiting_bank_reconciliation", 1, update_modified=False)
+        doc.awaiting_bank_reconciliation = 1
     else:
         # Cash payment - update status to Paid immediately
         if hasattr(request, "status"):
@@ -408,6 +408,22 @@ def _revert_pi_status_for_bank_payment(doc):
 
             # Update status directly
             frappe.db.set_value("Purchase Invoice", pi_name, "status", "Unpaid", update_modified=False)
+
+            # Also update Expense Request status back to PI Created
+            expense_request = frappe.db.get_value("Purchase Invoice", pi_name, "imogi_expense_request")
+            if expense_request:
+                frappe.db.set_value(
+                    "Expense Request",
+                    expense_request,
+                    {"workflow_state": "PI Created", "status": "PI Created"},
+                    update_modified=False
+                )
+                frappe.logger().info(
+                    f"[PE on_submit] Reverted ER {expense_request} status to PI Created"
+                )
+
+    # Persist awaiting_bank_reconciliation flag to DB
+    frappe.db.set_value("Payment Entry", doc.name, "awaiting_bank_reconciliation", 1, update_modified=False)
 
             # Also update Expense Request status back to PI Created
             expense_request = frappe.db.get_value("Purchase Invoice", pi_name, "imogi_expense_request")
