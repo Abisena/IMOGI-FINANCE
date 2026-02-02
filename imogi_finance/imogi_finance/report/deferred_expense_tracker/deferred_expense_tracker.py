@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, add_months, getdate, formatdate
+from dateutil.relativedelta import relativedelta
 
 
 def execute(filters: dict | None = None):
     filters = filters or {}
-    columns = get_columns()
+    columns = get_columns(filters)
     data = get_data(filters)
+
+    # If show_breakdown is enabled, expand rows with monthly breakdown
+    if filters.get("show_breakdown"):
+        data = add_monthly_breakdown(data)
+
     summary = get_summary(data)
     return columns, data, None, None, summary
 
 
-def get_columns() -> list[dict]:
-    return [
+def get_columns(filters: dict) -> list[dict]:
+    columns = [
         {
             "label": _("ER Number"),
             "fieldname": "expense_request",
@@ -24,6 +30,17 @@ def get_columns() -> list[dict]:
         },
         {"label": _("ER Date"), "fieldname": "er_date", "fieldtype": "Date", "width": 110},
         {"label": _("Item Description"), "fieldname": "description", "fieldtype": "Data", "width": 200},
+    ]
+
+    # Add period number and date if breakdown is shown
+    if filters.get("show_breakdown"):
+        columns.extend([
+            {"label": _("Period"), "fieldname": "period_number", "fieldtype": "Int", "width": 70},
+            {"label": _("Period Date"), "fieldname": "period_date", "fieldtype": "Date", "width": 110},
+            {"label": _("Period Amount"), "fieldname": "period_amount", "fieldtype": "Currency", "width": 140},
+        ])
+
+    columns.extend([
         {
             "label": _("Prepaid Account"),
             "fieldname": "prepaid_account",
@@ -61,7 +78,9 @@ def get_columns() -> list[dict]:
             "fieldtype": "Currency",
             "width": 160,
         },
-    ]
+    ])
+
+    return columns
 
 
 def get_conditions(filters: dict) -> tuple[str, dict]:
@@ -163,3 +182,40 @@ def get_summary(data: list[dict]) -> list[dict]:
             "indicator": "Orange",
         },
     ]
+
+
+def add_monthly_breakdown(data: list[dict]) -> list[dict]:
+    """Expand each row into monthly breakdown rows similar to Journal Entry."""
+    result = []
+
+    for row in data:
+        periods = flt(row.get("periods", 0))
+        total_amount = flt(row.get("total_amount", 0))
+        start_date = row.get("start_date")
+
+        if not periods or not start_date:
+            # No breakdown possible, keep original row
+            result.append(row)
+            continue
+
+        # Calculate amount per period
+        amount_per_period = total_amount / periods
+
+        # Generate breakdown rows
+        start_date = getdate(start_date)
+        for period_num in range(1, int(periods) + 1):
+            # Calculate period date (start of each month)
+            period_date = start_date + relativedelta(months=period_num - 1)
+
+            # Create breakdown row
+            breakdown_row = row.copy()
+            breakdown_row.update({
+                "period_number": period_num,
+                "period_date": period_date,
+                "period_amount": amount_per_period,
+                "indent": 1,  # Indent breakdown rows for visual hierarchy
+            })
+
+            result.append(breakdown_row)
+
+    return result

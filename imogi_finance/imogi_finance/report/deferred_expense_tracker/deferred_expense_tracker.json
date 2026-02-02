@@ -26,6 +26,12 @@
       "fieldtype": "Link",
       "label": "Expense Account",
       "options": "Account"
+    },
+    {
+      "fieldname": "show_breakdown",
+      "fieldtype": "Check",
+      "label": "Show Monthly Breakdown",
+      "default": 0
     }
   ],
   "idx": 0,
