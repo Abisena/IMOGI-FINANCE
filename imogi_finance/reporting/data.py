@@ -140,6 +140,7 @@ def fetch_bank_transactions(
         "deposit",
         "withdrawal",
         "reference_number",
+        "description",
     ]
     if has_branch_column:
         fields.insert(1, "branch")
@@ -164,6 +165,7 @@ def fetch_bank_transactions(
                 "reference": row.get("reference_number") or row.get("name"),
                 "posting_date": row.get("date"),
                 "bank_account": row.get("bank_account"),
+                "bt_description": row.get("description") or "",  # Bank Transaction description
             }
         )
     return transactions
@@ -391,13 +393,16 @@ def load_daily_inputs(
         er_name = pi_to_er.get(pi_name) if pi_name else None
         er_description = er_descriptions.get(er_name) if er_name else ""
 
-        # Use ER description if available, otherwise PI description
-        description = er_description or pi_description
+        # Get BT description (from Bank Transaction itself)
+        bt_description = tx.get("bt_description") or ""
+
+        # Priority: ER description > PI description > BT description
+        description = er_description or pi_description or bt_description
 
         tx["description"] = description
         tx["er_description"] = er_description  # Store separately for print format
         tx["pi_description"] = pi_description
-        tx["description"] = description
+        tx["bt_description"] = bt_description
         tx["deposit"] = amount if direction == "in" else 0.0
         tx["withdrawal"] = amount if direction == "out" else 0.0
 
