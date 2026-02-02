@@ -427,7 +427,6 @@ def _revert_pi_status_for_bank_payment(doc):
 
 
 def on_update_after_submit(doc, method=None):
-                )
                 frappe.logger().info(
                     f"[PE on_submit] Reverted ER {expense_request} status to PI Created"
                 )
