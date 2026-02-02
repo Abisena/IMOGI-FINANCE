@@ -186,6 +186,19 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Payment Entry-awaiting_bank_reconciliation",
+    "dt": "Payment Entry",
+    "fieldname": "awaiting_bank_reconciliation",
+    "fieldtype": "Check",
+    "insert_after": "reversal_entry",
+    "label": "Awaiting Bank Reconciliation",
+    "allow_on_submit": 1,
+    "read_only": 1,
+    "default": "0",
+    "description": "Indicates this Payment Entry is waiting for bank transaction reconciliation before marking invoices as paid"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Purchase Invoice-supplier_tax_id",
     "dt": "Purchase Invoice",
     "fieldname": "supplier_tax_id",

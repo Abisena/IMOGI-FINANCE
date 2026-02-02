@@ -361,7 +361,10 @@ doc_events = {
     "Bank Transaction": {
         "before_cancel": "imogi_finance.events.bank_transaction.before_cancel",
         "on_submit": "imogi_finance.transfer_application.matching.handle_bank_transaction",
-        "on_update_after_submit": "imogi_finance.transfer_application.matching.handle_bank_transaction",
+        "on_update_after_submit": [
+            "imogi_finance.transfer_application.matching.handle_bank_transaction",
+            "imogi_finance.events.bank_transaction.on_update_after_submit",
+        ],
     },
     "Payroll Entry": {},
 }
