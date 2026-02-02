@@ -270,6 +270,11 @@ def on_submit(doc, method=None):
     if branch_request:
         _handle_branch_expense_request_submit(doc, branch_request)
 
+    # Revert PI status to Unpaid if this is a Bank payment
+    # This runs AFTER ERPNext native code updated PI to Paid
+    if getattr(doc, "awaiting_bank_reconciliation", 0):
+        _revert_pi_status_for_bank_payment(doc)
+
 
 def _handle_expense_request_submit(doc, expense_request):
     """Handle Payment Entry submit for Expense Request."""
@@ -371,16 +376,12 @@ def _handle_branch_expense_request_submit(doc, branch_request):
         )
 
 
-def on_update_after_submit(doc, method=None):
-    """Handle Payment Entry updates after submit.
+def _revert_pi_status_for_bank_payment(doc):
+    """Revert PI status to Unpaid for Bank payments.
 
-    For Bank payments, revert PI status back to Unpaid after ERPNext marks it as Paid.
-    This is called AFTER ERPNext native code updates PI.
+    Called from on_submit AFTER ERPNext native code updates PI to Paid.
+    This ensures PI remains Unpaid until Bank Transaction is reconciled.
     """
-    # Check if this PE is awaiting bank reconciliation
-    if not getattr(doc, "awaiting_bank_reconciliation", 0):
-        return
-
     # Get linked Purchase Invoices from references
     linked_pis = []
     for ref in doc.get("references") or []:
@@ -391,7 +392,7 @@ def on_update_after_submit(doc, method=None):
         return
 
     frappe.logger().info(
-        f"[PE on_update_after_submit] Bank payment detected. "
+        f"[PE on_submit] Bank payment detected. "
         f"Reverting PI status to Unpaid for {len(linked_pis)} invoices"
     )
 
@@ -402,7 +403,7 @@ def on_update_after_submit(doc, method=None):
 
         if pi_status == "Paid":
             frappe.logger().info(
-                f"[PE on_update_after_submit] Reverting PI {pi_name} from Paid to Unpaid"
+                f"[PE on_submit] Reverting PI {pi_name} from Paid to Unpaid"
             )
 
             # Update status directly
@@ -418,8 +419,22 @@ def on_update_after_submit(doc, method=None):
                     update_modified=False
                 )
                 frappe.logger().info(
-                    f"[PE on_update_after_submit] Reverted ER {expense_request} status to PI Created"
+                    f"[PE on_submit] Reverted ER {expense_request} status to PI Created"
                 )
+
+
+def on_update_after_submit(doc, method=None):
+    """Handle Payment Entry updates after submit.
+
+    For Bank payments, revert PI status back to Unpaid after ERPNext marks it as Paid.
+    This is also called when PE is updated after submit.
+    """
+    # Check if this PE is awaiting bank reconciliation
+    if not getattr(doc, "awaiting_bank_reconciliation", 0):
+        return
+
+    # Revert PI status for bank payment
+    _revert_pi_status_for_bank_payment(doc)
 
 
 def before_cancel(doc, method=None):
