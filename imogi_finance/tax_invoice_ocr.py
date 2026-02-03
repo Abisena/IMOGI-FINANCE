@@ -399,6 +399,55 @@ def _find_amount_after_label(text: str, label: str) -> float | None:
     return None
 
 
+def _extract_harga_jual_from_table(text: str) -> float | None:
+    """Extract Harga Jual from table format in Faktur Pajak.
+    
+    The table typically has a header row containing "Harga Jual / Penggantian / Uang Muka / Termin"
+    and the value appears in subsequent rows as the rightmost column value.
+    """
+    if not text:
+        return None
+    
+    lines = text.splitlines()
+    header_found = False
+    
+    for idx, line in enumerate(lines):
+        # Look for the header line
+        if "Harga Jual" in line and ("Penggantian" in line or "Uang Muka" in line or "Termin" in line):
+            header_found = True
+            # Look in the next few lines for the value
+            for offset in range(1, 8):  # Check next 7 lines
+                if idx + offset >= len(lines):
+                    break
+                next_line = lines[idx + offset]
+                
+                # Skip empty lines or lines with just labels
+                if not next_line.strip():
+                    continue
+                if "Dikurangi" in next_line or "Dasar Pengenaan" in next_line:
+                    break
+                    
+                # Try to extract amount from this line
+                amount_match = AMOUNT_REGEX.search(next_line)
+                if amount_match:
+                    amount = _sanitize_amount(_parse_idr_amount(amount_match.group("amount")))
+                    if amount is not None and amount > 0:
+                        return amount
+            
+            # If still not found, try to get the last amount in the line after header
+            if idx + 1 < len(lines):
+                next_line = lines[idx + 1]
+                # Get all amounts in the next line
+                all_amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) 
+                              for m in AMOUNT_REGEX.finditer(next_line)]
+                all_amounts = [amt for amt in all_amounts if amt is not None and amt > 0]
+                if all_amounts:
+                    # Return the last amount (rightmost column)
+                    return all_amounts[-1]
+    
+    return None
+
+
 def _pick_best_npwp(candidates: list[str]) -> str | None:
     valid = [normalize_npwp((val or "").strip()) for val in candidates if val]
     valid = [val for val in valid if val]
@@ -549,7 +598,14 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     amounts = [amt for amt in amounts if amt is not None]
 
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
-    labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
+    # Try to extract from table format first (more reliable for standard faktur pajak)
+    labeled_harga_jual = _extract_harga_jual_from_table(text or "")
+    
+    # Fallback to label-based extraction
+    if labeled_harga_jual is None:
+        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin")
+    if labeled_harga_jual is None:
+        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
     if labeled_harga_jual is None:
