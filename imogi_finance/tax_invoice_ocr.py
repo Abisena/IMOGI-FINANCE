@@ -478,7 +478,10 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             break
 
     if signature_idx == -1:
+        frappe.logger("tax_invoice_ocr").debug("No signature section found")
         return None
+
+    frappe.logger("tax_invoice_ocr").debug(f"Found signature at line {signature_idx}: {lines[signature_idx][:50]}")
 
     # After signature line, next line should be the signer's name
     # Then the values start right after the name
@@ -491,6 +494,8 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             break
         check_line = lines[signature_idx + offset].strip()
 
+        frappe.logger("tax_invoice_ocr").debug(f"Checking line {signature_idx + offset}: '{check_line}'")
+
         # Skip empty lines
         if not check_line:
             continue
@@ -500,17 +505,21 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             # This should be the name line
             name_found = True
             start_search_idx = signature_idx + offset + 1
+            frappe.logger("tax_invoice_ocr").debug(f"Found name at line {signature_idx + offset}: '{check_line}', will start searching from line {start_search_idx}")
             break
 
     if not name_found:
         # Fallback: start right after signature line
         start_search_idx = signature_idx + 1
+        frappe.logger("tax_invoice_ocr").debug(f"No name found, starting search from line {start_search_idx}")
 
     # Now extract the FIRST amount after the name line
     for offset in range(start_search_idx - signature_idx, 15):  # Check remaining lines
         if signature_idx + offset >= len(lines):
             break
         check_line = lines[signature_idx + offset]
+
+        frappe.logger("tax_invoice_ocr").debug(f"Searching for amount in line {signature_idx + offset}: '{check_line}'")
 
         # Extract amounts from this line
         line_amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount")))
@@ -519,8 +528,10 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
 
         # Return the FIRST non-zero amount found (this is Harga Jual)
         if line_amounts:
+            frappe.logger("tax_invoice_ocr").debug(f"Found Harga Jual: {line_amounts[0]} from line: '{check_line}'")
             return line_amounts[0]
 
+    frappe.logger("tax_invoice_ocr").debug("No amount found after signature section")
     return None
 
 
