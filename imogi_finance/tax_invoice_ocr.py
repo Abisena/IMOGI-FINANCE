@@ -453,6 +453,56 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
     return None
 
 
+def _extract_harga_jual_from_signature_section(text: str) -> float | None:
+    """Extract Harga Jual from the values section after signature in Faktur Pajak.
+
+    In standard Faktur Pajak, the summary values appear after the signature section.
+    The order is typically:
+    1. Harga Jual / Penggantian / Uang Muka / Termin
+    2. (sometimes repeated or total)
+    3. Dikurangi Potongan Harga
+    4. DPP
+    5. PPN
+    6. PPnBM
+    """
+    if not text:
+        return None
+
+    lines = text.splitlines()
+
+    # Find the signature section
+    signature_idx = -1
+    for idx, line in enumerate(lines):
+        if "Ditandatangani secara elektronik" in line or "ditandatangani secara elektronik" in line.lower():
+            signature_idx = idx
+            break
+
+    if signature_idx == -1:
+        return None
+
+    # Look for amounts after the signature section (usually 2-5 lines after)
+    amounts_after_signature = []
+    for offset in range(1, 15):  # Check next 14 lines
+        if signature_idx + offset >= len(lines):
+            break
+        check_line = lines[signature_idx + offset]
+
+        # Extract all amounts from this line
+        line_amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount")))
+                       for m in AMOUNT_REGEX.finditer(check_line)]
+        line_amounts = [amt for amt in line_amounts if amt is not None]
+
+        if line_amounts:
+            amounts_after_signature.extend(line_amounts)
+
+    # The first non-zero amount should be Harga Jual
+    for amount in amounts_after_signature:
+        if amount > 0:
+            return amount
+
+    return None
+
+
 def _pick_best_npwp(candidates: list[str]) -> str | None:
     valid = [normalize_npwp((val or "").strip()) for val in candidates if val]
     valid = [val for val in valid if val]
@@ -603,27 +653,25 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     amounts = [amt for amt in amounts if amt is not None]
 
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
-    # Strategy 1: Look for the summary line with label and value on same line
-    # Pattern: "Harga Jual / Penggantian / Uang Muka / Termin" followed by amount
-    harga_jual_pattern = re.compile(
-        r"Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin.*?(\d[\d\s\.,]+)",
-        re.IGNORECASE
-    )
-    match = harga_jual_pattern.search(text or "")
-    labeled_harga_jual = None
-    if match:
-        amount_str = match.group(1)
-        labeled_harga_jual = _sanitize_amount(_parse_idr_amount(amount_str))
+    # Strategy 1: Extract from signature section (most reliable for standard faktur)
+    labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
 
-    # Strategy 2: Try table extraction
+    # Strategy 2: Look for the summary line with label and value on same line
+    if labeled_harga_jual is None:
+        harga_jual_pattern = re.compile(
+            r"Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin.*?(\d[\d\s\.,]+)",
+            re.IGNORECASE
+        )
+        match = harga_jual_pattern.search(text or "")
+        if match:
+            amount_str = match.group(1)
+            labeled_harga_jual = _sanitize_amount(_parse_idr_amount(amount_str))
+
+    # Strategy 3: Try table extraction
     if labeled_harga_jual is None:
         labeled_harga_jual = _extract_harga_jual_from_table(text or "")
 
-    # Strategy 3: Fallback to label-based extraction
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin")
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
+    # Strategy 4: Fallback to label-based extraction
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
     if labeled_harga_jual is None:
