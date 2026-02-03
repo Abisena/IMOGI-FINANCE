@@ -480,25 +480,46 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     if signature_idx == -1:
         return None
 
-    # Look for amounts after the signature section (usually 2-5 lines after)
-    amounts_after_signature = []
-    for offset in range(1, 15):  # Check next 14 lines
+    # After signature line, next line should be the signer's name
+    # Then the values start right after the name
+    # Find the first line with a name (contains letters but not common keywords)
+    name_found = False
+    start_search_idx = signature_idx + 1
+
+    for offset in range(1, 5):  # Check next 4 lines for name
+        if signature_idx + offset >= len(lines):
+            break
+        check_line = lines[signature_idx + offset].strip()
+
+        # Skip empty lines
+        if not check_line:
+            continue
+
+        # If line contains letters (name) and doesn't have amount pattern
+        if check_line and not AMOUNT_REGEX.search(check_line):
+            # This should be the name line
+            name_found = True
+            start_search_idx = signature_idx + offset + 1
+            break
+
+    if not name_found:
+        # Fallback: start right after signature line
+        start_search_idx = signature_idx + 1
+
+    # Now extract the FIRST amount after the name line
+    for offset in range(start_search_idx - signature_idx, 15):  # Check remaining lines
         if signature_idx + offset >= len(lines):
             break
         check_line = lines[signature_idx + offset]
 
-        # Extract all amounts from this line
+        # Extract amounts from this line
         line_amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount")))
                        for m in AMOUNT_REGEX.finditer(check_line)]
-        line_amounts = [amt for amt in line_amounts if amt is not None]
+        line_amounts = [amt for amt in line_amounts if amt is not None and amt > 0]
 
+        # Return the FIRST non-zero amount found (this is Harga Jual)
         if line_amounts:
-            amounts_after_signature.extend(line_amounts)
-
-    # The first non-zero amount should be Harga Jual
-    for amount in amounts_after_signature:
-        if amount > 0:
-            return amount
+            return line_amounts[0]
 
     return None
 
