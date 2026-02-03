@@ -483,7 +483,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     Returns:
         Float value of Harga Jual, or None if not found
     """
+    logger = frappe.logger("tax_invoice_ocr")
+    logger.info("🔍 _extract_harga_jual_from_signature_section: Starting extraction")
+
     if not text:
+        logger.info("🔍 _extract_harga_jual_from_signature_section: No text provided, returning None")
         return None
 
     # Strategy 1: Pattern matching with FIXED regex (uses lookahead to stop at newline)
@@ -493,31 +497,47 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
         re.IGNORECASE | re.MULTILINE
     )
 
+    logger.info("🔍 Strategy 1: Trying regex pattern matching")
     match = signature_pattern.search(text)
     if match:
-        amount_str = match.group(2).strip()  # Strip to remove any extra whitespace
+        name_captured = match.group(1).strip()
+        amount_str = match.group(2).strip()
+        logger.info(f"🔍 Strategy 1: Regex matched! Name: '{name_captured}', Amount string: '{amount_str}'")
+
         parsed = _parse_idr_amount(amount_str)
+        logger.info(f"🔍 Strategy 1: _parse_idr_amount returned: {parsed}")
+
         sanitized = _sanitize_amount(parsed)
+        logger.info(f"🔍 Strategy 1: _sanitize_amount returned: {sanitized}")
+
         if sanitized:
+            logger.info(f"🔍 Strategy 1: SUCCESS! Returning {sanitized}")
             return sanitized
+        else:
+            logger.info("🔍 Strategy 1: Sanitized value is None or 0, trying next strategy")
+    else:
+        logger.info("🔍 Strategy 1: Regex did not match, trying next strategy")
 
     # Strategy 2: Line-by-line parsing for more flexibility
     # This handles cases where regex might fail due to formatting variations
+    logger.info("🔍 Strategy 2: Trying line-by-line parsing")
     signature_marker_idx = text.find("Ditandatangani secara elektronik")
     if signature_marker_idx == -1:
         # Try case-insensitive search
         signature_marker_idx = text.lower().find("ditandatangani secara elektronik")
 
     if signature_marker_idx != -1:
+        logger.info(f"🔍 Strategy 2: Found signature marker at index {signature_marker_idx}")
         # Get text after the signature marker
         after_signature = text[signature_marker_idx:]
 
         # Split into lines and process
         lines = after_signature.split('\n')
+        logger.info(f"🔍 Strategy 2: Split into {len(lines)} lines after signature")
 
         # State machine: find name first, then first amount after name
         found_name = False
-        for line in lines[1:]:  # Skip first line (Ditandatangani...)
+        for idx, line in enumerate(lines[1:], start=1):  # Skip first line (Ditandatangani...)
             line = line.strip()
 
             # Skip empty lines
@@ -531,6 +551,7 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
                 clean_line = line.replace(' ', '').replace('.', '').replace(',', '')
                 if clean_line.isalpha():
                     found_name = True
+                    logger.info(f"🔍 Strategy 2: Found name at line {idx}: '{line}'")
                     continue
 
             # After finding the name, look for the first amount
@@ -538,30 +559,53 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             if found_name and line:
                 # Check if this line contains only a number pattern
                 if re.match(r'^\s*\d[\d\s\.,]+\s*$', line):
+                    logger.info(f"🔍 Strategy 2: Found amount pattern at line {idx}: '{line}'")
                     parsed = _parse_idr_amount(line)
+                    logger.info(f"🔍 Strategy 2: _parse_idr_amount returned: {parsed}")
+
                     sanitized = _sanitize_amount(parsed)
+                    logger.info(f"🔍 Strategy 2: _sanitize_amount returned: {sanitized}")
+
                     if sanitized:
+                        logger.info(f"🔍 Strategy 2: SUCCESS! Returning {sanitized}")
                         return sanitized
+    else:
+        logger.info("🔍 Strategy 2: Signature marker not found")
 
     # Strategy 3: More aggressive fallback
     # Find any standalone amounts after the signature marker
+    logger.info("🔍 Strategy 3: Trying aggressive fallback")
     signature_marker_idx = text.find("Ditandatangani secara elektronik")
     if signature_marker_idx == -1:
         signature_marker_idx = text.lower().find("ditandatangani secara elektronik")
 
     if signature_marker_idx != -1:
+        logger.info(f"🔍 Strategy 3: Found signature marker at index {signature_marker_idx}")
         after_signature = text[signature_marker_idx:]
 
         # Match standalone amounts (on their own line) - use lookahead to stop at newline
         amount_pattern = re.compile(r'(?:^|\n)\s*(\d[\d\s\.,]+?)(?=\s*\n)')
 
-        for match in amount_pattern.finditer(after_signature):
-            amount_str = match.group(1).strip()  # Strip whitespace
-            parsed = _parse_idr_amount(amount_str)
-            sanitized = _sanitize_amount(parsed)
-            if sanitized:
-                return sanitized
+        matches_found = list(amount_pattern.finditer(after_signature))
+        logger.info(f"🔍 Strategy 3: Found {len(matches_found)} amount patterns")
 
+        for idx, match in enumerate(matches_found):
+            amount_str = match.group(1).strip()  # Strip whitespace
+            logger.info(f"🔍 Strategy 3: Pattern {idx+1}: '{amount_str}'")
+
+            parsed = _parse_idr_amount(amount_str)
+            logger.info(f"🔍 Strategy 3: _parse_idr_amount returned: {parsed}")
+
+            sanitized = _sanitize_amount(parsed)
+            logger.info(f"🔍 Strategy 3: _sanitize_amount returned: {sanitized}")
+
+            if sanitized:
+                logger.info(f"🔍 Strategy 3: SUCCESS! Returning {sanitized}")
+                return sanitized
+    else:
+        logger.info("🔍 Strategy 3: Signature marker not found")
+
+    logger.info("🔍 _extract_harga_jual_from_signature_section: All strategies failed, returning None")
     return None
 
 
@@ -714,12 +758,20 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) for m in AMOUNT_REGEX.finditer(text or "")]
     amounts = [amt for amt in amounts if amt is not None]
 
+    logger = frappe.logger("tax_invoice_ocr")
+    logger.info(f"🔍 parse_faktur_pajak_text: Found {len(amounts)} amounts in text")
+    if amounts:
+        logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
+
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
     # Strategy 1: Extract from signature section (most reliable for standard faktur)
+    logger.info("🔍 parse_faktur_pajak_text: Calling _extract_harga_jual_from_signature_section")
     labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
+    logger.info(f"🔍 parse_faktur_pajak_text: _extract_harga_jual_from_signature_section returned: {labeled_harga_jual}")
 
     # Strategy 2: Look for the summary line with label and value on same line
     if labeled_harga_jual is None:
+        logger.info("🔍 parse_faktur_pajak_text: Strategy 2 - trying label pattern match")
         harga_jual_pattern = re.compile(
             r"Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin.*?(\d[\d\s\.,]+)",
             re.IGNORECASE
@@ -727,23 +779,36 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         match = harga_jual_pattern.search(text or "")
         if match:
             amount_str = match.group(1)
+            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 matched: '{amount_str}'")
             labeled_harga_jual = _sanitize_amount(_parse_idr_amount(amount_str))
+            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 result: {labeled_harga_jual}")
+        else:
+            logger.info("🔍 parse_faktur_pajak_text: Strategy 2 - no match")
 
     # Strategy 3: Try table extraction
     if labeled_harga_jual is None:
+        logger.info("🔍 parse_faktur_pajak_text: Strategy 3 - trying table extraction")
         labeled_harga_jual = _extract_harga_jual_from_table(text or "")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 3 result: {labeled_harga_jual}")
 
     # Strategy 4: Fallback to label-based extraction
     if labeled_harga_jual is None:
+        logger.info("🔍 parse_faktur_pajak_text: Strategy 4 - trying label-based extraction")
         labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4a (Penggantian): {labeled_harga_jual}")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4b (Uang Muka): {labeled_harga_jual}")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Termin")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4c (Termin): {labeled_harga_jual}")
 
     if labeled_harga_jual is not None:
+        logger.info(f"🔍 parse_faktur_pajak_text: Setting matches['harga_jual'] = {labeled_harga_jual}")
         matches["harga_jual"] = labeled_harga_jual
         confidence += 0.1
+    else:
+        logger.info("🔍 parse_faktur_pajak_text: labeled_harga_jual is None, NOT setting matches['harga_jual'] yet")
 
     labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
     labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN")
@@ -794,15 +859,29 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     # CRITICAL: Only run if labeled_harga_jual is None (signature extraction failed)
     # Do NOT run if signature extraction succeeded, even if value seems wrong!
     if labeled_harga_jual is None:
+        logger.info("🔍 parse_faktur_pajak_text: Smart fallback - labeled_harga_jual is None, checking DPP-based fallback")
         dpp_value = matches.get("dpp")
+        logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - DPP value: {dpp_value}")
+
         if dpp_value and amounts:
             # Find amounts greater than DPP from the end of the list
             # (summary values appear at the end of the document)
             # Filter: must be > DPP and < DPP * 5 (to avoid huge outliers)
             candidates = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 5]
+            logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Found {len(candidates)} candidates > DPP: {candidates}")
+
             if candidates:
+                logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Setting matches['harga_jual'] = {candidates[0]}")
                 matches["harga_jual"] = candidates[0]
                 confidence += 0.05
+            else:
+                logger.info("🔍 parse_faktur_pajak_text: Smart fallback - No candidates found")
+        else:
+            logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Cannot run (dpp_value={dpp_value}, amounts count={len(amounts) if amounts else 0})")
+    else:
+        logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - SKIPPED because labeled_harga_jual = {labeled_harga_jual} (not None)")
+
+    logger.info(f"🔍 parse_faktur_pajak_text: FINAL matches['harga_jual'] = {matches.get('harga_jual')}")
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
