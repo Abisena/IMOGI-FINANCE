@@ -9,6 +9,7 @@ import subprocess
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
+from typing import Optional
 
 import frappe
 from frappe import _
@@ -318,28 +319,38 @@ def _extract_section(text: str, start_label: str, end_label: str | None = None) 
 
 
 def _parse_idr_amount(value: str) -> float:
+    """Parse Indonesian Rupiah amount format"""
     cleaned = (value or "").strip()
     last_dot = cleaned.rfind(".")
     last_comma = cleaned.rfind(",")
     if last_dot == -1 and last_comma == -1:
-        return flt(cleaned)
+        try:
+            return float(cleaned) if cleaned else 0.0
+        except:
+            return 0.0
 
     decimal_index = max(last_dot, last_comma)
     integer_part = re.sub(r"[.,]", "", cleaned[:decimal_index])
     decimal_part = cleaned[decimal_index + 1 :]
     normalized = f"{integer_part}.{decimal_part}"
-    return flt(normalized)
-
-
-def _sanitize_amount(value: Any, *, max_abs: float = 9_999_999_999_999.99) -> float | None:
     try:
-        number = flt(value)
+        return float(normalized)
+    except:
+        return 0.0
+
+
+def _sanitize_amount(value, *, max_abs: float = 9_999_999_999_999.99) -> Optional[float]:
+    """Sanitize and validate amount"""
+    try:
+        number = float(value)
     except Exception:
         return None
 
-    if not math.isfinite(number):
+    if not (number == number):  # Check for NaN
         return None
     if abs(number) > max_abs:
+        return None
+    if number <= 0:
         return None
     return number
 
@@ -453,9 +464,11 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
     return None
 
 
-def _extract_harga_jual_from_signature_section(text: str) -> float | None:
+def _extract_harga_jual_from_signature_section(text: str) -> Optional[float]:
     """
     Extract Harga Jual from the signature section of Faktur Pajak.
+
+    FIXED VERSION: Uses lookahead to stop at first newline after amount.
 
     In standard Faktur Pajak format, after the electronic signature section,
     there is a list of monetary values in this order:
@@ -486,16 +499,16 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     if not text:
         return None
 
-    # Strategy 1: Pattern matching with regex
-    # Look for "Ditandatangani secara elektronik" followed by name, then amount
+    # Strategy 1: Pattern matching with FIXED regex (uses lookahead to stop at newline)
+    # This prevents the greedy match that was capturing all numbers
     signature_pattern = re.compile(
-        r'Ditandatangani\s+secara\s+elektronik\s+([A-Z\s\.]+?)\s+(\d[\d\s\.,]+)',
-        re.IGNORECASE | re.DOTALL
+        r'Ditandatangani\s+secara\s+elektronik\s*\n\s*([A-Z\s\.]+?)\s*\n\s*(\d[\d\s\.,]+?)(?=\s*\n)',
+        re.IGNORECASE | re.MULTILINE
     )
 
     match = signature_pattern.search(text)
     if match:
-        amount_str = match.group(2)
+        amount_str = match.group(2).strip()
         parsed = _parse_idr_amount(amount_str)
         sanitized = _sanitize_amount(parsed)
         if sanitized:
@@ -528,7 +541,7 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             # Names are typically letters, spaces, and dots only
             if not found_name and len(line) > 3:
                 # Remove spaces and dots to check if mostly letters
-                clean_line = line.replace(' ', '').replace('.', '')
+                clean_line = line.replace(' ', '').replace('.', '').replace(',', '')
                 if clean_line.isalpha():
                     found_name = True
                     continue
@@ -552,11 +565,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     if signature_marker_idx != -1:
         after_signature = text[signature_marker_idx:]
 
-        # Match standalone amounts (on their own line)
-        amount_pattern = re.compile(r'(?:^|\n)\s*(\d[\d\s\.,]+)\s*(?:\n|$)')
+        # Match standalone amounts (on their own line) - use lookahead
+        amount_pattern = re.compile(r'(?:^|\n)\s*(\d[\d\s\.,]+?)(?=\s*\n)')
 
         for match in amount_pattern.finditer(after_signature):
-            amount_str = match.group(1)
+            amount_str = match.group(1).strip()
             parsed = _parse_idr_amount(amount_str)
             sanitized = _sanitize_amount(parsed)
             if sanitized:
