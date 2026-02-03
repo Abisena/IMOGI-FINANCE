@@ -381,53 +381,65 @@ def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5)
         Float amount if found, None otherwise
     """
     def _extract_amount(line: str) -> float | None:
+        # Skip lines that contain reference keywords (invoice numbers, etc.)
+        skip_keywords = ["Referensi:", "Reference:", "Invoice:", "INV-", "/MTLA/", "/GMM/", "Pemberitahuan:"]
+        if any(keyword in line for keyword in skip_keywords):
+            logger.info(f"🔍 _extract_amount: Skipping line with reference keyword: '{line[:80]}'")
+            return None
+
+        # ONLY match amounts with proper currency format (has decimal separator)
+        # This prevents matching invoice numbers like "08889" from references
         amount_match = AMOUNT_REGEX.search(line or "")
         if amount_match:
-            return _sanitize_amount(_parse_idr_amount(amount_match.group("amount")))
-        number_match = NUMBER_REGEX.search(line or "")
-        if number_match:
-            return _sanitize_amount(_parse_idr_amount(number_match.group("number")))
+            amount = _sanitize_amount(_parse_idr_amount(amount_match.group("amount")))
+            # For Harga Jual, typically should be at least 10,000 IDR
+            # This filters out small numbers like 8889 from references
+            if amount is not None and amount >= 10000:
+                return amount
+            elif amount is not None:
+                logger.info(f"🔍 _extract_amount: Amount {amount} too small (< 10000), ignoring")
+        # Do NOT use NUMBER_REGEX as fallback - it matches any number including invoice refs
         return None
 
     pattern = re.compile(rf"{re.escape(label)}\s*[:\-]?\s*(?P<value>.*)", re.IGNORECASE)
     lines = (text or "").splitlines()
+
+    logger = frappe.logger("tax_invoice_ocr")
+
     for idx, line in enumerate(lines):
         match = pattern.search(line)
         if not match:
             continue
 
+        logger.info(f"🔍 _find_amount_after_label: Found label '{label}' at line {idx}")
+
         # First, check if amount is in the same line after the label
-        inline_amount = _extract_amount(match.group("value") or "")
+        inline_value = match.group("value") or ""
+        inline_amount = _extract_amount(inline_value)
         if inline_amount is not None:
+            logger.info(f"🔍 _find_amount_after_label: Found inline amount: {inline_amount}")
             return inline_amount
 
         # If not found in same line, check next few non-empty lines
+        logger.info(f"🔍 _find_amount_after_label: No inline amount, checking next {max_lines_to_check} lines")
         lines_checked = 0
-        for next_line in lines[idx + 1 :]:
+        for offset, next_line in enumerate(lines[idx + 1 :], start=1):
             if not next_line.strip():
                 continue  # Skip empty lines
 
+            logger.info(f"🔍 _find_amount_after_label: Checking line {idx + offset}: '{next_line[:80]}'")
+
             next_amount = _extract_amount(next_line)
             if next_amount is not None:
+                logger.info(f"🔍 _find_amount_after_label: Found amount in next line: {next_amount}")
                 return next_amount
 
             lines_checked += 1
             if lines_checked >= max_lines_to_check:
+                logger.info(f"🔍 _find_amount_after_label: Reached max {max_lines_to_check} lines, stopping")
                 break  # Stop after checking max_lines_to_check non-empty lines
 
-    return None
-
-
-def _extract_harga_jual_from_table(text: str) -> float | None:
-    """Extract Harga Jual from table format in Faktur Pajak.
-
-    The table typically has a row containing "Harga Jual / Penggantian / Uang Muka / Termin"
-    with the value appearing in the same row (rightmost column) or in subsequent rows.
-
-    Example format:
-        Harga Jual / Penggantian / Uang Muka / Termin        1.049.485,00
-    """
-    logger = frappe.logger("tax_invoice_ocr")
+    logger.info(f"🔍 _find_amount_after_label: Label '{label}' not found or no amount extracted")
     logger.info("🔍 _extract_harga_jual_from_table: Starting table extraction")
 
     if not text:
