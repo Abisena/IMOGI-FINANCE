@@ -547,7 +547,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) for m in AMOUNT_REGEX.finditer(text or "")]
     amounts = [amt for amt in amounts if amt is not None]
-    
+
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
     labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
     if labeled_harga_jual is None:
@@ -556,11 +556,11 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Termin")
-    
+
     if labeled_harga_jual is not None:
         matches["harga_jual"] = labeled_harga_jual
         confidence += 0.1
-    
+
     labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
     labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN")
 
