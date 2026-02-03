@@ -718,6 +718,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
     labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN")
 
+    # Extract DPP and PPN first
     if len(amounts) >= 6:
         tail_amounts = amounts[-6:]
         matches["dpp"] = tail_amounts[3]
@@ -758,6 +759,19 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             if len(parsed_numbers) > 1:
                 matches["ppn"] = sorted(parsed_numbers)[-2]
             confidence += 0.2
+
+    # Smart fallback for Harga Jual: if not set or equals DPP, find a larger amount
+    # In standard Faktur Pajak, Harga Jual >= DPP (since DPP is after discounts)
+    if labeled_harga_jual is None or (matches.get("dpp") and labeled_harga_jual == matches.get("dpp")):
+        dpp_value = matches.get("dpp")
+        if dpp_value and amounts:
+            # Find amounts greater than DPP from the end of the list
+            # (summary values appear at the end of the document)
+            candidates = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 5]
+            if candidates:
+                matches["harga_jual"] = candidates[0]
+                if labeled_harga_jual is None:
+                    confidence += 0.05
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
