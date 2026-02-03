@@ -20,6 +20,7 @@
     "npwp",
     "ppn_type",
     "column_break_tax",
+    "harga_jual",
     "dpp",
     "ppn",
     "ppnbm",
@@ -109,6 +110,12 @@
     {
       "fieldname": "column_break_tax",
       "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "harga_jual",
+      "fieldtype": "Currency",
+      "label": "Harga Jual / Penggantian / Uang Muka / Termin",
+      "description": "Nilai Harga Jual dari Faktur Pajak"
     },
     {
       "fieldname": "dpp",

@@ -47,7 +47,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm", "ppn_type", "notes"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "notes"}
 
 
 def _raise_validation_error(message: str):
@@ -224,7 +224,7 @@ def validate_tax_invoice_upload_link(doc: Any, doctype: str):
     upload = getattr(doc, link_field, None)
     has_manual_fields = any(
         _get_value(doc, doctype, key)
-        for key in ("fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm")
+        for key in ("fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm")
     )
 
     if not upload:
@@ -272,7 +272,7 @@ def get_tax_invoice_upload_context(target_doctype: str | None = None, target_nam
                 "verification_status": "Verified",
                 **({"name": ("not in", used_uploads)} if used_uploads else {}),
             },
-            fields=["name", "fp_no", "fp_date", "npwp", "dpp", "ppn", "ppnbm", "ppn_type"],
+            fields=["name", "fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type"],
         )
     except Exception:
         verified_uploads = []
@@ -547,6 +547,20 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) for m in AMOUNT_REGEX.finditer(text or "")]
     amounts = [amt for amt in amounts if amt is not None]
+    
+    # Extract Harga Jual / Penggantian / Uang Muka / Termin
+    labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
+    if labeled_harga_jual is None:
+        labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
+    if labeled_harga_jual is None:
+        labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka")
+    if labeled_harga_jual is None:
+        labeled_harga_jual = _find_amount_after_label(text or "", "Termin")
+    
+    if labeled_harga_jual is not None:
+        matches["harga_jual"] = labeled_harga_jual
+        confidence += 0.1
+    
     labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
     labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN")
 
@@ -622,6 +636,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             },
         },
         "ringkasan_pajak": {
+            "harga_jual": matches.get("harga_jual"),
             "dasar_pengenaan_pajak": matches.get("dpp"),
             "jumlah_ppn": matches.get("ppn"),
         },
