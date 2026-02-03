@@ -790,49 +790,24 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
 
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
-    # Strategy 1: Extract from signature section (most reliable for standard faktur)
-    logger.info("🔍 parse_faktur_pajak_text: Calling _extract_harga_jual_from_signature_section")
-    labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
-    logger.info(f"🔍 parse_faktur_pajak_text: _extract_harga_jual_from_signature_section returned: {labeled_harga_jual}")
+    # Use label-based extraction (same approach as DPP and PPN)
+    logger.info("🔍 parse_faktur_pajak_text: Extracting Harga Jual using label-based search")
+    labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin")
+    logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual / Penggantian / Uang Muka / Termin': {labeled_harga_jual}")
 
-    # Strategy 2: Look for the summary line with label and value on same line
+    # Try shorter variations if not found
     if labeled_harga_jual is None:
-        logger.info("🔍 parse_faktur_pajak_text: Strategy 2 - trying label pattern match")
-        harga_jual_pattern = re.compile(
-            r"Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin.*?(\d[\d\s\.,]+)",
-            re.IGNORECASE
-        )
-        match = harga_jual_pattern.search(text or "")
-        if match:
-            amount_str = match.group(1)
-            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 matched: '{amount_str}'")
-            labeled_harga_jual = _sanitize_amount(_parse_idr_amount(amount_str))
-            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 result: {labeled_harga_jual}")
-        else:
-            logger.info("🔍 parse_faktur_pajak_text: Strategy 2 - no match")
-
-    # Strategy 3: Try table extraction
+        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
+        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual': {labeled_harga_jual}")
     if labeled_harga_jual is None:
-        logger.info("🔍 parse_faktur_pajak_text: Strategy 3 - trying table extraction")
-        labeled_harga_jual = _extract_harga_jual_from_table(text or "")
-        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 3 result: {labeled_harga_jual}")
-
-    # Strategy 4: Fallback to label-based extraction
-    if labeled_harga_jual is None:
-        logger.info("🔍 parse_faktur_pajak_text: Strategy 4 - trying label-based extraction")
         labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
-        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4a (Penggantian): {labeled_harga_jual}")
+        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Penggantian': {labeled_harga_jual}")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka")
-        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4b (Uang Muka): {labeled_harga_jual}")
+        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Uang Muka': {labeled_harga_jual}")
     if labeled_harga_jual is None:
         labeled_harga_jual = _find_amount_after_label(text or "", "Termin")
-        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 4c (Termin): {labeled_harga_jual}")
-
-    if labeled_harga_jual is not None:
-        logger.info(f"🔍 parse_faktur_pajak_text: Setting matches['harga_jual'] = {labeled_harga_jual}")
-        matches["harga_jual"] = labeled_harga_jual
-        confidence += 0.1
+        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Termin': {labeled_harga_jual}")
     else:
         logger.info("🔍 parse_faktur_pajak_text: labeled_harga_jual is None, NOT setting matches['harga_jual'] yet")
 
