@@ -454,84 +454,114 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
 
 
 def _extract_harga_jual_from_signature_section(text: str) -> float | None:
-    """Extract Harga Jual from the values section after signature in Faktur Pajak.
+    """
+    Extract Harga Jual from the signature section of Faktur Pajak.
 
-    In standard Faktur Pajak, the summary values appear after the signature section.
-    The order is typically:
-    1. Harga Jual / Penggantian / Uang Muka / Termin
-    2. (sometimes repeated or total)
-    3. Dikurangi Potongan Harga
-    4. DPP
-    5. PPN
-    6. PPnBM
+    In standard Faktur Pajak format, after the electronic signature section,
+    there is a list of monetary values in this order:
+    1. Harga Jual/Penggantian/Uang Muka/Termin (TARGET - first amount)
+    2. Duplicate or subtotal
+    3. Dikurangi Potongan Harga (discount)
+    4. DPP (Dasar Pengenaan Pajak)
+    5. PPN (Pajak Pertambahan Nilai)
+    6. PPnBM (Pajak Penjualan atas Barang Mewah)
+
+    Format example:
+        KOTA BEKASI, 30 Januari 2026
+        Ditandatangani secara elektronik
+        ANHAR SUDRADJAT
+        1.049.485,00    <- This is Harga Jual (first amount after name)
+        1.049.485,00
+        0,00
+        962.028,00
+        115.443,00
+        0,00
+
+    Args:
+        text: OCR extracted text from Faktur Pajak
+
+    Returns:
+        Float value of Harga Jual, or None if not found
     """
     if not text:
         return None
 
-    lines = text.splitlines()
+    # Strategy 1: Pattern matching with regex
+    # Look for "Ditandatangani secara elektronik" followed by name, then amount
+    signature_pattern = re.compile(
+        r'Ditandatangani\s+secara\s+elektronik\s+([A-Z\s\.]+?)\s+(\d[\d\s\.,]+)',
+        re.IGNORECASE | re.DOTALL
+    )
 
-    # Find the signature section
-    signature_idx = -1
-    for idx, line in enumerate(lines):
-        if "Ditandatangani secara elektronik" in line or "ditandatangani secara elektronik" in line.lower():
-            signature_idx = idx
-            break
+    match = signature_pattern.search(text)
+    if match:
+        amount_str = match.group(2)
+        parsed = _parse_idr_amount(amount_str)
+        sanitized = _sanitize_amount(parsed)
+        if sanitized:
+            return sanitized
 
-    if signature_idx == -1:
-        frappe.logger("tax_invoice_ocr").debug("No signature section found")
-        return None
+    # Strategy 2: Line-by-line parsing for more flexibility
+    # This handles cases where regex might fail due to formatting variations
+    signature_marker_idx = text.find("Ditandatangani secara elektronik")
+    if signature_marker_idx == -1:
+        # Try case-insensitive search
+        signature_marker_idx = text.lower().find("ditandatangani secara elektronik")
 
-    frappe.logger("tax_invoice_ocr").debug(f"Found signature at line {signature_idx}: {lines[signature_idx][:50]}")
+    if signature_marker_idx != -1:
+        # Get text after the signature marker
+        after_signature = text[signature_marker_idx:]
 
-    # After signature line, next line should be the signer's name
-    # Then the values start right after the name
-    # Find the first line with a name (contains letters but not common keywords)
-    name_found = False
-    start_search_idx = signature_idx + 1
+        # Split into lines and process
+        lines = after_signature.split('\n')
 
-    for offset in range(1, 5):  # Check next 4 lines for name
-        if signature_idx + offset >= len(lines):
-            break
-        check_line = lines[signature_idx + offset].strip()
+        # State machine: find name first, then first amount after name
+        found_name = False
+        for line in lines[1:]:  # Skip first line (Ditandatangani...)
+            line = line.strip()
 
-        frappe.logger("tax_invoice_ocr").debug(f"Checking line {signature_idx + offset}: '{check_line}'")
+            # Skip empty lines
+            if not line:
+                continue
 
-        # Skip empty lines
-        if not check_line:
-            continue
+            # Check if this is likely a signer name
+            # Names are typically letters, spaces, and dots only
+            if not found_name and len(line) > 3:
+                # Remove spaces and dots to check if mostly letters
+                clean_line = line.replace(' ', '').replace('.', '')
+                if clean_line.isalpha():
+                    found_name = True
+                    continue
 
-        # If line contains letters (name) and doesn't have amount pattern
-        if check_line and not AMOUNT_REGEX.search(check_line):
-            # This should be the name line
-            name_found = True
-            start_search_idx = signature_idx + offset + 1
-            frappe.logger("tax_invoice_ocr").debug(f"Found name at line {signature_idx + offset}: '{check_line}', will start searching from line {start_search_idx}")
-            break
+            # After finding the name, look for the first amount
+            # Amount should be a standalone number on its own line
+            if found_name and line:
+                # Check if this line contains only a number pattern
+                if re.match(r'^\s*\d[\d\s\.,]+\s*$', line):
+                    parsed = _parse_idr_amount(line)
+                    sanitized = _sanitize_amount(parsed)
+                    if sanitized:
+                        return sanitized
 
-    if not name_found:
-        # Fallback: start right after signature line
-        start_search_idx = signature_idx + 1
-        frappe.logger("tax_invoice_ocr").debug(f"No name found, starting search from line {start_search_idx}")
+    # Strategy 3: More aggressive fallback
+    # Find any standalone amounts after the signature marker
+    signature_marker_idx = text.find("Ditandatangani secara elektronik")
+    if signature_marker_idx == -1:
+        signature_marker_idx = text.lower().find("ditandatangani secara elektronik")
 
-    # Now extract the FIRST amount after the name line
-    for offset in range(start_search_idx - signature_idx, 15):  # Check remaining lines
-        if signature_idx + offset >= len(lines):
-            break
-        check_line = lines[signature_idx + offset]
+    if signature_marker_idx != -1:
+        after_signature = text[signature_marker_idx:]
 
-        frappe.logger("tax_invoice_ocr").debug(f"Searching for amount in line {signature_idx + offset}: '{check_line}'")
+        # Match standalone amounts (on their own line)
+        amount_pattern = re.compile(r'(?:^|\n)\s*(\d[\d\s\.,]+)\s*(?:\n|$)')
 
-        # Extract amounts from this line
-        line_amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount")))
-                       for m in AMOUNT_REGEX.finditer(check_line)]
-        line_amounts = [amt for amt in line_amounts if amt is not None and amt > 0]
+        for match in amount_pattern.finditer(after_signature):
+            amount_str = match.group(1)
+            parsed = _parse_idr_amount(amount_str)
+            sanitized = _sanitize_amount(parsed)
+            if sanitized:
+                return sanitized
 
-        # Return the FIRST non-zero amount found (this is Harga Jual)
-        if line_amounts:
-            frappe.logger("tax_invoice_ocr").debug(f"Found Harga Jual: {line_amounts[0]} from line: '{check_line}'")
-            return line_amounts[0]
-
-    frappe.logger("tax_invoice_ocr").debug("No amount found after signature section")
     return None
 
 
@@ -759,19 +789,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             if len(parsed_numbers) > 1:
                 matches["ppn"] = sorted(parsed_numbers)[-2]
             confidence += 0.2
-
-    # Smart fallback for Harga Jual: if not set or equals DPP, find a larger amount
-    # In standard Faktur Pajak, Harga Jual >= DPP (since DPP is after discounts)
-    if labeled_harga_jual is None or (matches.get("dpp") and labeled_harga_jual == matches.get("dpp")):
-        dpp_value = matches.get("dpp")
-        if dpp_value and amounts:
-            # Find amounts greater than DPP from the end of the list
-            # (summary values appear at the end of the document)
-            candidates = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 5]
-            if candidates:
-                matches["harga_jual"] = candidates[0]
-                if labeled_harga_jual is None:
-                    confidence += 0.05
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
