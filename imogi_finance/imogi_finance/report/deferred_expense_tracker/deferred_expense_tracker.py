@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import flt, add_months, getdate, formatdate
+from frappe.utils import flt, add_months, getdate, formatdate, nowdate
 from dateutil.relativedelta import relativedelta
 
 
@@ -38,6 +38,7 @@ def get_columns(filters: dict) -> list[dict]:
             {"label": _("Period"), "fieldname": "period_number", "fieldtype": "Int", "width": 70},
             {"label": _("Period Date"), "fieldname": "period_date", "fieldtype": "Date", "width": 110},
             {"label": _("Period Amount"), "fieldname": "period_amount", "fieldtype": "Currency", "width": 140},
+            {"label": _("Period Status"), "fieldname": "period_status", "fieldtype": "Data", "width": 120},
         ])
 
     columns.extend([
@@ -187,11 +188,13 @@ def get_summary(data: list[dict]) -> list[dict]:
 def add_monthly_breakdown(data: list[dict]) -> list[dict]:
     """Expand each row into monthly breakdown rows similar to Journal Entry."""
     result = []
+    today = getdate(nowdate())
 
     for row in data:
         periods = flt(row.get("periods", 0))
         total_amount = flt(row.get("total_amount", 0))
         start_date = row.get("start_date")
+        pi_name = row.get("purchase_invoice")
 
         if not periods or not start_date:
             # No breakdown possible, keep original row
@@ -201,11 +204,27 @@ def add_monthly_breakdown(data: list[dict]) -> list[dict]:
         # Calculate amount per period
         amount_per_period = total_amount / periods
 
+        # Get posted Journal Entries for this PI to check which periods are posted
+        posted_dates = set()
+        if pi_name:
+            posted_jes = frappe.db.sql("""
+                SELECT posting_date
+                FROM `tabJournal Entry`
+                WHERE reference_type = 'Purchase Invoice'
+                AND reference_name = %(pi_name)s
+                AND docstatus = 1
+                AND voucher_type = 'Deferred Expense'
+            """, {"pi_name": pi_name}, as_dict=True)
+            posted_dates = {getdate(je.posting_date) for je in posted_jes}
+
         # Generate breakdown rows
         start_date = getdate(start_date)
         for period_num in range(1, int(periods) + 1):
             # Calculate period date (start of each month)
             period_date = start_date + relativedelta(months=period_num - 1)
+
+            # Determine period status
+            period_status = get_period_status(period_date, today, posted_dates)
 
             # Create breakdown row
             breakdown_row = row.copy()
@@ -213,9 +232,37 @@ def add_monthly_breakdown(data: list[dict]) -> list[dict]:
                 "period_number": period_num,
                 "period_date": period_date,
                 "period_amount": amount_per_period,
+                "period_status": period_status,
                 "indent": 1,  # Indent breakdown rows for visual hierarchy
             })
 
             result.append(breakdown_row)
 
     return result
+
+
+def get_period_status(period_date, today, posted_dates) -> str:
+    """Determine status of a period based on date and posting status.
+
+    Returns:
+        - Posted: Already posted to JE
+        - Overdue: Past due but not posted
+        - Current: Current period (this month)
+        - Upcoming: Future period
+    """
+    period_date = getdate(period_date)
+
+    # Check if already posted
+    if period_date in posted_dates:
+        return "✓ Posted"
+
+    # Check if overdue (past date but not posted)
+    if period_date < today:
+        return "⚠ Overdue"
+
+    # Check if current month
+    if period_date.year == today.year and period_date.month == today.month:
+        return "→ Current"
+
+    # Future period
+    return "◯ Upcoming"
