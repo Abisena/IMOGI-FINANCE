@@ -207,13 +207,15 @@ def add_monthly_breakdown(data: list[dict]) -> list[dict]:
         # Get posted Journal Entries for this PI to check which periods are posted
         posted_dates = set()
         if pi_name:
+            # Check Journal Entry Accounts that reference this PI
             posted_jes = frappe.db.sql("""
-                SELECT posting_date
-                FROM `tabJournal Entry`
-                WHERE reference_type = 'Purchase Invoice'
-                AND reference_name = %(pi_name)s
-                AND docstatus = 1
-                AND voucher_type = 'Deferred Expense'
+                SELECT DISTINCT je.posting_date
+                FROM `tabJournal Entry` je
+                INNER JOIN `tabJournal Entry Account` jea ON jea.parent = je.name
+                WHERE jea.reference_type = 'Purchase Invoice'
+                AND jea.reference_name = %(pi_name)s
+                AND je.docstatus = 1
+                AND je.voucher_type = 'Deferred Expense'
             """, {"pi_name": pi_name}, as_dict=True)
             posted_dates = {getdate(je.posting_date) for je in posted_jes}
 
