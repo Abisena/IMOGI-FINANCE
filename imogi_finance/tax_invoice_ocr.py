@@ -402,10 +402,17 @@ def _find_amount_after_label(text: str, label: str) -> float | None:
 def _extract_harga_jual_from_table(text: str) -> float | None:
     """Extract Harga Jual from table format in Faktur Pajak.
 
-    The table typically has a header row containing "Harga Jual / Penggantian / Uang Muka / Termin"
-    and the value appears in subsequent rows as the rightmost column value.
+    The table typically has a row containing "Harga Jual / Penggantian / Uang Muka / Termin"
+    with the value appearing in the same row (rightmost column) or in subsequent rows.
+
+    Example format:
+        Harga Jual / Penggantian / Uang Muka / Termin        1.049.485,00
     """
+    logger = frappe.logger("tax_invoice_ocr")
+    logger.info("🔍 _extract_harga_jual_from_table: Starting table extraction")
+
     if not text:
+        logger.info("🔍 _extract_harga_jual_from_table: No text provided")
         return None
 
     lines = text.splitlines()
@@ -413,16 +420,25 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
     for idx, line in enumerate(lines):
         # Look for the line containing "Harga Jual" and related terms
         if "Harga Jual" in line and ("Penggantian" in line or "Uang Muka" in line or "Termin" in line):
-            # First, check if there's an amount in the same line (after the label)
-            # This handles cases like: "Harga Jual / Penggantian / Uang Muka / Termin    953.976,00"
-            line_after_label = line
-            amount_match = AMOUNT_REGEX.search(line_after_label)
-            if amount_match:
-                amount = _sanitize_amount(_parse_idr_amount(amount_match.group("amount")))
-                if amount is not None and amount > 0:
-                    return amount
+            logger.info(f"🔍 _extract_harga_jual_from_table: Found label at line {idx}: '{line[:80]}'")
 
-            # If not in the same line, look in the next few lines
+            # FIRST: Check if there's an amount in the SAME line (most common in table format)
+            # The label and value are in the same row, value is in the rightmost column
+            # Example: "Harga Jual / Penggantian / Uang Muka / Termin        1.049.485,00"
+            all_amounts_in_line = [_sanitize_amount(_parse_idr_amount(m.group("amount")))
+                                  for m in AMOUNT_REGEX.finditer(line)]
+            all_amounts_in_line = [amt for amt in all_amounts_in_line if amt is not None and amt > 0]
+
+            logger.info(f"🔍 _extract_harga_jual_from_table: Found {len(all_amounts_in_line)} amounts in same line: {all_amounts_in_line}")
+
+            if all_amounts_in_line:
+                # Return the LAST amount (rightmost column in table)
+                result = all_amounts_in_line[-1]
+                logger.info(f"🔍 _extract_harga_jual_from_table: SUCCESS! Returning {result} from same line")
+                return result
+
+            # SECOND: If not in the same line, look in the next few lines
+            logger.info("🔍 _extract_harga_jual_from_table: No amount in same line, checking next lines")
             for offset in range(1, 10):  # Check next 9 lines
                 if idx + offset >= len(lines):
                     break
@@ -432,12 +448,17 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
                 if not next_line.strip():
                     continue
 
-                # Stop if we hit other sections
+                logger.info(f"🔍 _extract_harga_jual_from_table: Checking line {idx + offset}: '{next_line[:80]}'")
+
+                # Stop if we hit other sections (these are the next rows in the summary table)
                 if "Dikurangi Potongan Harga" in next_line:
+                    logger.info("🔍 _extract_harga_jual_from_table: Hit 'Dikurangi Potongan Harga', stopping")
                     break
                 if "Dikurangi Uang Muka" in next_line:
+                    logger.info("🔍 _extract_harga_jual_from_table: Hit 'Dikurangi Uang Muka', stopping")
                     break
                 if "Dasar Pengenaan Pajak" in next_line:
+                    logger.info("🔍 _extract_harga_jual_from_table: Hit 'Dasar Pengenaan Pajak', stopping")
                     break
 
                 # Try to extract amount from this line
@@ -446,10 +467,15 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
                               for m in AMOUNT_REGEX.finditer(next_line)]
                 all_amounts = [amt for amt in all_amounts if amt is not None and amt > 0]
 
+                logger.info(f"🔍 _extract_harga_jual_from_table: Found {len(all_amounts)} amounts: {all_amounts}")
+
                 if all_amounts:
                     # Return the last amount (rightmost column in table)
-                    return all_amounts[-1]
+                    result = all_amounts[-1]
+                    logger.info(f"🔍 _extract_harga_jual_from_table: SUCCESS! Returning {result} from next line")
+                    return result
 
+    logger.info("🔍 _extract_harga_jual_from_table: Label not found or no amounts extracted")
     return None
 
 
