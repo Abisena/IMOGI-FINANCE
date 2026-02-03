@@ -9,7 +9,6 @@ import subprocess
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
-from typing import Optional
 
 import frappe
 from frappe import _
@@ -319,38 +318,28 @@ def _extract_section(text: str, start_label: str, end_label: str | None = None) 
 
 
 def _parse_idr_amount(value: str) -> float:
-    """Parse Indonesian Rupiah amount format"""
     cleaned = (value or "").strip()
     last_dot = cleaned.rfind(".")
     last_comma = cleaned.rfind(",")
     if last_dot == -1 and last_comma == -1:
-        try:
-            return float(cleaned) if cleaned else 0.0
-        except:
-            return 0.0
+        return flt(cleaned)
 
     decimal_index = max(last_dot, last_comma)
     integer_part = re.sub(r"[.,]", "", cleaned[:decimal_index])
     decimal_part = cleaned[decimal_index + 1 :]
     normalized = f"{integer_part}.{decimal_part}"
-    try:
-        return float(normalized)
-    except:
-        return 0.0
+    return flt(normalized)
 
 
-def _sanitize_amount(value, *, max_abs: float = 9_999_999_999_999.99) -> Optional[float]:
-    """Sanitize and validate amount"""
+def _sanitize_amount(value: Any, *, max_abs: float = 9_999_999_999_999.99) -> float | None:
     try:
-        number = float(value)
+        number = flt(value)
     except Exception:
         return None
 
-    if not (number == number):  # Check for NaN
+    if not math.isfinite(number):
         return None
     if abs(number) > max_abs:
-        return None
-    if number <= 0:
         return None
     return number
 
@@ -464,11 +453,9 @@ def _extract_harga_jual_from_table(text: str) -> float | None:
     return None
 
 
-def _extract_harga_jual_from_signature_section(text: str) -> Optional[float]:
+def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     """
     Extract Harga Jual from the signature section of Faktur Pajak.
-
-    FIXED VERSION: Uses lookahead to stop at first newline after amount.
 
     In standard Faktur Pajak format, after the electronic signature section,
     there is a list of monetary values in this order:
@@ -508,7 +495,7 @@ def _extract_harga_jual_from_signature_section(text: str) -> Optional[float]:
 
     match = signature_pattern.search(text)
     if match:
-        amount_str = match.group(2).strip()
+        amount_str = match.group(2).strip()  # Strip to remove any extra whitespace
         parsed = _parse_idr_amount(amount_str)
         sanitized = _sanitize_amount(parsed)
         if sanitized:
@@ -540,7 +527,7 @@ def _extract_harga_jual_from_signature_section(text: str) -> Optional[float]:
             # Check if this is likely a signer name
             # Names are typically letters, spaces, and dots only
             if not found_name and len(line) > 3:
-                # Remove spaces and dots to check if mostly letters
+                # Remove spaces, dots, and commas to check if mostly letters
                 clean_line = line.replace(' ', '').replace('.', '').replace(',', '')
                 if clean_line.isalpha():
                     found_name = True
@@ -565,11 +552,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> Optional[float]:
     if signature_marker_idx != -1:
         after_signature = text[signature_marker_idx:]
 
-        # Match standalone amounts (on their own line) - use lookahead
+        # Match standalone amounts (on their own line) - use lookahead to stop at newline
         amount_pattern = re.compile(r'(?:^|\n)\s*(\d[\d\s\.,]+?)(?=\s*\n)')
 
         for match in amount_pattern.finditer(after_signature):
-            amount_str = match.group(1).strip()
+            amount_str = match.group(1).strip()  # Strip whitespace
             parsed = _parse_idr_amount(amount_str)
             sanitized = _sanitize_amount(parsed)
             if sanitized:
@@ -802,6 +789,20 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             if len(parsed_numbers) > 1:
                 matches["ppn"] = sorted(parsed_numbers)[-2]
             confidence += 0.2
+
+    # Smart fallback for Harga Jual: ONLY if signature extraction completely failed
+    # CRITICAL: Only run if labeled_harga_jual is None (signature extraction failed)
+    # Do NOT run if signature extraction succeeded, even if value seems wrong!
+    if labeled_harga_jual is None:
+        dpp_value = matches.get("dpp")
+        if dpp_value and amounts:
+            # Find amounts greater than DPP from the end of the list
+            # (summary values appear at the end of the document)
+            # Filter: must be > DPP and < DPP * 5 (to avoid huge outliers)
+            candidates = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 5]
+            if candidates:
+                matches["harga_jual"] = candidates[0]
+                confidence += 0.05
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
