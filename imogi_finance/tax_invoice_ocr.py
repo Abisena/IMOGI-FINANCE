@@ -368,7 +368,18 @@ def _extract_first_after_label(section_lines: list[str], label: str) -> str | No
     return None
 
 
-def _find_amount_after_label(text: str, label: str) -> float | None:
+def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5) -> float | None:
+    """
+    Find amount after a label in text.
+
+    Args:
+        text: Text to search in
+        label: Label to search for
+        max_lines_to_check: Maximum number of non-empty lines to check after label (default: 5)
+
+    Returns:
+        Float amount if found, None otherwise
+    """
     def _extract_amount(line: str) -> float | None:
         amount_match = AMOUNT_REGEX.search(line or "")
         if amount_match:
@@ -385,17 +396,25 @@ def _find_amount_after_label(text: str, label: str) -> float | None:
         if not match:
             continue
 
+        # First, check if amount is in the same line after the label
         inline_amount = _extract_amount(match.group("value") or "")
         if inline_amount is not None:
             return inline_amount
 
+        # If not found in same line, check next few non-empty lines
+        lines_checked = 0
         for next_line in lines[idx + 1 :]:
             if not next_line.strip():
-                continue
+                continue  # Skip empty lines
+
             next_amount = _extract_amount(next_line)
             if next_amount is not None:
                 return next_amount
-            break
+
+            lines_checked += 1
+            if lines_checked >= max_lines_to_check:
+                break  # Stop after checking max_lines_to_check non-empty lines
+
     return None
 
 
