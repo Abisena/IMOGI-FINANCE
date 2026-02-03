@@ -247,24 +247,24 @@ def get_period_status(period_date, today, posted_dates) -> str:
     """Determine status of a period based on date and posting status.
 
     Returns:
-        - Posted: Already posted to JE
-        - Overdue: Past due but not posted
-        - Current: Current period (this month)
-        - Upcoming: Future period
+        - Completed: Already posted to JE (Green)
+        - Overdue: Past due but not posted (Red)
+        - Progress: Current period (this month) (Blue)
+        - Future: Future period (Grey)
     """
     period_date = getdate(period_date)
 
     # Check if already posted
     if period_date in posted_dates:
-        return "✓ Posted"
+        return '<span class="indicator-pill green"><span class="indicator-dot"></span>Completed</span>'
 
     # Check if overdue (past date but not posted)
     if period_date < today:
-        return "⚠ Overdue"
+        return '<span class="indicator-pill red"><span class="indicator-dot"></span>Overdue</span>'
 
     # Check if current month
     if period_date.year == today.year and period_date.month == today.month:
-        return "→ Current"
+        return '<span class="indicator-pill blue"><span class="indicator-dot"></span>Progress</span>'
 
     # Future period
-    return "◯ Upcoming"
+    return '<span class="indicator-pill gray"><span class="indicator-dot"></span>Future</span>'
