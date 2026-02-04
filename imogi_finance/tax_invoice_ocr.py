@@ -955,16 +955,34 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
 
-    if signature_amounts and len(signature_amounts) >= 6:
+    # Try signature amounts if we have at least 4 amounts (Harga Jual x2, Potongan, DPP minimum)
+    if signature_amounts and len(signature_amounts) >= 4:
+        # We have enough amounts for basic extraction
+        matches["harga_jual"] = signature_amounts[0]  # 1st amount is Harga Jual
+        logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature_amounts[0]: {signature_amounts[0]}")
+
+        if len(signature_amounts) >= 5:
+            # Standard format: [Harga Jual, Harga Jual dup, Potongan, DPP, PPN, (PPnBM)]
+            matches["dpp"] = signature_amounts[3]  # 4th amount is DPP
+            matches["ppn"] = signature_amounts[4]  # 5th amount is PPN
+            logger.info(f"🔍 parse_faktur_pajak_text: ✓✓✓ Using signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
+            confidence += 0.3
+        elif len(signature_amounts) == 4:
+            # Only 4 amounts: [Harga Jual, Harga Jual dup, DPP, PPN] (no Potongan)
+            matches["dpp"] = signature_amounts[2]  # 3rd amount is DPP
+            matches["ppn"] = signature_amounts[3]  # 4th amount is PPN
+            logger.info(f"🔍 parse_faktur_pajak_text: ✓✓ Using 4 signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[2]}, PPN: {signature_amounts[3]}")
+            confidence += 0.25
+    else:
         # Standard format: [Harga Jual, Harga Jual dup, Potongan, DPP, PPN, PPnBM]
         matches["harga_jual"] = signature_amounts[0]  # 1st amount is Harga Jual
         matches["dpp"] = signature_amounts[3]  # 4th amount is DPP
         matches["ppn"] = signature_amounts[4]  # 5th amount is PPN
-        logger.info(f"🔍 parse_faktur_pajak_text: Using signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
+        logger.info(f"🔍 parse_faktur_pajak_text: ✓✓✓ Using signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
         confidence += 0.3
     else:
         # Fallback: Try individual extraction
-        logger.info("🔍 parse_faktur_pajak_text: Signature amounts extraction failed, trying individual methods")
+        logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts extraction failed (got {len(signature_amounts) if signature_amounts else 0} amounts), trying individual methods")
 
         # Try to extract Harga Jual using old method
         labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
@@ -973,11 +991,19 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         if labeled_harga_jual is not None:
             matches["harga_jual"] = labeled_harga_jual
             logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
+        elif len(amounts) >= 6:
+            # Use tail amounts but be careful with indexing
+            # Tail amounts format: [..., Harga Jual1, Harga Jual2, Potongan, DPP, PPN, PPnBM]
+            tail_amounts = amounts[-6:]
+            matches["harga_jual"] = tail_amounts[0]  # First of the 6 tail amounts
+            logger.info(f"🔍 parse_faktur_pajak_text: Using tail_amounts[0] for harga_jual: {tail_amounts[0]}")
 
         # Fallback for DPP and PPN
         if len(amounts) >= 6:
             tail_amounts = amounts[-6:]
             matches["dpp"] = tail_amounts[3]
+            matches["ppn"] = tail_amounts[4]
+            logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
             matches["ppn"] = tail_amounts[4]
             logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
             confidence += 0.2
