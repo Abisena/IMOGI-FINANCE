@@ -441,7 +441,7 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
 
 def _extract_amounts_after_signature(text: str) -> list[float] | None:
     logger = frappe.logger("tax_invoice_ocr")
-    logger.info("🔍 _extract_amounts_after_signature: Starting extraction V2")
+    logger.info("🔍 _extract_amounts_after_signature: Starting extraction V3 (simplified)")
 
     if not text:
         return None
@@ -458,77 +458,54 @@ def _extract_amounts_after_signature(text: str) -> list[float] | None:
     found_name = False
     amounts = []
 
-    skip_patterns = [
-        r'harga\s+jual', r'penggantian', r'uang\s+muka', r'termin',
-        r'dikurangi', r'potongan', r'dasar\s+pengenaan', r'pajak',
-        r'jumlah\s+ppn', r'ppnbm', r'barang\s+mewah',
-        r'nilai\s+pertambahan', r'\(rp\)',
-        r'referensi\s*:', r'reference\s*:', r'invoice\s*:',
-        r'\(referensi', r'nomor\s+referensi', r'no\.\s*ref',
-        r'faktur\s+\d+', r'inv[-/]', r'/mtla/', r'/gmm/',
-        r'pemberitahuan\s*:', r'peringatan\s*:',
-        r'sesuai\s+dengan', r'ketentuan',
-        r'[a-zA-Z]{3,}.*\d{4,}',
-    ]
-
-    skip_regex = re.compile('|'.join(skip_patterns), re.IGNORECASE)
+    # Pure amount pattern: only digits, spaces, dots, and commas
+    pure_amount_pattern = r'^\s*[\d\s\.,]+\s*$'
 
     for idx, line in enumerate(lines[1:], start=1):
         line_stripped = line.strip()
 
-        logger.info(f"🔍 Line {idx}: '{line_stripped[:80]}'")
-
         if not line_stripped:
-            logger.info(f"🔍 Line {idx}: Empty, skipping")
             continue
 
+        # Step 1: Find the signer's name (alphabetic line after signature marker)
         if not found_name:
             clean_line = line_stripped.replace(' ', '').replace('.', '').replace(',', '')
 
             if len(clean_line) >= 4 and clean_line.isalpha():
                 found_name = True
-                logger.info(f"🔍 Line {idx}: ✓ Found name: '{line_stripped}'")
-                continue
-            else:
-                logger.info(f"🔍 Line {idx}: Not a name (has numbers or too short)")
+                logger.info(f"🔍 Line {idx}: ✓ Found signer name: '{line_stripped}'")
                 continue
 
+        # Step 2: After finding name, extract ONLY pure amount lines
         if found_name:
-            if skip_regex.search(line_stripped):
-                logger.info(f"🔍 Line {idx}: ⚠️ SKIPPED - matches skip pattern: '{line_stripped[:50]}'")
-                continue
+            # Check if line is PURELY numbers with formatting (no letters at all)
+            if re.match(pure_amount_pattern, line_stripped):
+                logger.info(f"🔍 Line {idx}: ✓ Pure amount detected: '{line_stripped}'")
 
-            pure_amount_pattern = r'^\s*[\d\s\.,]+\s*$'
+                try:
+                    parsed = _parse_idr_amount(line_stripped)
+                    sanitized = _sanitize_amount(parsed)
 
-            if not re.match(pure_amount_pattern, line_stripped):
-                logger.info(f"🔍 Line {idx}: ⚠️ SKIPPED - not pure amount (contains text): '{line_stripped[:50]}'")
-                continue
+                    if sanitized is not None:
+                        amounts.append(sanitized)
+                        logger.info(f"🔍 Line {idx}: ✅ Amount #{len(amounts)} = {sanitized}")
 
-            logger.info(f"🔍 Line {idx}: ✓ Pure amount line detected: '{line_stripped}'")
+                        # Stop after 6 amounts (standard Faktur Pajak format)
+                        if len(amounts) >= 6:
+                            logger.info(f"🔍 Reached 6 amounts, stopping")
+                            break
+                    else:
+                        logger.info(f"🔍 Line {idx}: Amount sanitized to None, skipping")
 
-            try:
-                parsed = _parse_idr_amount(line_stripped)
-                logger.info(f"🔍 Line {idx}: Parsed value: {parsed}")
-
-                sanitized = _sanitize_amount(parsed)
-                logger.info(f"🔍 Line {idx}: Sanitized value: {sanitized}")
-
-                if sanitized is not None:
-                    amounts.append(sanitized)
-                    logger.info(f"🔍 Line {idx}: ✅ Amount #{len(amounts)} added: {sanitized}")
-
-                    if len(amounts) >= 6:
-                        logger.info(f"🔍 Line {idx}: Reached 6 amounts, stopping extraction")
-                        break
-                else:
-                    logger.info(f"🔍 Line {idx}: ⚠️ Amount sanitized to None")
-
-            except Exception as e:
-                logger.error(f"🔍 Line {idx}: ❌ Error parsing amount: {e}")
-                continue
+                except Exception as e:
+                    logger.error(f"🔍 Line {idx}: Error parsing: {e}")
+            else:
+                # Line contains text - skip silently (don't log every label line)
+                if len(amounts) == 0:
+                    logger.info(f"🔍 Line {idx}: Text line (waiting for amounts): '{line_stripped[:50]}'")
 
     logger.info(f"🔍 _extract_amounts_after_signature: ===== FINAL RESULT =====")
-    logger.info(f"🔍 _extract_amounts_after_signature: Total amounts: {len(amounts)}")
+    logger.info(f"🔍 _extract_amounts_after_signature: Extracted {len(amounts)} amounts")
     logger.info(f"🔍 _extract_amounts_after_signature: Values: {amounts}")
 
     return amounts if amounts else None
@@ -811,19 +788,31 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                         confidence += 0.15
                         break
 
-    # Fallback for DPP/PPN if signature extraction completely failed
-    if "dpp" not in matches or "ppn" not in matches:
-        logger.info("🔍 DPP/PPN still missing, using tail amounts fallback")
+    # Fallback for DPP/PPN if signature extraction completely failed or returned invalid values
+    dpp_value = matches.get("dpp")
+    ppn_value = matches.get("ppn")
+
+    # Check if DPP or PPN are missing, None, or zero (invalid)
+    if not dpp_value or not ppn_value:
+        logger.info("🔍 DPP/PPN missing or invalid, using tail amounts fallback")
+        logger.info(f"🔍   Current DPP: {dpp_value}")
+        logger.info(f"🔍   Current PPN: {ppn_value}")
 
         if len(amounts) >= 6:
             tail = amounts[-6:]
-            if "dpp" not in matches:
+            logger.info(f"🔍   Tail amounts (last 6): {tail}")
+
+            if not dpp_value:
                 matches["dpp"] = tail[3]
-                logger.info(f"🔍 Set DPP from tail[3]: {tail[3]}")
-            if "ppn" not in matches:
+                logger.info(f"🔍   ✅ Set DPP from tail[3]: {tail[3]}")
+            if not ppn_value:
                 matches["ppn"] = tail[4]
-                logger.info(f"🔍 Set PPN from tail[4]: {tail[4]}")
+                logger.info(f"🔍   ✅ Set PPN from tail[4]: {tail[4]}")
             confidence += 0.2
+        else:
+            logger.info(f"🔍   ❌ Not enough amounts for fallback (need 6, have {len(amounts)})")
+    else:
+        logger.info(f"🔍 DPP and PPN already set: DPP={dpp_value}, PPN={ppn_value}")
 
     logger.info("=" * 80)
     logger.info("🔍 FINAL VALIDATION AND CLEANUP")
