@@ -976,12 +976,8 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         elif amounts:
             matches["dpp"] = amounts[-1]
             confidence += 0.1
-        confidence += 0.2
-    elif amounts:
-        matches["dpp"] = amounts[-1]
-        confidence += 0.1
-    else:
-        numbers = [m.group("number") for m in NUMBER_REGEX.finditer(text or "")]
+        else:
+            numbers = [m.group("number") for m in NUMBER_REGEX.finditer(text or "")]
         parsed_numbers: list[float] = []
         for raw in numbers[:10]:
             digits_only = raw.replace(".", "").replace(",", "")
