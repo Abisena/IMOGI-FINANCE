@@ -401,17 +401,24 @@ def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5)
         # Do NOT use NUMBER_REGEX as fallback - it matches any number including invoice refs
         return None
 
-    pattern = re.compile(rf"{re.escape(label)}\s*[:\-]?\s*(?P<value>.*)", re.IGNORECASE)
-    lines = (text or "").splitlines()
-
     logger = frappe.logger("tax_invoice_ocr")
+
+    # Normalize label: handle multiple spaces and slash variations
+    # Example: "Harga Jual / Penggantian" -> flexible pattern
+    normalized_label = re.sub(r'\s+', r'\\s+', label.strip())  # Replace spaces with \s+
+    normalized_label = normalized_label.replace('/', r'\s*/\s*')  # Allow spaces around slashes
+
+    logger.info(f"🔍 _find_amount_after_label: Searching for label '{label}' with pattern: {normalized_label}")
+
+    pattern = re.compile(rf"{normalized_label}\s*[:\-]?\s*(?P<value>.*)", re.IGNORECASE)
+    lines = (text or "").splitlines()
 
     for idx, line in enumerate(lines):
         match = pattern.search(line)
         if not match:
             continue
 
-        logger.info(f"🔍 _find_amount_after_label: Found label '{label}' at line {idx}")
+        logger.info(f"🔍 _find_amount_after_label: Found label '{label}' at line {idx}: '{line[:100]}'")
 
         # First, check if amount is in the same line after the label
         inline_value = match.group("value") or ""
@@ -419,6 +426,21 @@ def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5)
         if inline_amount is not None:
             logger.info(f"🔍 _find_amount_after_label: Found inline amount: {inline_amount}")
             return inline_amount
+
+        # For table format: Check if there's an amount at the END of the same line
+        # (Label in left column, amount in right column)
+        # Extract all amounts from the entire line, get the last one (rightmost)
+        all_amounts_in_line = []
+        for amt_match in AMOUNT_REGEX.finditer(line):
+            amt = _sanitize_amount(_parse_idr_amount(amt_match.group("amount")))
+            if amt is not None and amt >= 10000:
+                all_amounts_in_line.append(amt)
+
+        if all_amounts_in_line:
+            # Take the last (rightmost) amount - this is typically the value in table format
+            rightmost_amount = all_amounts_in_line[-1]
+            logger.info(f"🔍 _find_amount_after_label: Found {len(all_amounts_in_line)} amounts in line, using rightmost: {rightmost_amount}")
+            return rightmost_amount
 
         # If not found in same line, check next few non-empty lines
         logger.info(f"🔍 _find_amount_after_label: No inline amount, checking next {max_lines_to_check} lines")
@@ -821,41 +843,56 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
 
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
-    # Use label-based extraction (same approach as DPP and PPN)
-    logger.info("🔍 parse_faktur_pajak_text: Extracting Harga Jual using label-based search")
-    labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin")
-    logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual / Penggantian / Uang Muka / Termin': {labeled_harga_jual}")
+    # STRATEGY: Use signature-based extraction FIRST (most reliable for summary section)
+    # Then fall back to label-based if signature extraction fails
+    logger.info("🔍 parse_faktur_pajak_text: Extracting Harga Jual using signature-based search (PRIMARY)")
+    labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
+    logger.info(f"🔍 parse_faktur_pajak_text: Signature-based Harga Jual: {labeled_harga_jual}")
+
+    # Fallback to label-based extraction with EXTENDED search range (30 lines)
+    if labeled_harga_jual is None:
+        logger.info("🔍 parse_faktur_pajak_text: Signature extraction failed, trying label-based search")
+        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin", max_lines_to_check=30)
+        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual / Penggantian / Uang Muka / Termin': {labeled_harga_jual}")
 
     # Try shorter variations if not found
     if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual")
+        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual", max_lines_to_check=30)
         logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual': {labeled_harga_jual}")
     if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian")
+        labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian", max_lines_to_check=30)
         logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Penggantian': {labeled_harga_jual}")
     if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka")
+        labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka", max_lines_to_check=30)
         logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Uang Muka': {labeled_harga_jual}")
     if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Termin")
+        labeled_harga_jual = _find_amount_after_label(text or "", "Termin", max_lines_to_check=30)
         logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Termin': {labeled_harga_jual}")
+
+    # Set harga_jual if found
+    if labeled_harga_jual is not None:
+        matches["harga_jual"] = labeled_harga_jual
+        logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
     else:
         logger.info("🔍 parse_faktur_pajak_text: labeled_harga_jual is None, NOT setting matches['harga_jual'] yet")
 
-    labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
-    labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN")
+    labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak", max_lines_to_check=30)
+    labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN", max_lines_to_check=30)
 
-    # Extract DPP and PPN first
-    if len(amounts) >= 6:
+    # Extract DPP and PPN - prioritize labeled values (most accurate)
+    if labeled_dpp is not None or labeled_ppn is not None:
+        if labeled_dpp is not None:
+            matches["dpp"] = labeled_dpp
+            logger.info(f"🔍 parse_faktur_pajak_text: Using labeled_dpp: {labeled_dpp}")
+        if labeled_ppn is not None:
+            matches["ppn"] = labeled_ppn
+            logger.info(f"🔍 parse_faktur_pajak_text: Using labeled_ppn: {labeled_ppn}")
+        confidence += 0.25
+    elif len(amounts) >= 6:
         tail_amounts = amounts[-6:]
         matches["dpp"] = tail_amounts[3]
         matches["ppn"] = tail_amounts[4]
-        confidence += 0.2
-    elif labeled_dpp is not None or labeled_ppn is not None:
-        if labeled_dpp is not None:
-            matches["dpp"] = labeled_dpp
-        if labeled_ppn is not None:
-            matches["ppn"] = labeled_ppn
+        logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
         confidence += 0.2
     elif len(amounts) >= 2:
         sorted_amounts = sorted(amounts)
@@ -887,31 +924,30 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                 matches["ppn"] = sorted(parsed_numbers)[-2]
             confidence += 0.2
 
-    # Smart fallback for Harga Jual: ONLY if signature extraction completely failed
-    # CRITICAL: Only run if labeled_harga_jual is None (signature extraction failed)
-    # Do NOT run if signature extraction succeeded, even if value seems wrong!
-    if labeled_harga_jual is None:
-        logger.info("🔍 parse_faktur_pajak_text: Smart fallback - labeled_harga_jual is None, checking DPP-based fallback")
+    # Final fallback for Harga Jual: DPP-based estimation
+    # ONLY if ALL extraction methods failed
+    if matches.get("harga_jual") is None:
+        logger.info("🔍 parse_faktur_pajak_text: DPP-based fallback - harga_jual still None, using DPP estimation")
         dpp_value = matches.get("dpp")
-        logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - DPP value: {dpp_value}")
+        logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - DPP value: {dpp_value}")
 
         if dpp_value and amounts:
             # Find amounts greater than DPP from the end of the list
             # (summary values appear at the end of the document)
             # Filter: must be > DPP and < DPP * 5 (to avoid huge outliers)
             candidates = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 5]
-            logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Found {len(candidates)} candidates > DPP: {candidates}")
+            logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - Found {len(candidates)} candidates > DPP: {candidates}")
 
             if candidates:
-                logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Setting matches['harga_jual'] = {candidates[0]}")
+                logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - Setting matches['harga_jual'] = {candidates[0]}")
                 matches["harga_jual"] = candidates[0]
                 confidence += 0.05
             else:
-                logger.info("🔍 parse_faktur_pajak_text: Smart fallback - No candidates found")
+                logger.info("🔍 parse_faktur_pajak_text: DPP-based fallback - No candidates found")
         else:
-            logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - Cannot run (dpp_value={dpp_value}, amounts count={len(amounts) if amounts else 0})")
+            logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - Cannot run (dpp_value={dpp_value}, amounts count={len(amounts) if amounts else 0})")
     else:
-        logger.info(f"🔍 parse_faktur_pajak_text: Smart fallback - SKIPPED because labeled_harga_jual = {labeled_harga_jual} (not None)")
+        logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - SKIPPED because harga_jual already set: {matches.get('harga_jual')}")
 
     logger.info(f"🔍 parse_faktur_pajak_text: FINAL matches['harga_jual'] = {matches.get('harga_jual')}")
 
