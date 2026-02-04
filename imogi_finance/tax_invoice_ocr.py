@@ -702,6 +702,83 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     return None
 
 
+def _extract_amounts_after_signature(text: str) -> list[float] | None:
+    """
+    Extract all amounts from the signature section in order.
+
+    Standard Faktur Pajak format after signature:
+    1. Harga Jual/Penggantian/Uang Muka/Termin
+    2. Harga Jual duplicate
+    3. Dikurangi Potongan Harga (usually 0)
+    4. DPP (Dasar Pengenaan Pajak)
+    5. PPN (Pajak Pertambahan Nilai)
+    6. PPnBM (usually 0)
+
+    Returns:
+        List of amounts in order, or None if signature section not found
+    """
+    logger = frappe.logger("tax_invoice_ocr")
+    logger.info("🔍 _extract_amounts_after_signature: Starting extraction")
+
+    if not text:
+        return None
+
+    # Find signature marker
+    signature_marker_idx = text.find("Ditandatangani secara elektronik")
+    if signature_marker_idx == -1:
+        signature_marker_idx = text.lower().find("ditandatangani secara elektronik")
+
+    if signature_marker_idx == -1:
+        logger.info("🔍 _extract_amounts_after_signature: Signature marker not found")
+        return None
+
+    # Get text after signature
+    after_signature = text[signature_marker_idx:]
+    logger.info(f"🔍 _extract_amounts_after_signature: Found signature at index {signature_marker_idx}")
+
+    # Find name first (skip non-amount lines)
+    lines = after_signature.split('\n')
+    found_name = False
+    amounts = []
+    skip_keywords = ["Harga", "Jual", "Penggantian", "Uang", "Muka", "Termin", "(Rp)",
+                    "Dikurangi", "Potongan", "Dasar", "Pengenaan", "Pajak", "Jumlah", "PPN", "PPnBM"]
+
+    for line in lines[1:]:  # Skip first line (Ditandatangani...)
+        line = line.strip()
+
+        if not line:
+            continue
+
+        # Find name
+        if not found_name:
+            clean_line = line.replace(' ', '').replace('.', '').replace(',', '')
+            if clean_line.isalpha() and len(line) > 3:
+                found_name = True
+                logger.info(f"🔍 _extract_amounts_after_signature: Found name: '{line}'")
+                continue
+
+        # After name, extract amounts
+        if found_name:
+            # Skip label lines
+            if any(keyword.lower() in line.lower() for keyword in skip_keywords):
+                continue
+
+            # Check if line is an amount
+            if re.match(r'^\s*\d[\d\s\.,]+\s*$', line):
+                parsed = _parse_idr_amount(line)
+                sanitized = _sanitize_amount(parsed)
+                if sanitized is not None:
+                    amounts.append(sanitized)
+                    logger.info(f"🔍 _extract_amounts_after_signature: Found amount #{len(amounts)}: {sanitized}")
+
+                    # Stop after 6 amounts (standard format)
+                    if len(amounts) >= 6:
+                        break
+
+    logger.info(f"🔍 _extract_amounts_after_signature: Extracted {len(amounts)} amounts: {amounts}")
+    return amounts if amounts else None
+
+
 def _pick_best_npwp(candidates: list[str]) -> str | None:
     valid = [normalize_npwp((val or "").strip()) for val in candidates if val]
     valid = [val for val in valid if val]
