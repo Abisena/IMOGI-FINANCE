@@ -974,13 +974,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             logger.info(f"🔍 parse_faktur_pajak_text: ✓✓ Using 4 signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[2]}, PPN: {signature_amounts[3]}")
             confidence += 0.25
     else:
-        # Standard format: [Harga Jual, Harga Jual dup, Potongan, DPP, PPN, PPnBM]
-        matches["harga_jual"] = signature_amounts[0]  # 1st amount is Harga Jual
-        matches["dpp"] = signature_amounts[3]  # 4th amount is DPP
-        matches["ppn"] = signature_amounts[4]  # 5th amount is PPN
-        logger.info(f"🔍 parse_faktur_pajak_text: ✓✓✓ Using signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
-        confidence += 0.3
-    else:
         # Fallback: Try individual extraction
         logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts extraction failed (got {len(signature_amounts) if signature_amounts else 0} amounts), trying individual methods")
 
@@ -1002,8 +995,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         if len(amounts) >= 6:
             tail_amounts = amounts[-6:]
             matches["dpp"] = tail_amounts[3]
-            matches["ppn"] = tail_amounts[4]
-            logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
             matches["ppn"] = tail_amounts[4]
             logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
             confidence += 0.2
