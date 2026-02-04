@@ -741,41 +741,54 @@ def _extract_amounts_after_signature(text: str) -> list[float] | None:
     found_name = False
     amounts = []
     skip_keywords = ["Harga", "Jual", "Penggantian", "Uang", "Muka", "Termin", "(Rp)",
-                    "Dikurangi", "Potongan", "Dasar", "Pengenaan", "Pajak", "Jumlah", "PPN", "PPnBM"]
+                    "Dikurangi", "Potongan", "Dasar", "Pengenaan", "Pajak", "Jumlah", "PPN", "PPnBM",
+                    "Barang", "Mewah", "Nilai", "Pertambahan"]
 
-    for line in lines[1:]:  # Skip first line (Ditandatangani...)
-        line = line.strip()
+    for idx, line in enumerate(lines[1:], start=1):  # Skip first line (Ditandatangani...)
+        line_stripped = line.strip()
 
-        if not line:
+        logger.info(f"🔍 _extract_amounts_after_signature: Line {idx}: '{line_stripped[:80]}'")
+
+        if not line_stripped:
+            logger.info(f"🔍 _extract_amounts_after_signature: Line {idx} is empty, skipping")
             continue
 
         # Find name
         if not found_name:
-            clean_line = line.replace(' ', '').replace('.', '').replace(',', '')
-            if clean_line.isalpha() and len(line) > 3:
+            clean_line = line_stripped.replace(' ', '').replace('.', '').replace(',', '')
+            if clean_line.isalpha() and len(line_stripped) > 3:
                 found_name = True
-                logger.info(f"🔍 _extract_amounts_after_signature: Found name: '{line}'")
+                logger.info(f"🔍 _extract_amounts_after_signature: Found name at line {idx}: '{line_stripped}'")
                 continue
 
         # After name, extract amounts
         if found_name:
-            # Skip label lines
-            if any(keyword.lower() in line.lower() for keyword in skip_keywords):
-                continue
+            # Check if line is PURELY an amount (only digits, spaces, dots, commas)
+            is_amount_line = re.match(r'^\s*\d[\d\s\.,]+\s*$', line_stripped)
 
-            # Check if line is an amount
-            if re.match(r'^\s*\d[\d\s\.,]+\s*$', line):
-                parsed = _parse_idr_amount(line)
+            if is_amount_line:
+                # This is an amount line
+                parsed = _parse_idr_amount(line_stripped)
                 sanitized = _sanitize_amount(parsed)
                 if sanitized is not None:
                     amounts.append(sanitized)
-                    logger.info(f"🔍 _extract_amounts_after_signature: Found amount #{len(amounts)}: {sanitized}")
+                    logger.info(f"🔍 _extract_amounts_after_signature: ✓ Found amount #{len(amounts)}: {sanitized}")
 
                     # Stop after 6 amounts (standard format)
                     if len(amounts) >= 6:
+                        logger.info("🔍 _extract_amounts_after_signature: Reached 6 amounts, stopping")
                         break
+                else:
+                    logger.info(f"🔍 _extract_amounts_after_signature: Line {idx} looks like amount but sanitized to None")
+            else:
+                # This line contains text (labels)
+                has_keyword = any(keyword.lower() in line_stripped.lower() for keyword in skip_keywords)
+                if has_keyword:
+                    logger.info(f"🔍 _extract_amounts_after_signature: Line {idx} contains label keyword, skipping")
+                else:
+                    logger.info(f"🔍 _extract_amounts_after_signature: Line {idx} is not amount and has no keyword")
 
-    logger.info(f"🔍 _extract_amounts_after_signature: Extracted {len(amounts)} amounts: {amounts}")
+    logger.info(f"🔍 _extract_amounts_after_signature: ✓✓✓ FINAL: Extracted {len(amounts)} amounts: {amounts}")
     return amounts if amounts else None
 
 
