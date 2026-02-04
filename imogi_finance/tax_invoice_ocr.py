@@ -857,52 +857,41 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
 
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
-    # STRATEGY: Use signature-based extraction FIRST (most reliable for summary section)
-    # Then fall back to label-based if signature extraction fails
+    # STRATEGY: Use signature-based extraction ONLY (most reliable for summary section)
+    # Summary values (Harga Jual, DPP, PPN) are ALWAYS in signature section in standard Faktur Pajak
     logger.info("🔍 parse_faktur_pajak_text: Extracting Harga Jual using signature-based search (PRIMARY)")
     labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature-based Harga Jual: {labeled_harga_jual}")
-
-    # Fallback to label-based extraction with EXTENDED search range (30 lines)
-    if labeled_harga_jual is None:
-        logger.info("🔍 parse_faktur_pajak_text: Signature extraction failed, trying label-based search")
-        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual / Penggantian / Uang Muka / Termin", max_lines_to_check=30)
-        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual / Penggantian / Uang Muka / Termin': {labeled_harga_jual}")
-
-    # Try shorter variations if not found
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Harga Jual", max_lines_to_check=30)
-        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Harga Jual': {labeled_harga_jual}")
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Penggantian", max_lines_to_check=30)
-        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Penggantian': {labeled_harga_jual}")
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Uang Muka", max_lines_to_check=30)
-        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Uang Muka': {labeled_harga_jual}")
-    if labeled_harga_jual is None:
-        labeled_harga_jual = _find_amount_after_label(text or "", "Termin", max_lines_to_check=30)
-        logger.info(f"🔍 parse_faktur_pajak_text: Label search 'Termin': {labeled_harga_jual}")
 
     # Set harga_jual if found
     if labeled_harga_jual is not None:
         matches["harga_jual"] = labeled_harga_jual
         logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
     else:
-        logger.info("🔍 parse_faktur_pajak_text: labeled_harga_jual is None, NOT setting matches['harga_jual'] yet")
+        logger.info("🔍 parse_faktur_pajak_text: Signature extraction failed for harga_jual")
 
-    labeled_dpp = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak", max_lines_to_check=30)
-    labeled_ppn = _find_amount_after_label(text or "", "Jumlah PPN", max_lines_to_check=30)
+    # Extract DPP and PPN from signature section
+    # In signature section, after Harga Jual, the order is:
+    # 1. Harga Jual (first amount)
+    # 2. Harga Jual duplicate
+    # 3. Potongan Harga (usually 0)
+    # 4. DPP (Dasar Pengenaan Pajak)
+    # 5. PPN (Pajak Pertambahan Nilai)
+    # 6. PPnBM (usually 0)
+    logger.info("🔍 parse_faktur_pajak_text: Extracting DPP and PPN from signature section")
 
-    # Extract DPP and PPN - prioritize labeled values (most accurate)
-    if labeled_dpp is not None or labeled_ppn is not None:
-        if labeled_dpp is not None:
-            matches["dpp"] = labeled_dpp
-            logger.info(f"🔍 parse_faktur_pajak_text: Using labeled_dpp: {labeled_dpp}")
-        if labeled_ppn is not None:
-            matches["ppn"] = labeled_ppn
-            logger.info(f"🔍 parse_faktur_pajak_text: Using labeled_ppn: {labeled_ppn}")
+    # Try to extract DPP and PPN from amounts after signature
+    signature_amounts = _extract_amounts_after_signature(text or "")
+    logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
+
+    if signature_amounts and len(signature_amounts) >= 6:
+        # Standard format: [Harga Jual, Harga Jual dup, Potongan, DPP, PPN, PPnBM]
+        matches["dpp"] = signature_amounts[3]  # 4th amount is DPP
+        matches["ppn"] = signature_amounts[4]  # 5th amount is PPN
+        logger.info(f"🔍 parse_faktur_pajak_text: Using signature amounts - DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
         confidence += 0.25
     elif len(amounts) >= 6:
+        # Fallback: use tail amounts from entire document
         tail_amounts = amounts[-6:]
         matches["dpp"] = tail_amounts[3]
         matches["ppn"] = tail_amounts[4]
