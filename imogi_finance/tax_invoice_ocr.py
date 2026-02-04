@@ -936,48 +936,46 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     # Extract Harga Jual / Penggantian / Uang Muka / Termin
     # STRATEGY: Use signature-based extraction ONLY (most reliable for summary section)
     # Summary values (Harga Jual, DPP, PPN) are ALWAYS in signature section in standard Faktur Pajak
-    logger.info("🔍 parse_faktur_pajak_text: Extracting Harga Jual using signature-based search (PRIMARY)")
-    labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
-    logger.info(f"🔍 parse_faktur_pajak_text: Signature-based Harga Jual: {labeled_harga_jual}")
+    logger.info("🔍 parse_faktur_pajak_text: Extracting values from signature section")
 
-    # Set harga_jual if found
-    if labeled_harga_jual is not None:
-        matches["harga_jual"] = labeled_harga_jual
-        logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
-    else:
-        logger.info("🔍 parse_faktur_pajak_text: Signature extraction failed for harga_jual")
-
-    # Extract DPP and PPN from signature section
-    # In signature section, after Harga Jual, the order is:
-    # 1. Harga Jual (first amount)
-    # 2. Harga Jual duplicate
-    # 3. Potongan Harga (usually 0)
-    # 4. DPP (Dasar Pengenaan Pajak)
-    # 5. PPN (Pajak Pertambahan Nilai)
-    # 6. PPnBM (usually 0)
-    logger.info("🔍 parse_faktur_pajak_text: Extracting DPP and PPN from signature section")
-
-    # Try to extract DPP and PPN from amounts after signature
+    # Try to extract all amounts from signature section first (most reliable)
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
 
     if signature_amounts and len(signature_amounts) >= 6:
         # Standard format: [Harga Jual, Harga Jual dup, Potongan, DPP, PPN, PPnBM]
+        matches["harga_jual"] = signature_amounts[0]  # 1st amount is Harga Jual
         matches["dpp"] = signature_amounts[3]  # 4th amount is DPP
         matches["ppn"] = signature_amounts[4]  # 5th amount is PPN
-        logger.info(f"🔍 parse_faktur_pajak_text: Using signature amounts - DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
-        confidence += 0.25
-    elif len(amounts) >= 6:
-        # Fallback: use tail amounts from entire document
-        tail_amounts = amounts[-6:]
-        matches["dpp"] = tail_amounts[3]
-        matches["ppn"] = tail_amounts[4]
-        logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
-        confidence += 0.2
-    elif len(amounts) >= 2:
-        sorted_amounts = sorted(amounts)
-        matches["dpp"] = sorted_amounts[-1]
-        matches["ppn"] = sorted_amounts[-2]
+        logger.info(f"🔍 parse_faktur_pajak_text: Using signature amounts - Harga Jual: {signature_amounts[0]}, DPP: {signature_amounts[3]}, PPN: {signature_amounts[4]}")
+        confidence += 0.3
+    else:
+        # Fallback: Try individual extraction
+        logger.info("🔍 parse_faktur_pajak_text: Signature amounts extraction failed, trying individual methods")
+
+        # Try to extract Harga Jual using old method
+        labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
+        logger.info(f"🔍 parse_faktur_pajak_text: Individual Harga Jual extraction: {labeled_harga_jual}")
+
+        if labeled_harga_jual is not None:
+            matches["harga_jual"] = labeled_harga_jual
+            logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
+
+        # Fallback for DPP and PPN
+        if len(amounts) >= 6:
+            tail_amounts = amounts[-6:]
+            matches["dpp"] = tail_amounts[3]
+            matches["ppn"] = tail_amounts[4]
+            logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
+            confidence += 0.2
+        elif len(amounts) >= 2:
+            sorted_amounts = sorted(amounts)
+            matches["dpp"] = sorted_amounts[-1]
+            matches["ppn"] = sorted_amounts[-2]
+            confidence += 0.2
+        elif amounts:
+            matches["dpp"] = amounts[-1]
+            confidence += 0.1
         confidence += 0.2
     elif amounts:
         matches["dpp"] = amounts[-1]
