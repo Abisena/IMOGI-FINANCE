@@ -571,8 +571,9 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
 
     # Strategy 1: Pattern matching with FIXED regex (uses lookahead to stop at newline)
     # This prevents the greedy match that was capturing all numbers
+    # Allow both uppercase and lowercase names
     signature_pattern = re.compile(
-        r'Ditandatangani\s+secara\s+elektronik\s*\n\s*([A-Z\s\.]+?)\s*\n\s*(\d[\d\s\.,]+?)(?=\s*\n)',
+        r'Ditandatangani\s+secara\s+elektronik\s*\n\s*([A-Za-z\s\.]+?)\s*\n\s*(\d[\d\s\.,]+?)(?=\s*\n)',
         re.IGNORECASE | re.MULTILINE
     )
 
@@ -589,11 +590,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
         sanitized = _sanitize_amount(parsed)
         logger.info(f"🔍 Strategy 1: _sanitize_amount returned: {sanitized}")
 
-        if sanitized:
+        if sanitized and sanitized >= 10000:  # Must be at least 10K IDR
             logger.info(f"🔍 Strategy 1: SUCCESS! Returning {sanitized}")
             return sanitized
         else:
-            logger.info("🔍 Strategy 1: Sanitized value is None or 0, trying next strategy")
+            logger.info(f"🔍 Strategy 1: Amount {sanitized} too small or None, trying next strategy")
     else:
         logger.info("🔍 Strategy 1: Regex did not match, trying next strategy")
 
@@ -616,6 +617,10 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
 
         # State machine: find name first, then first amount after name
         found_name = False
+        # Keywords to skip when looking for amounts (these are labels/headers)
+        skip_keywords = ["Harga", "Jual", "Penggantian", "Uang", "Muka", "Termin", "(Rp)",
+                        "Dikurangi", "Potongan", "Dasar", "Pengenaan", "Pajak", "Jumlah", "PPN", "PPnBM"]
+
         for idx, line in enumerate(lines[1:], start=1):  # Skip first line (Ditandatangani...)
             line = line.strip()
 
@@ -636,6 +641,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             # After finding the name, look for the first amount
             # Amount should be a standalone number on its own line
             if found_name and line:
+                # Skip lines containing label keywords
+                if any(keyword.lower() in line.lower() for keyword in skip_keywords):
+                    logger.info(f"🔍 Strategy 2: Skipping line with keyword at {idx}: '{line[:50]}'")
+                    continue
+
                 # Check if this line contains only a number pattern
                 if re.match(r'^\s*\d[\d\s\.,]+\s*$', line):
                     logger.info(f"🔍 Strategy 2: Found amount pattern at line {idx}: '{line}'")
@@ -645,9 +655,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
                     sanitized = _sanitize_amount(parsed)
                     logger.info(f"🔍 Strategy 2: _sanitize_amount returned: {sanitized}")
 
-                    if sanitized:
+                    if sanitized and sanitized >= 10000:  # Must be at least 10K IDR
                         logger.info(f"🔍 Strategy 2: SUCCESS! Returning {sanitized}")
                         return sanitized
+                    else:
+                        logger.info(f"🔍 Strategy 2: Amount {sanitized} too small, continuing search")
     else:
         logger.info("🔍 Strategy 2: Signature marker not found")
 
@@ -678,9 +690,11 @@ def _extract_harga_jual_from_signature_section(text: str) -> float | None:
             sanitized = _sanitize_amount(parsed)
             logger.info(f"🔍 Strategy 3: _sanitize_amount returned: {sanitized}")
 
-            if sanitized:
+            if sanitized and sanitized >= 10000:  # Must be at least 10K IDR
                 logger.info(f"🔍 Strategy 3: SUCCESS! Returning {sanitized}")
                 return sanitized
+            else:
+                logger.info(f"🔍 Strategy 3: Amount {sanitized} too small, continuing...")
     else:
         logger.info("🔍 Strategy 3: Signature marker not found")
 
