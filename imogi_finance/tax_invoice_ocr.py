@@ -977,26 +977,27 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             matches["dpp"] = amounts[-1]
             confidence += 0.1
         else:
+            # Last resort: parse numbers from text
             numbers = [m.group("number") for m in NUMBER_REGEX.finditer(text or "")]
-        parsed_numbers: list[float] = []
-        for raw in numbers[:10]:
-            digits_only = raw.replace(".", "").replace(",", "")
-            if len(digits_only) > 15:
-                continue
-            value = raw.replace(".", "").replace(",", ".")
-            try:
-                parsed = _sanitize_amount(flt(value))
-            except Exception:
-                continue
-            if parsed is None:
-                continue
-            parsed_numbers.append(parsed)
+            parsed_numbers: list[float] = []
+            for raw in numbers[:10]:
+                digits_only = raw.replace(".", "").replace(",", "")
+                if len(digits_only) > 15:
+                    continue
+                value = raw.replace(".", "").replace(",", ".")
+                try:
+                    parsed = _sanitize_amount(flt(value))
+                except Exception:
+                    continue
+                if parsed is None:
+                    continue
+                parsed_numbers.append(parsed)
 
-        if parsed_numbers:
-            matches["dpp"] = max(parsed_numbers)
-            if len(parsed_numbers) > 1:
-                matches["ppn"] = sorted(parsed_numbers)[-2]
-            confidence += 0.2
+            if parsed_numbers:
+                matches["dpp"] = max(parsed_numbers)
+                if len(parsed_numbers) > 1:
+                    matches["ppn"] = sorted(parsed_numbers)[-2]
+                confidence += 0.2
 
     # Final fallback for Harga Jual: DPP-based estimation
     # ONLY if ALL extraction methods failed
