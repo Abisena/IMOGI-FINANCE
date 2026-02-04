@@ -765,11 +765,16 @@ def _extract_amounts_after_signature(text: str) -> list[float] | None:
         if found_name:
             # Check if line is PURELY an amount (only digits, spaces, dots, commas)
             is_amount_line = re.match(r'^\s*\d[\d\s\.,]+\s*$', line_stripped)
+            logger.info(f"🔍 _extract_amounts_after_signature: Line {idx} is_amount_line={bool(is_amount_line)}")
 
             if is_amount_line:
                 # This is an amount line
+                logger.info(f"🔍 _extract_amounts_after_signature: Parsing amount from line: '{line_stripped}'")
                 parsed = _parse_idr_amount(line_stripped)
+                logger.info(f"🔍 _extract_amounts_after_signature: Parsed value: {parsed}")
                 sanitized = _sanitize_amount(parsed)
+                logger.info(f"🔍 _extract_amounts_after_signature: Sanitized value: {sanitized}")
+
                 if sanitized is not None:
                     amounts.append(sanitized)
                     logger.info(f"🔍 _extract_amounts_after_signature: ✓ Found amount #{len(amounts)}: {sanitized}")
@@ -950,14 +955,22 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     # STRATEGY: Use signature-based extraction ONLY (most reliable for summary section)
     # Summary values (Harga Jual, DPP, PPN) are ALWAYS in signature section in standard Faktur Pajak
     logger.info("🔍 parse_faktur_pajak_text: Extracting values from signature section")
+    logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - Total amounts found in text: {len(amounts)}")
+    logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - All amounts array: {amounts}")
+    if len(amounts) >= 6:
+        logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - Last 6 amounts: {amounts[-6:]}")
 
     # Try to extract all amounts from signature section first (most reliable)
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
+    logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - signature_amounts length: {len(signature_amounts) if signature_amounts else 0}")
 
     # Try signature amounts if we have at least 4 amounts (Harga Jual x2, Potongan, DPP minimum)
     if signature_amounts and len(signature_amounts) >= 4:
         # We have enough amounts for basic extraction
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ USING SIGNATURE AMOUNTS (length={len(signature_amounts)})")
+        logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - signature_amounts[0] (Harga Jual) = {signature_amounts[0]}")
+
         matches["harga_jual"] = signature_amounts[0]  # 1st amount is Harga Jual
         logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature_amounts[0]: {signature_amounts[0]}")
 
@@ -975,7 +988,9 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             confidence += 0.25
     else:
         # Fallback: Try individual extraction
-        logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts extraction failed (got {len(signature_amounts) if signature_amounts else 0} amounts), trying individual methods")
+        logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ FALLBACK MODE - Signature amounts extraction failed (got {len(signature_amounts) if signature_amounts else 0} amounts)")
+        logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - signature_amounts value: {signature_amounts}")
+        logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - Total amounts array length: {len(amounts)}")
 
         # Try to extract Harga Jual using old method
         labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
@@ -983,20 +998,24 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
         if labeled_harga_jual is not None:
             matches["harga_jual"] = labeled_harga_jual
-            logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual}")
+            logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {labeled_harga_jual} (from labeled extraction)")
         elif len(amounts) >= 6:
             # Use tail amounts but be careful with indexing
             # Tail amounts format: [..., Harga Jual1, Harga Jual2, Potongan, DPP, PPN, PPnBM]
             tail_amounts = amounts[-6:]
+            logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - tail_amounts (last 6): {tail_amounts}")
             matches["harga_jual"] = tail_amounts[0]  # First of the 6 tail amounts
-            logger.info(f"🔍 parse_faktur_pajak_text: Using tail_amounts[0] for harga_jual: {tail_amounts[0]}")
+            logger.info(f"🔍 parse_faktur_pajak_text: SET matches['harga_jual'] = {tail_amounts[0]} (from tail_amounts[0])")
+        else:
+            logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Cannot set harga_jual - not enough data")
 
         # Fallback for DPP and PPN
         if len(amounts) >= 6:
             tail_amounts = amounts[-6:]
+            logger.info(f"🔍 parse_faktur_pajak_text: DEBUG - Setting DPP/PPN from tail_amounts: {tail_amounts}")
             matches["dpp"] = tail_amounts[3]
             matches["ppn"] = tail_amounts[4]
-            logger.info(f"🔍 parse_faktur_pajak_text: Using tail amounts - DPP: {tail_amounts[3]}, PPN: {tail_amounts[4]}")
+            logger.info(f"🔍 parse_faktur_pajak_text: SET DPP={tail_amounts[3]}, PPN={tail_amounts[4]} (from tail_amounts)")
             confidence += 0.2
         elif len(amounts) >= 2:
             sorted_amounts = sorted(amounts)
@@ -1031,7 +1050,10 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     # Final fallback for Harga Jual: DPP-based estimation
     # ONLY if ALL extraction methods failed
-    if matches.get("harga_jual") is None:
+    current_harga_jual = matches.get("harga_jual")
+    logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback check - current harga_jual: {current_harga_jual}")
+
+    if current_harga_jual is None:
         logger.info("🔍 parse_faktur_pajak_text: DPP-based fallback - harga_jual still None, using DPP estimation")
         dpp_value = matches.get("dpp")
         logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - DPP value: {dpp_value}")
@@ -1052,9 +1074,11 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         else:
             logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - Cannot run (dpp_value={dpp_value}, amounts count={len(amounts) if amounts else 0})")
     else:
-        logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - SKIPPED because harga_jual already set: {matches.get('harga_jual')}")
+        logger.info(f"🔍 parse_faktur_pajak_text: DPP-based fallback - ✅ SKIPPED because harga_jual already set: {current_harga_jual}")
 
-    logger.info(f"🔍 parse_faktur_pajak_text: FINAL matches['harga_jual'] = {matches.get('harga_jual')}")
+    logger.info(f"🔍 parse_faktur_pajak_text: ✅ FINAL matches['harga_jual'] = {matches.get('harga_jual')}")
+    logger.info(f"🔍 parse_faktur_pajak_text: ✅ FINAL matches['dpp'] = {matches.get('dpp')}")
+    logger.info(f"🔍 parse_faktur_pajak_text: ✅ FINAL matches['ppn'] = {matches.get('ppn')}")
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
