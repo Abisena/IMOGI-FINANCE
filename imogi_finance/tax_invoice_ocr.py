@@ -918,56 +918,70 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
         if len(signature_amounts) >= 6:
             # Full 6-amount format
-            harga_jual = signature_amounts[0]
+            # [0] = Harga Jual, [1] = Harga Jual dup, [2] = Potongan, [3] = DPP, [4] = PPN, [5] = PPnBM
             dpp = signature_amounts[3]
             ppn = signature_amounts[4]
 
+            # ALWAYS set DPP and PPN first (these are reliable)
+            matches["dpp"] = dpp
+            matches["ppn"] = ppn
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature")
+
+            # Now determine Harga Jual with validation
+            harga_jual_0 = signature_amounts[0]
+            harga_jual_1 = signature_amounts[1]
+
             # 🔧 Validation: Harga Jual should be >= DPP
-            if harga_jual >= dpp:
-                matches["harga_jual"] = harga_jual
-                matches["dpp"] = dpp
-                matches["ppn"] = ppn
-                logger.info(f"🔍 parse_faktur_pajak_text: ✓✓✓ 6-amount format - Harga Jual: {harga_jual}, DPP: {dpp}, PPN: {ppn}")
+            if harga_jual_0 >= dpp:
+                matches["harga_jual"] = harga_jual_0
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [0]: {harga_jual_0}")
+                confidence += 0.35
+            elif harga_jual_1 >= dpp:
+                # Try index [1] as alternative
+                matches["harga_jual"] = harga_jual_1
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [1]: {harga_jual_1}")
                 confidence += 0.35
             else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Validation failed: Harga Jual {harga_jual} < DPP {dpp}")
-                # Try alternative: maybe [1] is the real Harga Jual
-                if len(signature_amounts) > 1 and signature_amounts[1] >= dpp:
-                    matches["harga_jual"] = signature_amounts[1]
-                    matches["dpp"] = dpp
-                    matches["ppn"] = ppn
-                    logger.info(f"🔍 parse_faktur_pajak_text: ✓✓ Using alternative Harga Jual: {signature_amounts[1]}")
-                    confidence += 0.3
+                # Both failed validation - will use fallback later
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Both [0]={harga_jual_0} and [1]={harga_jual_1} < DPP={dpp}")
+                logger.info(f"🔍 parse_faktur_pajak_text: Will try fallback for Harga Jual")
 
         elif len(signature_amounts) == 5:
             # 5-amount format (no duplicate or no ppnbm)
-            harga_jual = signature_amounts[0]
+            # Could be: [Harga Jual, Harga Jual dup, DPP, PPN, PPnBM] OR [Harga Jual, Potongan, DPP, PPN, PPnBM]
             dpp = signature_amounts[2]
             ppn = signature_amounts[3]
 
+            # ALWAYS set DPP and PPN
+            matches["dpp"] = dpp
+            matches["ppn"] = ppn
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature (5-amt)")
+
+            harga_jual = signature_amounts[0]
             if harga_jual >= dpp:
                 matches["harga_jual"] = harga_jual
-                matches["dpp"] = dpp
-                matches["ppn"] = ppn
-                logger.info(f"🔍 parse_faktur_pajak_text: ✓✓ 5-amount format - Harga Jual: {harga_jual}, DPP: {dpp}, PPN: {ppn}")
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
                 confidence += 0.3
             else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Validation failed: Harga Jual {harga_jual} < DPP {dpp}")
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {dpp}, will try fallback")
 
         elif len(signature_amounts) == 4:
-            # Minimal 4-amount format
-            harga_jual = signature_amounts[0]
+            # Minimal 4-amount format: [Harga Jual, Harga Jual dup, DPP, PPN]
             dpp = signature_amounts[2]
             ppn = signature_amounts[3]
 
+            # ALWAYS set DPP and PPN
+            matches["dpp"] = dpp
+            matches["ppn"] = ppn
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature (4-amt)")
+
+            harga_jual = signature_amounts[0]
             if harga_jual >= dpp:
                 matches["harga_jual"] = harga_jual
-                matches["dpp"] = dpp
-                matches["ppn"] = ppn
-                logger.info(f"🔍 parse_faktur_pajak_text: ✓ 4-amount format - Harga Jual: {harga_jual}, DPP: {dpp}, PPN: {ppn}")
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
                 confidence += 0.25
             else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Validation failed: Harga Jual {harga_jual} < DPP {dpp}")
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {dpp}, will try fallback")
 
     else:
         logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ FALLBACK MODE - Signature extraction insufficient (got {len(signature_amounts) if signature_amounts else 0} amounts)")
@@ -1009,21 +1023,56 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                 matches["ppn"] = sorted_amounts[-2]
             confidence += 0.15
 
-    # 🔧 FIX 6: Final validation - Harga Jual must be >= DPP
-    if "harga_jual" in matches and "dpp" in matches:
-        if matches["harga_jual"] < matches["dpp"]:
-            logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ VALIDATION ERROR: Harga Jual {matches['harga_jual']} < DPP {matches['dpp']}")
+    # 🔧 CRITICAL FIX: Final validation and correction for Harga Jual
+    logger.info("=" * 80)
+    logger.info("🔍 parse_faktur_pajak_text: FINAL VALIDATION")
+    logger.info("=" * 80)
 
-            # Try to find a better Harga Jual from amounts > DPP
-            dpp_value = matches["dpp"]
-            candidates = [amt for amt in amounts if amt > dpp_value and amt < dpp_value * 2]
+    dpp_value = matches.get("dpp")
+    ppn_value = matches.get("ppn")
+    harga_jual_value = matches.get("harga_jual")
 
-            if candidates:
-                # Use the smallest value > DPP (most likely to be correct Harga Jual)
-                matches["harga_jual"] = min(candidates)
-                logger.info(f"🔍 parse_faktur_pajak_text: ✓ Corrected Harga Jual to: {matches['harga_jual']}")
+    logger.info(f"🔍 Current values: Harga Jual={harga_jual_value}, DPP={dpp_value}, PPN={ppn_value}")
+
+    if harga_jual_value and dpp_value and harga_jual_value < dpp_value:
+        logger.info(f"🔍 ⚠️ VALIDATION ERROR: Harga Jual ({harga_jual_value}) < DPP ({dpp_value})")
+        logger.info(f"🔍 Searching for correct Harga Jual from all extracted amounts...")
+
+        # Strategy 1: Find amounts > DPP in the tail section (most recent amounts in document)
+        # These are likely from signature section
+        if len(amounts) >= 6:
+            tail_amounts = amounts[-6:]
+            logger.info(f"🔍 Checking tail amounts: {tail_amounts}")
+
+            # Find amounts > DPP within reasonable range (< DPP * 1.5)
+            candidates_tail = [amt for amt in tail_amounts if amt > dpp_value and amt < dpp_value * 1.5]
+
+            if candidates_tail:
+                # Use the first one found (likely Harga Jual position)
+                matches["harga_jual"] = candidates_tail[0]
+                logger.info(f"🔍 ✅ Corrected Harga Jual from tail: {matches['harga_jual']}")
             else:
-                logger.info("🔍 parse_faktur_pajak_text: ⚠️ Could not find valid Harga Jual > DPP")
+                logger.info(f"🔍 No valid candidates in tail amounts")
+
+                # Strategy 2: Search all amounts
+                candidates_all = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 1.5]
+
+                if candidates_all:
+                    matches["harga_jual"] = candidates_all[0]
+                    logger.info(f"🔍 ✅ Corrected Harga Jual from all amounts: {matches['harga_jual']}")
+                else:
+                    logger.info(f"🔍 ❌ Could not find valid Harga Jual > DPP")
+        else:
+            # Search all amounts if not enough for tail
+            candidates_all = [amt for amt in reversed(amounts) if amt > dpp_value and amt < dpp_value * 1.5]
+
+            if candidates_all:
+                matches["harga_jual"] = candidates_all[0]
+                logger.info(f"🔍 ✅ Corrected Harga Jual: {matches['harga_jual']}")
+    elif harga_jual_value and dpp_value:
+        logger.info(f"🔍 ✅ Validation passed: Harga Jual ({harga_jual_value}) >= DPP ({dpp_value})")
+    else:
+        logger.info(f"🔍 ⚠️ Missing values - Harga Jual: {harga_jual_value}, DPP: {dpp_value}")
 
     logger.info(f"🔍 parse_faktur_pajak_text: ===== FINAL RESULTS =====")
     logger.info(f"🔍 parse_faktur_pajak_text: Harga Jual: {matches.get('harga_jual')}")
