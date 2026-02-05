@@ -464,23 +464,38 @@ def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5)
 
 def _extract_harga_jual_from_signature_section(text: str) -> float | None:
     """
-    🔧 FIXED VERSION: Extract Harga Jual from the signature section of Faktur Pajak.
+    🔧 FIXED VERSION V3: Extract Harga Jual with robust multi-strategy approach.
 
     Improvements:
-    1. Better regex pattern that handles reference lines
-    2. Enhanced skip keywords for reference/invoice numbers
-    3. Multi-strategy approach with proper fallback
-    4. Minimum amount validation (must be >= 10,000 IDR)
+    1. Try label-based extraction FIRST (most reliable)
+    2. Improved signature regex with better amount capture
+    3. Line-by-line parsing with enhanced filtering
+    4. Aggressive fallback for edge cases
     """
     logger = frappe.logger("tax_invoice_ocr")
-    logger.info("🔍 _extract_harga_jual_from_signature_section: Starting extraction")
+    logger.info("🔍 _extract_harga_jual_from_signature_section: Starting V3 extraction")
 
     if not text:
         logger.info("🔍 _extract_harga_jual_from_signature_section: No text provided, returning None")
         return None
 
-    # 🔧 FIX 2: Improved regex pattern that allows for reference lines
-    # Pattern now uses non-greedy matching and allows multiple lines between name and amount
+    # 🔧 STRATEGY 0: Try label-based extraction FIRST (most reliable)
+    logger.info("🔍 Strategy 0: Trying label-based extraction")
+    label_patterns = [
+        "Harga Jual/Penggantian/Uang Muka/Termin",
+        "Harga Jual / Penggantian / Uang Muka / Termin",
+        "Harga Jual",
+    ]
+
+    for pattern in label_patterns:
+        labeled_value = _find_amount_after_label(text, pattern, max_lines_to_check=3)
+        if labeled_value and labeled_value >= 10000:
+            logger.info(f"🔍 Strategy 0: SUCCESS with pattern '{pattern}': {labeled_value}")
+            return labeled_value
+
+    logger.info("🔍 Strategy 0: Label-based extraction failed, trying signature patterns")
+
+    # 🔧 STRATEGY 1: Improved regex pattern
     signature_pattern = re.compile(
         r'Ditandatangani\s+secara\s+elektronik\s*\n'  # Marker
         r'\s*([A-Z][A-Za-z\s\.]+?)\s*\n'              # Nama (must start with uppercase)
@@ -1016,22 +1031,39 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if "harga_jual" not in matches:
         logger.info("🔍 parse_faktur_pajak_text: ===== FALLBACK: Trying individual Harga Jual extraction =====")
 
-        # Strategy 1: Try focused extraction from signature section
+        # Strategy 1: Try focused extraction from signature section (now includes label-based)
         labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
-        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 1 (signature): {labeled_harga_jual}")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 1 (signature with labels): {labeled_harga_jual}")
 
         if labeled_harga_jual is not None and labeled_harga_jual >= 10000:
             matches["harga_jual"] = labeled_harga_jual
             logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature: {labeled_harga_jual}")
-            confidence += 0.2
+            confidence += 0.25
         else:
-            # Strategy 2: Try label-based extraction "Harga Jual / Penggantian"
-            logger.info("🔍 parse_faktur_pajak_text: Strategy 2: Trying label-based extraction")
-            harga_from_label = _find_amount_after_label(text or "", "Harga Jual")
-            if harga_from_label is None:
-                harga_from_label = _find_amount_after_label(text or "", "Harga Jual/Penggantian")
-            if harga_from_label is None:
-                harga_from_label = _find_amount_after_label(text or "", "Penggantian")
+            # Strategy 2: Find amount > DPP from all amounts
+            logger.info("🔍 parse_faktur_pajak_text: Strategy 2: Searching for amount > DPP")
+            dpp_value = matches.get("dpp")
+
+            if dpp_value and amounts:
+                # Find amounts >= DPP and <= DPP * 2 (reasonable range)
+                candidates = [amt for amt in amounts if amt >= dpp_value and amt <= dpp_value * 2]
+
+                if candidates:
+                    # Use the largest one (most likely to be Harga Jual)
+                    best_candidate = max(candidates)
+                    matches["harga_jual"] = best_candidate
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from candidates: {best_candidate}")
+                    confidence += 0.15
+                else:
+                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ No valid candidates found (DPP={dpp_value})")
+            else:
+                # Strategy 3: Last resort - try label-based without DPP context
+                logger.info("🔍 parse_faktur_pajak_text: Strategy 3: Direct label extraction")
+                harga_from_label = _find_amount_after_label(text or "", "Harga Jual")
+                if harga_from_label is None:
+                    harga_from_label = _find_amount_after_label(text or "", "Harga Jual/Penggantian")
+                if harga_from_label is None:
+                    harga_from_label = _find_amount_after_label(text or "", "Penggantian")
 
             logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 (label): {harga_from_label}")
 
@@ -1157,6 +1189,16 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         ppn_type = "Standard" if ppn_rate > 0 else "Zero Rated"
 
     matches["ppn_type"] = ppn_type
+
+    # 🔧 VALIDATION: Check for suspicious Harga Jual = DPP (possible bug)
+    harga_jual_final = matches.get("harga_jual")
+    dpp_final = matches.get("dpp")
+
+    if harga_jual_final and dpp_final and abs(harga_jual_final - dpp_final) < 1:
+        logger.warning(f"⚠️ SUSPICIOUS: Harga Jual ({harga_jual_final}) equals DPP ({dpp_final})")
+        logger.warning(f"⚠️ This may indicate extraction error. Please verify manually.")
+        # Set confidence lower to flag for manual review
+        confidence = min(confidence, 0.70)
 
     summary = {
         "faktur_pajak": {
