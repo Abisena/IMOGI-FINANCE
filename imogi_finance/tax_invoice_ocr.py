@@ -955,13 +955,22 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     # Extract Harga Jual from label - try multiple variants including long format
     harga_jual_labeled = None
-    for hj_label in ["Harga Jual", "Harga Jual/Penggantian/Uang Muka/Termin", "Harga Jual / Penggantian"]:
+    for hj_label in ["Harga Jual/Penggantian/Uang Muka/Termin",
+                     "Harga Jual / Penggantian / Uang Muka / Termin",
+                     "Harga Jual",
+                     "Harga Jual/Penggantian",
+                     "Harga Jual / Penggantian"]:
         harga_jual_labeled = _find_amount_after_label(text or "", hj_label, max_lines_to_check=3)
         if harga_jual_labeled:
-            matches["harga_jual"] = harga_jual_labeled
-            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label '{hj_label}': {harga_jual_labeled}")
-            confidence += 0.3
-            break
+            # Validate: Harga Jual must be >= DPP (if DPP already extracted)
+            dpp_check = matches.get("dpp")
+            if not dpp_check or harga_jual_labeled >= dpp_check:
+                matches["harga_jual"] = harga_jual_labeled
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label '{hj_label}': {harga_jual_labeled}")
+                confidence += 0.3
+                break
+            else:
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Rejected Harga Jual {harga_jual_labeled} < DPP {dpp_check} from label '{hj_label}'")
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
 
@@ -1097,48 +1106,57 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if "harga_jual" not in matches:
         logger.info("🔍 parse_faktur_pajak_text: ===== FALLBACK: Trying individual Harga Jual extraction =====")
 
+        # Strategy 0: Look for pattern "Nilai Harga Jual dari Faktur Pajak" (from UI field description)
+        logger.info("🔍 parse_faktur_pajak_text: Strategy 0: Looking for 'Nilai Harga Jual dari Faktur Pajak'")
+        nilai_hj_from_desc = _find_amount_after_label(text or "", "Nilai Harga Jual dari Faktur Pajak", max_lines_to_check=2)
+        if nilai_hj_from_desc and nilai_hj_from_desc >= 10000:
+            dpp_check = matches.get("dpp")
+            if not dpp_check or nilai_hj_from_desc >= dpp_check:
+                matches["harga_jual"] = nilai_hj_from_desc
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 0: Harga Jual from description: {nilai_hj_from_desc}")
+                confidence += 0.3
+            else:
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Strategy 0: Rejected {nilai_hj_from_desc} < DPP {dpp_check}")
+
         # Strategy 1: Calculate from DPP + PPN (most reliable if both are correct)
-        dpp_value = matches.get("dpp")
-        ppn_value = matches.get("ppn")
+        if "harga_jual" not in matches:
+            dpp_value = matches.get("dpp")
+            ppn_value = matches.get("ppn")
 
-        if dpp_value and ppn_value:
-            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 1: Looking for Harga Jual > DPP ({dpp_value})")
-            logger.info(f"🔍 parse_faktur_pajak_text: Available amounts to check: {amounts if len(amounts) <= 20 else f'{len(amounts)} amounts'}")
+            if dpp_value and ppn_value:
+                logger.info(f"🔍 parse_faktur_pajak_text: Strategy 1: Looking for Harga Jual > DPP ({dpp_value})")
 
-            # Look for amount that matches DPP + something (likely original Harga Jual)
-            found = False
-            for amt in amounts:
-                logger.info(f"🔍 parse_faktur_pajak_text: Checking amount {amt}: > {dpp_value} ? {amt > dpp_value}, <= {dpp_value * 1.5} ? {amt <= dpp_value * 1.5}")
-                if amt > dpp_value and amt <= dpp_value * 1.5:
-                    # Found candidate Harga Jual
-                    matches["harga_jual"] = amt
-                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 1: Harga Jual from amount > DPP: {amt}")
+                # Show diagnostic info
+                amounts_gt_dpp = [amt for amt in amounts if amt > dpp_value]
+                amounts_eq_dpp = [amt for amt in amounts if amt == dpp_value]
+
+                logger.info(f"🔍 parse_faktur_pajak_text: Total amounts in text: {len(amounts)}")
+                logger.info(f"🔍 parse_faktur_pajak_text: Amounts > DPP ({dpp_value}): {amounts_gt_dpp}")
+                logger.info(f"🔍 parse_faktur_pajak_text: Amounts = DPP: {len(amounts_eq_dpp)} occurrences")
+
+                # Look for amount that matches DPP + something (likely original Harga Jual)
+                found = False
+
+                if amounts_gt_dpp:
+                    # Use the largest one (most likely to be Harga Jual)
+                    best_candidate = max(amounts_gt_dpp)
+                    matches["harga_jual"] = best_candidate
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 1: Harga Jual (largest > DPP): {best_candidate}")
                     confidence += 0.25
                     found = True
-                    break
-
-            if not found:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Strategy 1 failed - no amount > DPP found in range")
-                # Try without upper limit
-                for amt in amounts:
-                    if amt > dpp_value:
-                        matches["harga_jual"] = amt
-                        logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 1B: Harga Jual (any amount > DPP): {amt}")
-                        confidence += 0.20
-                        found = True
-                        break
 
                 if not found:
+                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Strategy 1 failed - no amount > DPP found")
                     logger.warning(f"🔍 parse_faktur_pajak_text: ❌ Strategy 1 completely failed - NO amount > DPP!")
 
-            if labeled_harga_jual is not None and labeled_harga_jual >= 10000:
-                dpp_check = matches.get("dpp")
-                if not dpp_check or labeled_harga_jual >= dpp_check:
-                    matches["harga_jual"] = labeled_harga_jual
-                    logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature: {labeled_harga_jual}")
-                    confidence += 0.2
-                else:
-                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Rejected: {labeled_harga_jual} < DPP {dpp_check}")
+        # Strategy 2: Try focused extraction from signature section
+        if "harga_jual" not in matches:
+            labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
+            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 (signature with labels): {labeled_harga_jual}")
+            logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature: {labeled_harga_jual}")
+            confidence += 0.2
+        else:
+                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Rejected: {labeled_harga_jual} < DPP {dpp_check}")
 
         # Strategy 3: Direct label extraction with multiple variants
         if "harga_jual" not in matches:
