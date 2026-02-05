@@ -646,17 +646,20 @@ def _extract_amounts_after_signature(text: str) -> list[float] | None:
         r'jumlah\s+ppn', r'ppnbm', r'barang\s+mewah',
         r'nilai\s+pertambahan', r'\(rp\)',
 
-        # Reference patterns - THIS IS THE KEY FIX
+        # Reference patterns - CRITICAL FIX for reference lines
         r'referensi\s*:', r'reference\s*:', r'invoice\s*:',
-        r'\(referensi', r'nomor\s+referensi', r'no\.\s*ref',
-        r'faktur\s+\d+', r'inv[-/]', r'/mtla/', r'/gmm/',
+        r'\(referensi', r'nomor\s+referensi', r'no\.?\s*ref',
+        r'faktur\s+\d+', r'inv[-/]\d', r'/mtla/', r'/gmm/',
+        r'no\.?\s*inv', r'\binv-', r'\binv/',
 
         # Warnings/notices
         r'pemberitahuan\s*:', r'peringatan\s*:',
         r'sesuai\s+dengan', r'ketentuan',
 
-        # Mixed content lines (text + numbers like "Invoice: 12345")
-        r'[a-zA-Z]{3,}.*\d{4,}',  # At least 3 letters followed by 4+ digits
+        # 🔧 CRITICAL: Lines containing BOTH text and numbers (like "Referensi: INV/2024/001")
+        # This catches mixed content that should not be treated as pure amounts
+        r'[a-zA-Z]{2,}.*[:/].*\d',  # Text with : or / and digits
+        r'\d.*[a-zA-Z]{2,}',          # Digits followed by text
     ]
 
     # Compile all patterns into one regex
@@ -697,11 +700,17 @@ def _extract_amounts_after_signature(text: str) -> list[float] | None:
 
             # 🔧 CRITICAL FIX: Only accept lines that are PURELY amounts
             # Pattern: optional whitespace + digits/commas/dots/spaces + optional whitespace
-            # NO letters allowed (this filters out "Referensi: 12345")
+            # NO letters, colons, slashes, or special chars allowed
             pure_amount_pattern = r'^\s*[\d\s\.,]+\s*$'
 
             if not re.match(pure_amount_pattern, line_stripped):
                 logger.info(f"🔍 Line {idx}: ⚠️ SKIPPED - not pure amount (contains text): '{line_stripped[:50]}'")
+                continue
+
+            # 🔧 ADDITIONAL CHECK: Ensure it's not a date-like pattern (DD-MM-YYYY or similar)
+            # Dates like "30-01-2024" could pass as amounts
+            if re.match(r'^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$', line_stripped.replace(' ', '')):
+                logger.info(f"🔍 Line {idx}: ⚠️ SKIPPED - looks like a date: '{line_stripped}'")
                 continue
 
             # If we reach here, line is purely numeric
@@ -986,18 +995,60 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     else:
         logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ FALLBACK MODE - Signature extraction insufficient (got {len(signature_amounts) if signature_amounts else 0} amounts)")
 
+        # 🔧 NEW: Try to get DPP and PPN from labels if signature failed completely
+        if "dpp" not in matches:
+            dpp_from_label = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak")
+            if dpp_from_label is None:
+                dpp_from_label = _find_amount_after_label(text or "", "DPP")
+            if dpp_from_label:
+                matches["dpp"] = dpp_from_label
+                logger.info(f"🔍 parse_faktur_pajak_text: ✓ Found DPP from label: {dpp_from_label}")
+
+        if "ppn" not in matches:
+            ppn_from_label = _find_amount_after_label(text or "", "Jumlah PPN")
+            if ppn_from_label is None:
+                ppn_from_label = _find_amount_after_label(text or "", "PPN")
+            if ppn_from_label:
+                matches["ppn"] = ppn_from_label
+                logger.info(f"🔍 parse_faktur_pajak_text: ✓ Found PPN from label: {ppn_from_label}")
+
     # 🔧 FIX 5: Enhanced fallback with better Harga Jual detection
     if "harga_jual" not in matches:
         logger.info("🔍 parse_faktur_pajak_text: ===== FALLBACK: Trying individual Harga Jual extraction =====")
 
-        # Try focused extraction from signature section
+        # Strategy 1: Try focused extraction from signature section
         labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
-        logger.info(f"🔍 parse_faktur_pajak_text: Labeled extraction result: {labeled_harga_jual}")
+        logger.info(f"🔍 parse_faktur_pajak_text: Strategy 1 (signature): {labeled_harga_jual}")
 
         if labeled_harga_jual is not None and labeled_harga_jual >= 10000:
             matches["harga_jual"] = labeled_harga_jual
-            logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from labeled extraction: {labeled_harga_jual}")
+            logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from signature: {labeled_harga_jual}")
             confidence += 0.2
+        else:
+            # Strategy 2: Try label-based extraction "Harga Jual / Penggantian"
+            logger.info("🔍 parse_faktur_pajak_text: Strategy 2: Trying label-based extraction")
+            harga_from_label = _find_amount_after_label(text or "", "Harga Jual")
+            if harga_from_label is None:
+                harga_from_label = _find_amount_after_label(text or "", "Harga Jual/Penggantian")
+            if harga_from_label is None:
+                harga_from_label = _find_amount_after_label(text or "", "Penggantian")
+
+            logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 (label): {harga_from_label}")
+
+            if harga_from_label is not None and harga_from_label >= 10000:
+                # 🔧 CRITICAL: Validate against DPP if available
+                dpp_value = matches.get("dpp")
+                if dpp_value and harga_from_label >= dpp_value:
+                    matches["harga_jual"] = harga_from_label
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from label: {harga_from_label}")
+                    confidence += 0.15
+                elif not dpp_value:
+                    # No DPP to validate against, accept it anyway
+                    matches["harga_jual"] = harga_from_label
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✓ Set Harga Jual from label (no DPP check): {harga_from_label}")
+                    confidence += 0.1
+                else:
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✗ Harga Jual {harga_from_label} < DPP {dpp_value}, rejected")
 
     # Extract DPP and PPN if not already set
     if "dpp" not in matches or "ppn" not in matches:
@@ -1079,6 +1130,17 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     logger.info(f"🔍 parse_faktur_pajak_text: DPP: {matches.get('dpp')}")
     logger.info(f"🔍 parse_faktur_pajak_text: PPN: {matches.get('ppn')}")
     logger.info(f"🔍 parse_faktur_pajak_text: Confidence: {confidence}")
+
+    # 🔧 NEW: Validation warning for suspicious values
+    harga_jual_final = matches.get("harga_jual")
+    dpp_final = matches.get("dpp")
+    if harga_jual_final and dpp_final:
+        if harga_jual_final == dpp_final:
+            logger.warning(f"⚠️ WARNING: Harga Jual ({harga_jual_final}) sama dengan DPP ({dpp_final}) - kemungkinan tidak ada potongan atau ada bug extraction")
+        elif harga_jual_final < dpp_final:
+            logger.error(f"❌ ERROR: Harga Jual ({harga_jual_final}) LEBIH KECIL dari DPP ({dpp_final}) - INI TIDAK VALID!")
+            # Mark confidence as low
+            confidence = min(confidence, 0.5)
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
