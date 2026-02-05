@@ -924,8 +924,32 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if amounts:
         logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
 
-    # 🔧 FIX 4: Improved signature-based extraction with validation
-    logger.info("🔍 parse_faktur_pajak_text: ===== STARTING SIGNATURE EXTRACTION =====")
+    # 🔧 FIX PRIORITY 1: Try label-based extraction FIRST (most reliable)
+    logger.info("🔍 parse_faktur_pajak_text: ===== PRIORITY 1: LABEL-BASED EXTRACTION =====")
+
+    # Extract DPP (Dasar Pengenaan Pajak) from label
+    dpp_labeled = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak", max_lines_to_check=3)
+    if dpp_labeled:
+        matches["dpp"] = dpp_labeled
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ DPP from label: {dpp_labeled}")
+        confidence += 0.3
+
+    # Extract PPN (Pajak Pertambahan Nilai) from label
+    ppn_labeled = _find_amount_after_label(text or "", "PPN", max_lines_to_check=3)
+    if ppn_labeled:
+        matches["ppn"] = ppn_labeled
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ PPN from label: {ppn_labeled}")
+        confidence += 0.3
+
+    # Extract Harga Jual from label
+    harga_jual_labeled = _find_amount_after_label(text or "", "Harga Jual", max_lines_to_check=3)
+    if harga_jual_labeled:
+        matches["harga_jual"] = harga_jual_labeled
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label: {harga_jual_labeled}")
+        confidence += 0.3
+
+    # 🔧 FIX PRIORITY 2: Signature-based extraction (as fallback)
+    logger.info("🔍 parse_faktur_pajak_text: ===== PRIORITY 2: SIGNATURE EXTRACTION =====")
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
 
