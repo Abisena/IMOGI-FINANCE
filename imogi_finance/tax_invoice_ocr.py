@@ -927,29 +927,35 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     # 🔧 FIX PRIORITY 1: Try label-based extraction FIRST (most reliable)
     logger.info("🔍 parse_faktur_pajak_text: ===== PRIORITY 1: LABEL-BASED EXTRACTION =====")
 
-    # Extract DPP (Dasar Pengenaan Pajak) from label
-    dpp_labeled = _find_amount_after_label(text or "", "Dasar Pengenaan Pajak", max_lines_to_check=3)
-    if dpp_labeled:
-        matches["dpp"] = dpp_labeled
-        logger.info(f"🔍 parse_faktur_pajak_text: ✅ DPP from label: {dpp_labeled}")
-        confidence += 0.3
+    # Extract DPP (Dasar Pengenaan Pajak) from label - try multiple variants
+    dpp_labeled = None
+    for dpp_label in ["Dasar Pengenaan Pajak", "DPP"]:
+        dpp_labeled = _find_amount_after_label(text or "", dpp_label, max_lines_to_check=3)
+        if dpp_labeled:
+            matches["dpp"] = dpp_labeled
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ DPP from label '{dpp_label}': {dpp_labeled}")
+            confidence += 0.3
+            break
 
-    # Extract PPN (Pajak Pertambahan Nilai) from label
-    ppn_labeled = _find_amount_after_label(text or "", "PPN", max_lines_to_check=3)
-    if ppn_labeled:
-        matches["ppn"] = ppn_labeled
-        logger.info(f"🔍 parse_faktur_pajak_text: ✅ PPN from label: {ppn_labeled}")
-        confidence += 0.3
+    # Extract PPN (Pajak Pertambahan Nilai) from label - try multiple variants
+    ppn_labeled = None
+    for ppn_label in ["Jumlah PPN", "PPN", "Pajak Pertambahan Nilai"]:
+        ppn_labeled = _find_amount_after_label(text or "", ppn_label, max_lines_to_check=3)
+        if ppn_labeled:
+            matches["ppn"] = ppn_labeled
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ PPN from label '{ppn_label}': {ppn_labeled}")
+            confidence += 0.3
+            break
 
-    # Extract Harga Jual from label
-    harga_jual_labeled = _find_amount_after_label(text or "", "Harga Jual", max_lines_to_check=3)
-    if harga_jual_labeled:
-        matches["harga_jual"] = harga_jual_labeled
-        logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label: {harga_jual_labeled}")
-        confidence += 0.3
-
-    # 🔧 FIX PRIORITY 2: Signature-based extraction (as fallback)
-    logger.info("🔍 parse_faktur_pajak_text: ===== PRIORITY 2: SIGNATURE EXTRACTION =====")
+    # Extract Harga Jual from label - try multiple variants including long format
+    harga_jual_labeled = None
+    for hj_label in ["Harga Jual", "Harga Jual/Penggantian/Uang Muka/Termin", "Harga Jual / Penggantian"]:
+        harga_jual_labeled = _find_amount_after_label(text or "", hj_label, max_lines_to_check=3)
+        if harga_jual_labeled:
+            matches["harga_jual"] = harga_jual_labeled
+            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label '{hj_label}': {harga_jual_labeled}")
+            confidence += 0.3
+            break
     signature_amounts = _extract_amounts_after_signature(text or "")
     logger.info(f"🔍 parse_faktur_pajak_text: Signature amounts: {signature_amounts}")
 
@@ -970,29 +976,43 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             dpp = signature_amounts[3]
             ppn = signature_amounts[4]
 
-            # ALWAYS set DPP and PPN first (these are reliable)
-            matches["dpp"] = dpp
-            matches["ppn"] = ppn
-            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature")
-
-            # Now determine Harga Jual with validation
-            harga_jual_0 = signature_amounts[0]
-            harga_jual_1 = signature_amounts[1]
-
-            # 🔧 Validation: Harga Jual should be >= DPP
-            if harga_jual_0 >= dpp:
-                matches["harga_jual"] = harga_jual_0
-                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [0]: {harga_jual_0}")
-                confidence += 0.35
-            elif harga_jual_1 >= dpp:
-                # Try index [1] as alternative
-                matches["harga_jual"] = harga_jual_1
-                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [1]: {harga_jual_1}")
-                confidence += 0.35
+            # Only set DPP and PPN if not already set by label extraction
+            if "dpp" not in matches:
+                matches["dpp"] = dpp
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp} from signature")
+                confidence += 0.25
             else:
-                # Both failed validation - will use fallback later
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Both [0]={harga_jual_0} and [1]={harga_jual_1} < DPP={dpp}")
-                logger.info(f"🔍 parse_faktur_pajak_text: Will try fallback for Harga Jual")
+                logger.info(f"🔍 parse_faktur_pajak_text: ℹ️ DPP already set by label, skipping signature value")
+
+            if "ppn" not in matches:
+                matches["ppn"] = ppn
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set PPN={ppn} from signature")
+                confidence += 0.25
+            else:
+                logger.info(f"🔍 parse_faktur_pajak_text: ℹ️ PPN already set by label, skipping signature value")
+
+            # Now determine Harga Jual with validation (only if not already set by label)
+            if "harga_jual" not in matches:
+                harga_jual_0 = signature_amounts[0]
+                harga_jual_1 = signature_amounts[1]
+                current_dpp = matches.get("dpp", dpp)
+
+                # 🔧 Validation: Harga Jual should be >= DPP
+                if harga_jual_0 >= current_dpp:
+                    matches["harga_jual"] = harga_jual_0
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [0]: {harga_jual_0}")
+                    confidence += 0.35
+                elif harga_jual_1 >= current_dpp:
+                    # Try index [1] as alternative
+                    matches["harga_jual"] = harga_jual_1
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from [1]: {harga_jual_1}")
+                    confidence += 0.35
+                else:
+                    # Both failed validation - will use fallback later
+                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Both [0]={harga_jual_0} and [1]={harga_jual_1} < DPP={current_dpp}")
+                    logger.info(f"🔍 parse_faktur_pajak_text: Will try fallback for Harga Jual")
+            else:
+                logger.info(f"🔍 parse_faktur_pajak_text: ℹ️ Harga Jual already set by label, skipping signature value")
 
         elif len(signature_amounts) == 5:
             # 5-amount format (no duplicate or no ppnbm)
@@ -1000,39 +1020,55 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             dpp = signature_amounts[2]
             ppn = signature_amounts[3]
 
-            # ALWAYS set DPP and PPN
-            matches["dpp"] = dpp
-            matches["ppn"] = ppn
-            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature (5-amt)")
+            # Only set if not already set by label extraction
+            if "dpp" not in matches:
+                matches["dpp"] = dpp
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp} from signature (5-amt)")
+                confidence += 0.2
 
-            harga_jual = signature_amounts[0]
-            if harga_jual >= dpp:
-                matches["harga_jual"] = harga_jual
-                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
-                confidence += 0.3
-            else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {dpp}, will try fallback")
+            if "ppn" not in matches:
+                matches["ppn"] = ppn
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set PPN={ppn} from signature (5-amt)")
+                confidence += 0.2
+
+            if "harga_jual" not in matches:
+                harga_jual = signature_amounts[0]
+                current_dpp = matches.get("dpp", dpp)
+                if harga_jual >= current_dpp:
+                    matches["harga_jual"] = harga_jual
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
+                    confidence += 0.3
+                else:
+                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {current_dpp}, will try fallback")
 
         elif len(signature_amounts) == 4:
             # Minimal 4-amount format: [Harga Jual, Harga Jual dup, DPP, PPN]
             dpp = signature_amounts[2]
             ppn = signature_amounts[3]
 
-            # ALWAYS set DPP and PPN
-            matches["dpp"] = dpp
-            matches["ppn"] = ppn
-            logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp}, PPN={ppn} from signature (4-amt)")
+            # Only set if not already set by label extraction
+            if "dpp" not in matches:
+                matches["dpp"] = dpp
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set DPP={dpp} from signature (4-amt)")
+                confidence += 0.2
 
-            harga_jual = signature_amounts[0]
-            if harga_jual >= dpp:
-                matches["harga_jual"] = harga_jual
-                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
-                confidence += 0.25
-            else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {dpp}, will try fallback")
+            if "ppn" not in matches:
+                matches["ppn"] = ppn
+                logger.info(f"🔍 parse_faktur_pajak_text: ✅ Set PPN={ppn} from signature (4-amt)")
+                confidence += 0.2
+
+            if "harga_jual" not in matches:
+                harga_jual = signature_amounts[0]
+                current_dpp = matches.get("dpp", dpp)
+                if harga_jual >= current_dpp:
+                    matches["harga_jual"] = harga_jual
+                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual: {harga_jual}")
+                    confidence += 0.25
+                else:
+                    logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Harga Jual {harga_jual} < DPP {current_dpp}, will try fallback")
 
     else:
-        logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ FALLBACK MODE - Signature extraction insufficient (got {len(signature_amounts) if signature_amounts else 0} amounts)")
+        logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Signature extraction insufficient (got {len(signature_amounts) if signature_amounts else 0} amounts)")
 
         # 🔧 NEW: Try to get DPP and PPN from labels if signature failed completely
         if "dpp" not in matches:
@@ -1123,11 +1159,49 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             confidence += 0.2
 
         elif len(amounts) >= 2:
-            sorted_amounts = sorted(amounts)
-            if "dpp" not in matches:
-                matches["dpp"] = sorted_amounts[-1]
-            if "ppn" not in matches:
-                matches["ppn"] = sorted_amounts[-2]
+            # 🔧 CRITICAL FIX: Don't blindly assign largest amounts
+            # This was causing DPP to be assigned to both DPP and PPN
+            sorted_amounts = sorted(amounts, reverse=True)
+            
+            # Find distinct amounts (avoid duplicates)
+            distinct_amounts = []
+            for amt in sorted_amounts:
+                if not distinct_amounts or amt != distinct_amounts[-1]:
+                    distinct_amounts.append(amt)
+            
+            logger.info(f"🔍 parse_faktur_pajak_text: Distinct amounts for fallback: {distinct_amounts[:5]}")
+            
+            if "dpp" not in matches and len(distinct_amounts) >= 1:
+                # DPP is typically one of the larger amounts (but not always the largest)
+                # Could be at index 0 or 1
+                matches["dpp"] = distinct_amounts[0]
+                logger.info(f"🔍 parse_faktur_pajak_text: Fallback DPP: {distinct_amounts[0]}")
+            
+            if "ppn" not in matches and len(distinct_amounts) >= 2:
+                # PPN is typically smaller than DPP (around 11% of DPP)
+                # Look for an amount that's roughly 10-12% of DPP
+                dpp_val = matches.get("dpp", distinct_amounts[0])
+                
+                # Find amount closest to 11% of DPP
+                expected_ppn = dpp_val * 0.11
+                best_ppn_candidate = None
+                best_ppn_diff = float('inf')
+                
+                for amt in distinct_amounts[1:]:  # Skip first (likely DPP)
+                    if amt < dpp_val:  # PPN must be less than DPP
+                        diff = abs(amt - expected_ppn)
+                        if diff < best_ppn_diff:
+                            best_ppn_diff = diff
+                            best_ppn_candidate = amt
+                
+                if best_ppn_candidate:
+                    matches["ppn"] = best_ppn_candidate
+                    logger.info(f"🔍 parse_faktur_pajak_text: Fallback PPN (matched ~11% rule): {best_ppn_candidate}")
+                elif len(distinct_amounts) >= 2:
+                    # Fallback to second distinct amount
+                    matches["ppn"] = distinct_amounts[1]
+                    logger.info(f"🔍 parse_faktur_pajak_text: Fallback PPN (second distinct): {distinct_amounts[1]}")
+            
             confidence += 0.15
 
     # 🔧 CRITICAL FIX: Final validation and correction for Harga Jual
@@ -1187,16 +1261,44 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     logger.info(f"🔍 parse_faktur_pajak_text: PPN: {matches.get('ppn')}")
     logger.info(f"🔍 parse_faktur_pajak_text: Confidence: {confidence}")
 
-    # 🔧 NEW: Validation warning for suspicious values
+    # 🔧 CRITICAL: Validation for duplicate values (bug detection)
     harga_jual_final = matches.get("harga_jual")
     dpp_final = matches.get("dpp")
-    if harga_jual_final and dpp_final:
-        if harga_jual_final == dpp_final:
-            logger.warning(f"⚠️ WARNING: Harga Jual ({harga_jual_final}) sama dengan DPP ({dpp_final}) - kemungkinan tidak ada potongan atau ada bug extraction")
-        elif harga_jual_final < dpp_final:
-            logger.error(f"❌ ERROR: Harga Jual ({harga_jual_final}) LEBIH KECIL dari DPP ({dpp_final}) - INI TIDAK VALID!")
-            # Mark confidence as low
-            confidence = min(confidence, 0.5)
+    ppn_final = matches.get("ppn")
+    
+    # Check for suspicious duplications
+    duplicate_detected = False
+    
+    if harga_jual_final and dpp_final and harga_jual_final == dpp_final:
+        logger.warning(f"⚠️ WARNING: Harga Jual ({harga_jual_final}) sama dengan DPP ({dpp_final})")
+        duplicate_detected = True
+    
+    if ppn_final and dpp_final and ppn_final == dpp_final:
+        logger.error(f"❌ CRITICAL ERROR: PPN ({ppn_final}) sama dengan DPP ({dpp_final}) - INI BUG!")
+        duplicate_detected = True
+        # Try to fix PPN - should be around 11% of DPP
+        if dpp_final:
+            expected_ppn = dpp_final * 0.11
+            # Search for amount close to expected PPN
+            for amt in amounts:
+                if 0.09 * dpp_final <= amt <= 0.12 * dpp_final:  # 9-12% range
+                    matches["ppn"] = amt
+                    logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (found amount matching ~11% of DPP)")
+                    duplicate_detected = False
+                    break
+    
+    if harga_jual_final and ppn_final and harga_jual_final == ppn_final:
+        logger.error(f"❌ CRITICAL ERROR: Harga Jual ({harga_jual_final}) sama dengan PPN ({ppn_final}) - INI BUG!")
+        duplicate_detected = True
+    
+    if duplicate_detected:
+        logger.error("❌ DUPLICATE VALUES DETECTED - Extraction likely failed!")
+        confidence = min(confidence, 0.3)  # Mark as very low confidence
+    
+    # Validate Harga Jual vs DPP relationship
+    if harga_jual_final and dpp_final and harga_jual_final < dpp_final:
+        logger.error(f"❌ ERROR: Harga Jual ({harga_jual_final}) LEBIH KECIL dari DPP ({dpp_final}) - TIDAK VALID!")
+        confidence = min(confidence, 0.5)
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
