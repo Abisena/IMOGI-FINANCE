@@ -420,24 +420,27 @@ def _find_amount_after_label(text: str, label: str, max_lines_to_check: int = 5)
 
         logger.info(f"🔍 _find_amount_after_label: Found label '{label}' at line {idx}: '{line[:100]}'")
 
-        # First, check if amount is in the same line after the label
-        inline_value = match.group("value") or ""
-        inline_amount = _extract_amount(inline_value)
-        if inline_amount is not None:
-            logger.info(f"🔍 _find_amount_after_label: Found inline amount: {inline_amount}")
-            return inline_amount
-
-        # For table format: Check if there's an amount at the END of the same line
+        # 🔧 PRIORITY 1: For table format, check the END of the same line first (rightmost value)
+        # This handles format: "Harga Jual / Penggantian / Uang Muka / Termin     1.049.485,00"
         all_amounts_in_line = []
         for amt_match in AMOUNT_REGEX.finditer(line):
             amt = _sanitize_amount(_parse_idr_amount(amt_match.group("amount")))
             if amt is not None and amt >= 10000:
-                all_amounts_in_line.append(amt)
+                all_amounts_in_line.append((amt, amt_match.end()))  # Store amount and position
 
         if all_amounts_in_line:
-            rightmost_amount = all_amounts_in_line[-1]
-            logger.info(f"🔍 _find_amount_after_label: Found {len(all_amounts_in_line)} amounts in line, using rightmost: {rightmost_amount}")
+            # Get the rightmost amount (last in the line, which is typically the value in table format)
+            all_amounts_in_line.sort(key=lambda x: x[1])  # Sort by position
+            rightmost_amount = all_amounts_in_line[-1][0]
+            logger.info(f"🔍 _find_amount_after_label: Found {len(all_amounts_in_line)} amounts in line, using RIGHTMOST (table format): {rightmost_amount}")
             return rightmost_amount
+
+        # PRIORITY 2: Check if amount is after the label in the same line
+        inline_value = match.group("value") or ""
+        inline_amount = _extract_amount(inline_value)
+        if inline_amount is not None:
+            logger.info(f"🔍 _find_amount_after_label: Found inline amount after label: {inline_amount}")
+            return inline_amount
 
         # If not found in same line, check next few non-empty lines
         logger.info(f"🔍 _find_amount_after_label: No inline amount, checking next {max_lines_to_check} lines")
@@ -954,20 +957,26 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             break
 
     # Extract Harga Jual from label - try multiple variants including long format
+    # 🔧 PRIORITY FIX: Try the most specific pattern FIRST
     harga_jual_labeled = None
-    for hj_label in ["Harga Jual/Penggantian/Uang Muka/Termin",
-                     "Harga Jual / Penggantian / Uang Muka / Termin",
-                     "Harga Jual",
-                     "Harga Jual/Penggantian",
-                     "Harga Jual / Penggantian"]:
-        harga_jual_labeled = _find_amount_after_label(text or "", hj_label, max_lines_to_check=3)
+    hj_labels_priority = [
+        "Harga Jual / Penggantian / Uang Muka / Termin",  # Most specific, with spaces
+        "Harga Jual/Penggantian/Uang Muka/Termin",         # Without spaces
+        "Harga Jual / Penggantian / Uang Muka",            # Partial match
+        "Harga Jual/Penggantian",
+        "Harga Jual / Penggantian",
+        "Harga Jual",  # Last resort, most generic
+    ]
+
+    for hj_label in hj_labels_priority:
+        harga_jual_labeled = _find_amount_after_label(text or "", hj_label, max_lines_to_check=2)
         if harga_jual_labeled:
             # Validate: Harga Jual must be >= DPP (if DPP already extracted)
             dpp_check = matches.get("dpp")
             if not dpp_check or harga_jual_labeled >= dpp_check:
                 matches["harga_jual"] = harga_jual_labeled
                 logger.info(f"🔍 parse_faktur_pajak_text: ✅ Harga Jual from label '{hj_label}': {harga_jual_labeled}")
-                confidence += 0.3
+                confidence += 0.4  # Higher confidence for label-based extraction
                 break
             else:
                 logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Rejected Harga Jual {harga_jual_labeled} < DPP {dpp_check} from label '{hj_label}'")
@@ -1027,7 +1036,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                     logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Both [0]={harga_jual_0} and [1]={harga_jual_1} < DPP={current_dpp}")
                     logger.info(f"🔍 parse_faktur_pajak_text: Will try fallback for Harga Jual")
             else:
-                logger.info(f"🔍 parse_faktur_pajak_text: ℹ️ Harga Jual already set by label, skipping signature value")
+                logger.info(f"🔍 parse_faktur_pajak_text: ℹ️ Harga Jual ALREADY SET by label ({matches['harga_jual']}), SKIPPING signature value")
 
         elif len(signature_amounts) == 5:
             # 5-amount format (no duplicate or no ppnbm)
@@ -1138,12 +1147,28 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                 found = False
 
                 if amounts_gt_dpp:
-                    # Use the largest one (most likely to be Harga Jual)
-                    best_candidate = max(amounts_gt_dpp)
-                    matches["harga_jual"] = best_candidate
-                    logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 1: Harga Jual (largest > DPP): {best_candidate}")
-                    confidence += 0.25
-                    found = True
+                    # 🔧 CRITICAL FIX: Don't just take any amount > DPP
+                    # Look for amounts that are close to DPP + PPN (within reasonable range)
+                    expected_hj = dpp_value + ppn_value
+
+                    # Find amounts within 20% tolerance of expected Harga Jual
+                    tolerance = expected_hj * 0.2
+                    candidates = [amt for amt in amounts_gt_dpp if abs(amt - expected_hj) <= tolerance]
+
+                    if candidates:
+                        # Use the one closest to expected value
+                        best_candidate = min(candidates, key=lambda x: abs(x - expected_hj))
+                        matches["harga_jual"] = best_candidate
+                        logger.info(f"🔍 parse_faktur_pajak_text: ✅ Strategy 1: Harga Jual (closest to DPP+PPN={expected_hj}): {best_candidate}")
+                        confidence += 0.25
+                        found = True
+                    else:
+                        # Fallback: Use the smallest amount > DPP (most conservative)
+                        best_candidate = min(amounts_gt_dpp)
+                        matches["harga_jual"] = best_candidate
+                        logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Strategy 1: Using smallest amount > DPP: {best_candidate}")
+                        confidence += 0.15
+                        found = True
 
                 if not found:
                     logger.info(f"🔍 parse_faktur_pajak_text: ⚠️ Strategy 1 failed - no amount > DPP found")
@@ -1307,10 +1332,10 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if not matches.get("harga_jual") and matches.get("dpp"):
         logger.warning("⚠️ LAST RESORT: Harga Jual not found, searching for any amount > DPP...")
         dpp_val = matches.get("dpp")
-        
+
         # Find all amounts greater than DPP
         candidates = [amt for amt in amounts if amt > dpp_val]
-        
+
         if candidates:
             # Use the one closest to DPP (most likely to be correct)
             # Sort by distance from DPP
