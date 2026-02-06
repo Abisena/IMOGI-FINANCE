@@ -1303,6 +1303,30 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     logger.info(f"🔍 parse_faktur_pajak_text: PPN: {matches.get('ppn')}")
     logger.info(f"🔍 parse_faktur_pajak_text: Confidence: {confidence}")
 
+    # 🔧 LAST RESORT: If Harga Jual still not found, try to find ANY amount > DPP
+    if not matches.get("harga_jual") and matches.get("dpp"):
+        logger.warning("⚠️ LAST RESORT: Harga Jual not found, searching for any amount > DPP...")
+        dpp_val = matches.get("dpp")
+        
+        # Find all amounts greater than DPP
+        candidates = [amt for amt in amounts if amt > dpp_val]
+        
+        if candidates:
+            # Use the one closest to DPP (most likely to be correct)
+            # Sort by distance from DPP
+            candidates_sorted = sorted(candidates, key=lambda x: x - dpp_val)
+            best = candidates_sorted[0]
+            matches["harga_jual"] = best
+            logger.info(f"🔍 ✅ LAST RESORT: Set Harga Jual to {best} (closest amount > DPP)")
+            confidence += 0.1
+        else:
+            # ABSOLUTE LAST RESORT: Calculate Harga Jual = DPP / 0.92 (assuming 8% discount)
+            # This is a reasonable assumption for Indonesian tax invoices
+            estimated_hj = round(dpp_val / 0.92, 2)
+            matches["harga_jual"] = estimated_hj
+            logger.warning(f"🔍 ⚠️ ABSOLUTE LAST RESORT: Estimated Harga Jual = {estimated_hj} (DPP / 0.92)")
+            confidence = min(confidence, 0.4)  # Very low confidence
+
     # 🔧 CRITICAL: Validation for duplicate values (bug detection)
     harga_jual_final = matches.get("harga_jual")
     dpp_final = matches.get("dpp")
