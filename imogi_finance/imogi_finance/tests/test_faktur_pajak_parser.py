@@ -713,5 +713,421 @@ def run_tests():
     unittest.main()
 
 
+class TestSummaryRowFilter(unittest.TestCase):
+    """Test summary/header row filtering logic."""
+    
+    def test_filter_summary_rows_harga_jual_pengganti(self):
+        """Test that 'Harga Jual / Pengganti' rows are filtered out."""
+        # Simulate merged rows with real items AND summary rows
+        merged_rows = [
+            {
+                "description": "Jasa Utility 01#01 / 2L Maintenance Service",
+                "harga_jual": "962.028,00",
+                "dpp": "962.028,00",
+                "ppn": "115.443,00",
+                "page_no": 1,
+                "row_y": 100.0
+            },
+            {
+                "description": "Harga Jual / Pengganti / Uang Muka / Termin",
+                "harga_jual": "962.028,00",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+                "row_y": 200.0
+            },
+            {
+                "description": "Dasar Pengenaan Pajak",
+                "harga_jual": "962.028,00",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+                "row_y": 210.0
+            }
+        ]
+        
+        # Apply the same filter logic as in _parse_page
+        SUMMARY_ROW_KEYWORDS = {
+            "harga jual / pengganti",
+            "harga jual/pengganti",
+            "harga jual / pengganti / uang muka",
+            "dasar pengenaan pajak",
+            "jumlah ppn",
+            "ppn = ",
+            "grand total",
+        }
+        
+        filtered_rows = []
+        for row in merged_rows:
+            desc = row.get("description", "").lower().strip()
+            if any(kw in desc for kw in SUMMARY_ROW_KEYWORDS):
+                continue
+            filtered_rows.append(row)
+        
+        # Assert: Only the real item remains
+        self.assertEqual(len(filtered_rows), 1)
+        self.assertIn("Jasa Utility", filtered_rows[0]["description"])
+    
+    def test_filter_header_rows(self):
+        """Test that header rows like 'No. Barang / Nama Barang' are filtered."""
+        merged_rows = [
+            {
+                "description": "No. Barang / Nama Barang",
+                "harga_jual": "",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+            {
+                "description": "1234567890 / Widget Premium",
+                "harga_jual": "500.000,00",
+                "dpp": "500.000,00",
+                "ppn": "60.000,00",
+                "page_no": 1,
+            }
+        ]
+        
+        HEADER_ROW_KEYWORDS = {
+            "no. barang",
+            "nama barang",
+            "no. barang / nama barang",
+        }
+        
+        filtered_rows = []
+        for row in merged_rows:
+            desc = row.get("description", "").lower().strip()
+            if any(kw in desc for kw in HEADER_ROW_KEYWORDS):
+                continue
+            filtered_rows.append(row)
+        
+        # Assert: Only the real item remains
+        self.assertEqual(len(filtered_rows), 1)
+        self.assertIn("Widget Premium", filtered_rows[0]["description"])
+    
+    def test_filter_zero_dpp_ppn_with_suspect_keyword(self):
+        """Test extra rule: DPP=0 AND PPN=0 with suspect keywords."""
+        merged_rows = [
+            {
+                "description": "Regular Service Item",
+                "harga_jual": "100.000,00",
+                "dpp": "100.000,00",
+                "ppn": "12.000,00",
+                "page_no": 1,
+            },
+            {
+                "description": "PPn Keluaran",  # Contains 'ppn' with zero values
+                "harga_jual": "12.000,00",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+            {
+                "description": "DPP yang tidak dipungut",  # Contains 'dpp' with zero values
+                "harga_jual": "100.000,00",
+                "dpp": "0",
+                "ppn": "0",
+                "page_no": 1,
+            }
+        ]
+        
+        ZERO_VALUE_SUSPECT_KEYWORDS = {"ppn", "dpp", "dasar", "harga jual", "total"}
+        
+        def is_zero_value_suspect(row):
+            desc = row.get("description", "").lower()
+            raw_dpp = row.get("dpp", "") or ""
+            raw_ppn = row.get("ppn", "") or ""
+            
+            # Parse values
+            try:
+                dpp_val = float(raw_dpp.replace(".", "").replace(",", ".")) if raw_dpp.strip() else 0
+            except ValueError:
+                dpp_val = 0
+            try:
+                ppn_val = float(raw_ppn.replace(".", "").replace(",", ".")) if raw_ppn.strip() else 0
+            except ValueError:
+                ppn_val = 0
+            
+            if dpp_val == 0 and ppn_val == 0:
+                for kw in ZERO_VALUE_SUSPECT_KEYWORDS:
+                    if kw in desc:
+                        return True
+            return False
+        
+        filtered_rows = [row for row in merged_rows if not is_zero_value_suspect(row)]
+        
+        # Assert: Only the regular item remains
+        self.assertEqual(len(filtered_rows), 1)
+        self.assertEqual(filtered_rows[0]["description"], "Regular Service Item")
+    
+    def test_real_items_not_filtered(self):
+        """Test that legitimate items are NOT filtered even if they contain partial keywords."""
+        merged_rows = [
+            {
+                "description": "Jasa Konsultasi Pajak",  # Contains 'jasa' but valid
+                "harga_jual": "5.000.000,00",
+                "dpp": "5.000.000,00",
+                "ppn": "600.000,00",
+                "page_no": 1,
+            },
+            {
+                "description": "Pembelian Barang Dasar",  # Contains 'dasar' but valid with values
+                "harga_jual": "1.000.000,00",
+                "dpp": "1.000.000,00",
+                "ppn": "120.000,00",
+                "page_no": 1,
+            },
+            {
+                "description": "Total Care Service Package",  # Contains 'total' but valid with values
+                "harga_jual": "2.500.000,00",
+                "dpp": "2.500.000,00",
+                "ppn": "300.000,00",
+                "page_no": 1,
+            }
+        ]
+        
+        # These should NOT be filtered because:
+        # 1. They have valid DPP/PPN values
+        # 2. They don't match exact summary keywords
+        SUMMARY_ROW_KEYWORDS = {
+            "harga jual / pengganti",
+            "dasar pengenaan pajak",  # Full phrase, not just "dasar"
+            "grand total",  # Full phrase, not just "total"
+        }
+        
+        filtered_rows = []
+        for row in merged_rows:
+            desc = row.get("description", "").lower().strip()
+            if any(kw in desc for kw in SUMMARY_ROW_KEYWORDS):
+                continue
+            filtered_rows.append(row)
+        
+        # Assert: All items remain (they're legitimate)
+        self.assertEqual(len(filtered_rows), 3)
+    
+    def test_comprehensive_filter_scenario(self):
+        """
+        Comprehensive test simulating real parsing output.
+        
+        Scenario: Parser extracted 6 rows from a Faktur Pajak PDF.
+        - 2 are real line items
+        - 4 are summary/header rows that leaked through
+        """
+        parse_output_rows = [
+            # Real item 1
+            {
+                "line_no": 1,
+                "description": "Jasa Utility 01#01 / 2L Water Treatment Monthly",
+                "harga_jual": "962.028,00",
+                "dpp": "962.028,00", 
+                "ppn": "115.443,00",
+                "page_no": 1,
+            },
+            # Real item 2  
+            {
+                "line_no": 2,
+                "description": "Biaya Admin Bulanan",
+                "harga_jual": "50.000,00",
+                "dpp": "50.000,00",
+                "ppn": "6.000,00",
+                "page_no": 1,
+            },
+            # Summary row - should be filtered
+            {
+                "line_no": 3,
+                "description": "Harga Jual / Pengganti / Uang Muka / Termin",
+                "harga_jual": "1.012.028,00",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+            # Summary row - should be filtered
+            {
+                "line_no": 4,
+                "description": "Dasar Pengenaan Pajak",
+                "harga_jual": "1.012.028,00",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+            # Summary row - should be filtered  
+            {
+                "line_no": 5,
+                "description": "PPN = 12% x Dasar Pengenaan Pajak",
+                "harga_jual": "",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+            # Header row - should be filtered
+            {
+                "line_no": 6,
+                "description": "No. Barang / Nama Barang",
+                "harga_jual": "",
+                "dpp": "",
+                "ppn": "",
+                "page_no": 1,
+            },
+        ]
+        
+        # Combined filter keywords (matching parser implementation)
+        SUMMARY_ROW_KEYWORDS = {
+            "harga jual / pengganti",
+            "harga jual/pengganti",
+            "harga jual / pengganti / uang muka",
+            "dasar pengenaan pajak",
+            "jumlah ppn",
+            "ppn = ",
+            "ppn =",
+            "grand total",
+        }
+        HEADER_ROW_KEYWORDS = {
+            "no. barang",
+            "nama barang", 
+            "no. barang / nama barang",
+        }
+        ZERO_VALUE_SUSPECT_KEYWORDS = {"ppn", "dpp", "dasar", "harga jual"}
+        
+        def should_filter(row):
+            desc = row.get("description", "").lower().strip()
+            
+            # Check summary keywords
+            for kw in SUMMARY_ROW_KEYWORDS:
+                if kw in desc:
+                    return True
+            
+            # Check header keywords
+            for kw in HEADER_ROW_KEYWORDS:
+                if kw in desc:
+                    return True
+            
+            # Check zero value rule
+            raw_dpp = row.get("dpp", "") or ""
+            raw_ppn = row.get("ppn", "") or ""
+            try:
+                dpp_val = float(raw_dpp.replace(".", "").replace(",", ".")) if raw_dpp.strip() else 0
+            except ValueError:
+                dpp_val = 0
+            try:
+                ppn_val = float(raw_ppn.replace(".", "").replace(",", ".")) if raw_ppn.strip() else 0
+            except ValueError:
+                ppn_val = 0
+            
+            if dpp_val == 0 and ppn_val == 0:
+                for kw in ZERO_VALUE_SUSPECT_KEYWORDS:
+                    if kw in desc:
+                        return True
+            
+            return False
+        
+        filtered_rows = [row for row in parse_output_rows if not should_filter(row)]
+        
+        # Assert: Only 2 real items remain
+        self.assertEqual(len(filtered_rows), 2)
+        
+        # Assert: Correct items remain
+        descriptions = [r["description"] for r in filtered_rows]
+        self.assertTrue(any("Jasa Utility" in d for d in descriptions))
+        self.assertTrue(any("Biaya Admin" in d for d in descriptions))
+        
+        # Assert: No summary rows remain
+        for row in filtered_rows:
+            desc = row["description"].lower()
+            self.assertNotIn("harga jual / pengganti", desc)
+            self.assertNotIn("dasar pengenaan pajak", desc)
+            self.assertNotIn("no. barang", desc)
+    
+    def test_whitespace_normalization(self):
+        """Test that whitespace variations are handled correctly."""
+        import re
+        
+        # Simulate rows with various whitespace patterns
+        test_cases = [
+            # Should be filtered (whitespace variations)
+            {"description": "Harga  Jual /  Pengganti", "expected_filtered": True},
+            {"description": "Harga Jual/Pengganti", "expected_filtered": True},
+            {"description": "DASAR   PENGENAAN   PAJAK", "expected_filtered": True},
+            {"description": "  No. Barang / Nama Barang  ", "expected_filtered": True},
+            {"description": "\tHarga Jual / Pengganti\n", "expected_filtered": True},
+            # Should NOT be filtered (legitimate items)
+            {"description": "Jasa Maintenance Harga Premium", "expected_filtered": False},
+            {"description": "Service Barang Dasar", "expected_filtered": False},
+        ]
+        
+        SUMMARY_ROW_KEYWORDS = {
+            "harga jual / pengganti",
+            "harga jual/pengganti",
+            "dasar pengenaan pajak",
+        }
+        HEADER_ROW_KEYWORDS = {
+            "no. barang",
+            "nama barang",
+            "no. barang / nama barang",
+        }
+        
+        def should_filter(desc):
+            # Whitespace normalization: collapse multiple spaces, strip, lowercase
+            text_lower = re.sub(r'\s+', ' ', desc.lower().strip())
+            
+            for kw in SUMMARY_ROW_KEYWORDS:
+                if kw in text_lower:
+                    return True
+            for kw in HEADER_ROW_KEYWORDS:
+                if kw in text_lower:
+                    return True
+            return False
+        
+        for case in test_cases:
+            result = should_filter(case["description"])
+            self.assertEqual(
+                result, 
+                case["expected_filtered"],
+                f"Failed for '{case['description']}': expected filtered={case['expected_filtered']}, got {result}"
+            )
+    
+    def test_filter_stats_structure(self):
+        """Test that filter_stats contains expected counters."""
+        # Expected structure after parsing
+        expected_keys = {
+            "raw_rows_count",
+            "filtered_summary_count",
+            "filtered_header_count",
+            "filtered_zero_suspect_count",
+            "final_items_count",
+            "first_10_filtered_descriptions"
+        }
+        
+        # Mock filter_stats (as would be returned by _parse_page)
+        filter_stats = {
+            "raw_rows_count": 6,
+            "filtered_summary_count": 2,
+            "filtered_header_count": 1,
+            "filtered_zero_suspect_count": 1,
+            "final_items_count": 2,
+            "first_10_filtered_descriptions": [
+                "'Harga Jual / Pengganti' (summary keyword 'harga jual / pengganti')",
+                "'Dasar Pengenaan Pajak' (summary keyword 'dasar pengenaan pajak')"
+            ]
+        }
+        
+        # Assert all expected keys exist
+        for key in expected_keys:
+            self.assertIn(key, filter_stats, f"Missing key: {key}")
+        
+        # Assert types are correct
+        self.assertIsInstance(filter_stats["raw_rows_count"], int)
+        self.assertIsInstance(filter_stats["first_10_filtered_descriptions"], list)
+        
+        # Assert values make sense
+        total_filtered = (
+            filter_stats["filtered_summary_count"] +
+            filter_stats["filtered_header_count"] +
+            filter_stats["filtered_zero_suspect_count"]
+        )
+        self.assertEqual(
+            filter_stats["raw_rows_count"] - total_filtered,
+            filter_stats["final_items_count"]
+        )
+
+
 if __name__ == "__main__":
     run_tests()

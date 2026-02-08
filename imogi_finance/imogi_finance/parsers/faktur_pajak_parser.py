@@ -1193,11 +1193,39 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 				k: v.to_dict() for k, v in page_result.get("column_ranges", {}).items()
 			}
 		
+		# 🔥 OBSERVABILITY: Add filter stats to page debug
+		if page_result.get("filter_stats"):
+			page_debug["filter_stats"] = page_result["filter_stats"]
+		
 		result["debug_info"]["pages"].append(page_debug)
 	
 	# Set format_type at document level (use first page's type)
 	if result["debug_info"]["pages"]:
 		result["debug_info"]["format_type"] = result["debug_info"]["pages"][0]["format_type"]
+	
+	# 🔥 OBSERVABILITY: Aggregate filter stats across all pages
+	total_filter_stats = {
+		"raw_rows_count": 0,
+		"filtered_summary_count": 0,
+		"filtered_header_count": 0,
+		"filtered_zero_suspect_count": 0,
+		"final_items_count": len(result["items"]),
+		"first_10_filtered_descriptions": []
+	}
+	
+	for page_debug in result["debug_info"]["pages"]:
+		if "filter_stats" in page_debug:
+			ps = page_debug["filter_stats"]
+			total_filter_stats["raw_rows_count"] += ps.get("raw_rows_count", 0)
+			total_filter_stats["filtered_summary_count"] += ps.get("filtered_summary_count", 0)
+			total_filter_stats["filtered_header_count"] += ps.get("filtered_header_count", 0)
+			total_filter_stats["filtered_zero_suspect_count"] += ps.get("filtered_zero_suspect_count", 0)
+			# Collect first 10 filtered descriptions across all pages
+			for desc in ps.get("first_10_filtered_descriptions", []):
+				if len(total_filter_stats["first_10_filtered_descriptions"]) < 10:
+					total_filter_stats["first_10_filtered_descriptions"].append(desc)
+	
+	result["debug_info"]["filter_stats"] = total_filter_stats
 	
 	return result
 
@@ -1296,44 +1324,159 @@ def _parse_page(
 	# Merge wraparounds
 	merged_rows = merge_description_wraparounds(parsed_rows)
 	
-	# 🔥 CRITICAL FIX: Filter out summary rows that leaked past table_end detection
+	# 🔥 CRITICAL FIX: Filter out summary/header rows that leaked past table_end detection
 	# Summary section rows (e.g., "Harga Jual / Pengganti", "Dasar Pengenaan Pajak")
-	# are NEVER valid line items - they belong to the totals footer
+	# and header rows (e.g., "No. Barang / Nama Barang") are NEVER valid line items
+	
+	# Keywords that indicate a summary/totals row (case-insensitive contains match)
 	SUMMARY_ROW_KEYWORDS = {
 		"harga jual / pengganti",
-		"harga jual/pengganti", 
+		"harga jual/pengganti",
+		"harga jual / pengganti / uang muka",
+		"harga jual/pengganti/uang muka",
 		"dasar pengenaan pajak",
 		"jumlah ppn",
 		"jumlah ppnbm",
 		"ppn = ",
+		"ppn =",
 		"ppnbm = ",
+		"ppnbm =",
 		"grand total",
 		"potongan harga",
-		"uang muka",
+		"uang muka yang telah diterima",
 		"nilai lain",
+		"total harga",
+		"sub total",
+		"subtotal",
 	}
 	
-	def _is_summary_row(description: str) -> bool:
-		"""Check if row description matches summary/totals section keywords."""
+	# Keywords that indicate a header row (not a data row)
+	HEADER_ROW_KEYWORDS = {
+		"no. barang",
+		"nama barang",
+		"no. barang / nama barang",
+		"kode barang",
+		"harga satuan",
+		"jumlah barang",
+	}
+	
+	# Keywords for the extra zero-value rule
+	# If DPP==0 AND PPN==0 AND description contains any of these, it's a summary row
+	ZERO_VALUE_SUSPECT_KEYWORDS = {
+		"ppn",
+		"dpp", 
+		"dasar",
+		"harga jual",
+		"pengganti",
+		"total",
+		"jumlah",
+	}
+	
+	def _is_summary_row(row: Dict[str, Any]) -> Tuple[bool, str, str]:
+		"""
+		Check if row is a summary/header row that should be filtered out.
+		
+		Whitespace normalization: Collapses multiple spaces, strips, lowercases
+		before matching keywords.
+		
+		Returns:
+			Tuple of (is_filtered, reason, filter_type)
+			filter_type is one of: "summary", "header", "zero_suspect", ""
+		"""
+		description = row.get("description", "")
 		if not description:
-			return False
-		text_lower = description.lower().strip()
-		return any(kw in text_lower for kw in SUMMARY_ROW_KEYWORDS)
+			return False, "", ""
+		
+		# 🔥 Whitespace normalization: collapse multiple spaces, strip, lowercase
+		import re as _re
+		text_lower = _re.sub(r'\s+', ' ', description.lower().strip())
+		
+		# Check summary keywords
+		for kw in SUMMARY_ROW_KEYWORDS:
+			if kw in text_lower:
+				return True, f"summary keyword '{kw}'", "summary"
+		
+		# Check header keywords
+		for kw in HEADER_ROW_KEYWORDS:
+			if kw in text_lower:
+				return True, f"header keyword '{kw}'", "header"
+		
+		# Extra rule: DPP==0 AND PPN==0 with suspect keywords
+		# This catches rows like "Harga Jual / Pengganti" with amount but no DPP/PPN
+		raw_dpp = row.get("dpp") or row.get("raw_dpp") or ""
+		raw_ppn = row.get("ppn") or row.get("raw_ppn") or ""
+		
+		# Parse numeric values (handle string or float)
+		try:
+			if isinstance(raw_dpp, str):
+				dpp_val = float(raw_dpp.replace(".", "").replace(",", ".")) if raw_dpp.strip() else 0
+			else:
+				dpp_val = float(raw_dpp) if raw_dpp else 0
+		except (ValueError, TypeError):
+			dpp_val = 0
+		
+		try:
+			if isinstance(raw_ppn, str):
+				ppn_val = float(raw_ppn.replace(".", "").replace(",", ".")) if raw_ppn.strip() else 0
+			else:
+				ppn_val = float(raw_ppn) if raw_ppn else 0
+		except (ValueError, TypeError):
+			ppn_val = 0
+		
+		# If DPP and PPN are both zero/empty and description has suspect keywords
+		if dpp_val == 0 and ppn_val == 0:
+			for kw in ZERO_VALUE_SUSPECT_KEYWORDS:
+				if kw in text_lower:
+					return True, f"zero DPP/PPN with suspect keyword '{kw}'", "zero_suspect"
+		
+		return False, "", ""
+	
+	# 🔥 OBSERVABILITY: Track filtering statistics for debug_info
+	filter_stats = {
+		"raw_rows_count": len(merged_rows),
+		"filtered_summary_count": 0,
+		"filtered_header_count": 0,
+		"filtered_zero_suspect_count": 0,
+		"first_10_filtered_descriptions": []
+	}
 	
 	filtered_rows = []
+	
 	for row in merged_rows:
-		desc = row.get("description", "")
-		if _is_summary_row(desc):
-			frappe.logger().info(
-				f"[PARSE] Skipping summary row: '{desc[:50]}...' (page {row.get('page_no')})"
-			)
+		is_filtered, reason, filter_type = _is_summary_row(row)
+		if is_filtered:
+			desc = row.get("description", "")[:60]
+			
+			# Track by type
+			if filter_type == "summary":
+				filter_stats["filtered_summary_count"] += 1
+			elif filter_type == "header":
+				filter_stats["filtered_header_count"] += 1
+			elif filter_type == "zero_suspect":
+				filter_stats["filtered_zero_suspect_count"] += 1
+			
+			# Store first 10 descriptions for debugging
+			if len(filter_stats["first_10_filtered_descriptions"]) < 10:
+				filter_stats["first_10_filtered_descriptions"].append(f"'{desc}' ({reason})")
+			
 			continue
 		filtered_rows.append(row)
 	
-	# Log if any rows were filtered
+	# Final count
+	filter_stats["final_items_count"] = len(filtered_rows)
+	
+	# Store filter stats in page_result for aggregation
+	page_result["filter_stats"] = filter_stats
+	
+	# Log filtered rows (debug level to avoid noise)
 	filtered_count = len(merged_rows) - len(filtered_rows)
 	if filtered_count > 0:
-		frappe.logger().info(f"[PARSE] Filtered {filtered_count} summary row(s) from page {page_no}")
+		frappe.logger().debug(
+			f"[PARSE] Page {page_no}: Filtered {filtered_count} row(s) - "
+			f"summary={filter_stats['filtered_summary_count']}, "
+			f"header={filter_stats['filtered_header_count']}, "
+			f"zero_suspect={filter_stats['filtered_zero_suspect_count']}"
+		)
 	
 	# Assign global line numbers
 	for row in filtered_rows:
