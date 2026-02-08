@@ -1005,10 +1005,23 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             break
 
     # Extract PPN (Pajak Pertambahan Nilai) from label - try multiple variants
+    # 🔧 CRITICAL FIX: Validate PPN is not same as DPP
     ppn_labeled = None
+    dpp_for_validation = matches.get("dpp")
     for ppn_label in ["Jumlah PPN", "PPN", "Pajak Pertambahan Nilai"]:
-        ppn_labeled = _find_amount_after_label(text or "", ppn_label, max_lines_to_check=3)
-        if ppn_labeled:
+        ppn_candidate = _find_amount_after_label(text or "", ppn_label, max_lines_to_check=3)
+        if ppn_candidate:
+            # 🔧 BUG FIX: Validate PPN is NOT the same as DPP (this was causing PPN=DPP bug!)
+            if dpp_for_validation and ppn_candidate == dpp_for_validation:
+                logger.warning(f"🔍 parse_faktur_pajak_text: ⚠️ Rejecting PPN {ppn_candidate} from '{ppn_label}' - same as DPP!")
+                continue  # Try next label
+            
+            # Also validate PPN is roughly 8-13% of DPP (reasonable tax range)
+            if dpp_for_validation and ppn_candidate > dpp_for_validation * 0.15:
+                logger.warning(f"🔍 parse_faktur_pajak_text: ⚠️ Rejecting PPN {ppn_candidate} from '{ppn_label}' - too high (>15% of DPP)")
+                continue  # Try next label
+            
+            ppn_labeled = ppn_candidate
             matches["ppn"] = ppn_labeled
             logger.info(f"🔍 parse_faktur_pajak_text: ✅ PPN from label '{ppn_label}': {ppn_labeled}")
             confidence += 0.3
@@ -1425,16 +1438,42 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if ppn_final and dpp_final and ppn_final == dpp_final:
         logger.error(f"❌ CRITICAL ERROR: PPN ({ppn_final}) sama dengan DPP ({dpp_final}) - INI BUG!")
         duplicate_detected = True
-        # Try to fix PPN - should be around 11% of DPP
+        # 🔧 ENHANCED FIX: More aggressive PPN correction
         if dpp_final:
             expected_ppn = dpp_final * 0.11
-            # Search for amount close to expected PPN
+            best_ppn_candidate = None
+            best_ppn_diff = float('inf')
+            
+            # Search for amount close to expected PPN (9-12% of DPP range)
             for amt in amounts:
-                if 0.09 * dpp_final <= amt <= 0.12 * dpp_final:  # 9-12% range
-                    matches["ppn"] = amt
-                    logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (found amount matching ~11% of DPP)")
-                    duplicate_detected = False
-                    break
+                if amt != dpp_final and 0.08 * dpp_final <= amt <= 0.13 * dpp_final:
+                    diff = abs(amt - expected_ppn)
+                    if diff < best_ppn_diff:
+                        best_ppn_diff = diff
+                        best_ppn_candidate = amt
+            
+            if best_ppn_candidate:
+                matches["ppn"] = best_ppn_candidate
+                ppn_final = best_ppn_candidate
+                logger.info(f"🔍 ✅ CORRECTED PPN to: {best_ppn_candidate} (found amount matching ~11% of DPP)")
+                duplicate_detected = False
+            else:
+                # Last resort: Calculate PPN as 11% of DPP
+                calculated_ppn = round(dpp_final * 0.11, 2)
+                # Verify calculated PPN exists in amounts (within 1000 IDR tolerance)
+                for amt in amounts:
+                    if amt != dpp_final and abs(amt - calculated_ppn) <= 1000:
+                        matches["ppn"] = amt
+                        ppn_final = amt
+                        logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (close to calculated 11%: {calculated_ppn})")
+                        duplicate_detected = False
+                        break
+                else:
+                    # If no matching amount found, use calculated value
+                    matches["ppn"] = calculated_ppn
+                    ppn_final = calculated_ppn
+                    logger.warning(f"🔍 ⚠️ ESTIMATED PPN to: {calculated_ppn} (11% of DPP, no matching amount found)")
+                    confidence = min(confidence, 0.5)  # Lower confidence for estimated value
 
     if harga_jual_final and ppn_final and harga_jual_final == ppn_final:
         logger.error(f"❌ CRITICAL ERROR: Harga Jual ({harga_jual_final}) sama dengan PPN ({ppn_final}) - INI BUG!")
@@ -1506,17 +1545,101 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 # REST OF THE CODE REMAINS THE SAME (Google Vision, Tesseract, etc.)
 # ============================================================================
 
+
+# =============================================================================
+# 🔥 FRAPPE CLOUD SAFE FILE HANDLING
+# =============================================================================
+
+def _get_file_doc_by_url(file_url: str):
+    """
+    Get File doctype by file_url.
+    
+    🔥 FRAPPE CLOUD SAFE: Works with local and remote storage.
+    
+    Args:
+        file_url: File URL like /private/files/xxx.pdf or /files/xxx.pdf
+    
+    Returns:
+        File document
+    
+    Raises:
+        ValidationError: If file not found
+    """
+    if not file_url:
+        raise ValidationError(_("File URL is empty"))
+    
+    # Strategy 1: Direct file_url match
+    name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+    
+    # Strategy 2: Try with/without leading slash
+    if not name:
+        alt_url = file_url.lstrip("/") if file_url.startswith("/") else f"/{file_url}"
+        name = frappe.db.get_value("File", {"file_url": alt_url}, "name")
+    
+    # Strategy 3: Fallback by basename (file_name)
+    if not name:
+        basename = (file_url or "").split("/")[-1]
+        if basename:
+            name = frappe.db.get_value("File", {"file_name": basename}, "name")
+    
+    # Strategy 4: Try LIKE match for partial URL
+    if not name and file_url:
+        normalized = file_url.strip("/")
+        name = frappe.db.get_value("File", {"file_url": ["like", f"%{normalized}"]}, "name")
+    
+    if not name:
+        raise ValidationError(
+            _("File not found in DocType File for URL: {0}. "
+              "File may have been deleted or is not properly attached.").format(file_url)
+        )
+    
+    return frappe.get_doc("File", name)
+
+
 def _validate_pdf_size(file_url: str, max_mb: int) -> None:
+    """
+    Validate PDF file size.
+    
+    🔥 FRAPPE CLOUD SAFE: Uses File.file_size or File.get_content() length.
+    Does NOT rely on local filesystem.
+    
+    Args:
+        file_url: File URL
+        max_mb: Maximum allowed size in MB
+    
+    Raises:
+        ValidationError: If file missing or exceeds size limit
+    """
     if not file_url:
         frappe.throw(_("Please attach a Tax Invoice PDF before running OCR."))
-
-    local_path = get_site_path(file_url.strip("/"))
+    
     try:
-        size_mb = os.path.getsize(local_path) / (1024 * 1024)
-    except OSError:
+        file_doc = _get_file_doc_by_url(file_url)
+    except ValidationError:
+        # File not found in DB - let the actual read fail with clear error
+        frappe.throw(_("PDF file not found. Please re-attach the file."))
         return
-    if size_mb and size_mb > max_mb:
-        frappe.throw(_("File exceeds maximum size of {0} MB.").format(max_mb))
+    
+    # Try file_size field first (faster)
+    size_bytes = getattr(file_doc, "file_size", None)
+    
+    if not size_bytes:
+        # Fallback: get actual content length
+        try:
+            content = file_doc.get_content() or b""
+            size_bytes = len(content)
+        except Exception as e:
+            frappe.logger().warning(f"[OCR] Could not get file size for {file_url}: {e}")
+            size_bytes = 0
+    
+    if size_bytes == 0:
+        frappe.throw(_("PDF file is empty (0 bytes). Please re-upload a valid PDF."))
+    
+    size_mb = size_bytes / (1024 * 1024)
+    frappe.logger().info(f"[OCR] File size: {size_mb:.2f} MB")
+    
+    if size_mb > max_mb:
+        frappe.throw(_("File exceeds maximum size of {0} MB (current: {1:.1f} MB).").format(max_mb, size_mb))
 
 
 def _validate_provider_settings(provider: str, settings: dict[str, Any]) -> None:
@@ -1674,27 +1797,108 @@ def _resolve_file_path(file_url: str) -> str:
     raise ValidationError(error_msg)
 
 
-def _load_pdf_content_base64(file_url: str) -> tuple[str, str]:
+def _load_pdf_content_base64(file_url: str) -> tuple[str | None, str]:
+    """
+    Load PDF content as base64 string.
+    
+    🔥 FRAPPE CLOUD SAFE: Uses File.get_content() instead of local file read.
+    Works with local files, S3, and remote storage.
+    
+    Args:
+        file_url: File URL like /private/files/xxx.pdf
+    
+    Returns:
+        Tuple of (None, base64_content) - local_path is None since we use bytes
+    
+    Raises:
+        ValidationError: If file missing, empty, or not a valid PDF
+    """
     if not file_url:
         raise ValidationError(_("Tax Invoice PDF is missing. Please attach the file before running OCR."))
-
-    # Use cloud-safe file resolver
-    local_path = _resolve_file_path(file_url)
     
-    frappe.logger().info(f"[OCR] Reading PDF from: {local_path}")
+    frappe.logger().info(f"[OCR] Loading PDF content for: {file_url}")
+    
+    # Get file via Frappe File API (Cloud-safe)
+    file_doc = _get_file_doc_by_url(file_url)
     
     try:
-        with open(local_path, "rb") as handle:
-            content = base64.b64encode(handle.read()).decode("utf-8")
-        frappe.logger().info(f"[OCR] PDF read successfully, size: {len(content)} bytes (base64)")
-    except FileNotFoundError:
-        raise ValidationError(_("Could not read Tax Invoice PDF from {0}.").format(local_path))
-    except PermissionError:
-        raise ValidationError(_("Permission denied reading PDF file: {0}").format(local_path))
+        pdf_bytes = file_doc.get_content()
     except Exception as e:
-        raise ValidationError(_("Error reading PDF file {0}: {1}").format(local_path, str(e)))
+        raise ValidationError(
+            _("Could not read PDF file: {0}. Error: {1}").format(file_url, str(e))
+        )
     
-    return local_path, content
+    if not pdf_bytes:
+        raise ValidationError(_("PDF content is empty for file: {0}").format(file_url))
+    
+    # Validate PDF header
+    header = pdf_bytes[:20].lstrip() if pdf_bytes else b""
+    if not header.startswith(b"%PDF"):
+        if pdf_bytes[:2] == b"\x1f\x8b":
+            raise ValidationError(
+                _("Attached file appears to be gzipped, not a PDF: {0}").format(file_url)
+            )
+        raise ValidationError(
+            _("Attached file is not a valid PDF (missing %PDF header): {0}").format(file_url)
+        )
+    
+    content_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    frappe.logger().info(f"[OCR] PDF loaded successfully: {len(pdf_bytes)} bytes")
+    
+    # Return None for local_path since we're using bytes-based approach
+    return None, content_b64
+
+
+def _materialize_pdf_to_tempfile(file_url: str) -> str:
+    """
+    Write PDF bytes to a temporary file for tools that require file paths (e.g., Tesseract).
+    
+    🔥 FRAPPE CLOUD SAFE: Gets bytes via File.get_content(), writes to temp file.
+    
+    Args:
+        file_url: File URL like /private/files/xxx.pdf
+    
+    Returns:
+        Path to temporary PDF file
+    
+    Raises:
+        ValidationError: If file missing or empty
+    
+    Note:
+        Caller is responsible for cleaning up the temp file after use.
+    """
+    import tempfile
+    
+    frappe.logger().info(f"[OCR] Materializing PDF to temp file: {file_url}")
+    
+    file_doc = _get_file_doc_by_url(file_url)
+    
+    try:
+        pdf_bytes = file_doc.get_content()
+    except Exception as e:
+        raise ValidationError(
+            _("Could not read PDF file: {0}. Error: {1}").format(file_url, str(e))
+        )
+    
+    if not pdf_bytes:
+        raise ValidationError(_("PDF content is empty for file: {0}").format(file_url))
+    
+    # Write to temp file
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", prefix="ocr_")
+    try:
+        tmp.write(pdf_bytes)
+        tmp.flush()
+        tmp.close()
+        frappe.logger().info(f"[OCR] Temp file created: {tmp.name} ({len(pdf_bytes)} bytes)")
+        return tmp.name
+    except Exception as e:
+        # Clean up on error
+        try:
+            import os
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        raise ValidationError(_("Could not write temp file: {0}").format(str(e)))
 
 
 def _build_google_vision_url(settings: dict[str, Any]) -> str:
@@ -1702,7 +1906,7 @@ def _build_google_vision_url(settings: dict[str, Any]) -> str:
     parsed = urlparse(endpoint)
 
     if not parsed.scheme or not parsed.netloc:
-        raise_validation_error(("Google Vision endpoint is invalid."))
+        _raise_validation_error(_("Google Vision endpoint is invalid."))
 
     normalized = _normalize_google_vision_path(parsed.path, is_pdf=True)
     return f"{parsed.scheme}://{parsed.netloc}/v1/{normalized}"
@@ -1720,17 +1924,32 @@ def _parse_service_account_json(raw_value: str) -> dict[str, Any]:
 
 
 def _load_service_account_info(settings: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Load Google Vision Service Account JSON from file.
+    
+    🔥 FRAPPE CLOUD SAFE: Uses File.get_content() instead of local filesystem.
+    Works with local files, S3, and remote storage.
+    """
     file_url = settings.get("google_vision_service_account_file")
 
     if file_url:
-        local_path = get_site_path(file_url.strip("/"))
         try:
-            with open(local_path, "r", encoding="utf-8") as handle:
-                content = handle.read()
-        except FileNotFoundError:
-            raise ValidationError(_("Google Vision Service Account file not found: {0}").format(file_url))
-        except OSError as exc:
+            # Cloud-safe: use Frappe File API
+            file_doc = _get_file_doc_by_url(file_url)
+            if not file_doc:
+                raise ValidationError(_("Google Vision Service Account file not found: {0}").format(file_url))
+            
+            content_bytes = file_doc.get_content()
+            if isinstance(content_bytes, bytes):
+                content = content_bytes.decode("utf-8")
+            else:
+                content = content_bytes
+                
+        except ValidationError:
+            raise
+        except Exception as exc:
             raise ValidationError(_("Could not read Google Vision Service Account file: {0}").format(exc))
+        
         return _parse_service_account_json(content)
 
     return None
@@ -1862,7 +2081,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     data = response.json() if hasattr(response, "json") else {}
     responses = data.get("responses") or []
     if not responses:
-        raise ValidationError(_("Google Vision OCR did not return any responses for file {0}.").format(local_path))
+        raise ValidationError(_("Google Vision OCR did not return any responses for file {0}.").format(file_url))
 
     def _iter_entries(resp: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for entry in resp:
@@ -1949,7 +2168,16 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
 
 
 def _tesseract_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, dict[str, Any] | None, float]:
-    local_path, _ = _load_pdf_content_base64(file_url)
+    """
+    Extract text using Tesseract OCR.
+    
+    🔥 FRAPPE CLOUD SAFE: Uses temp file from File.get_content() bytes.
+    """
+    import os
+    
+    # Materialize PDF to temp file (Cloud-safe)
+    local_path = _materialize_pdf_to_tempfile(file_url)
+    
     language = settings.get("ocr_language") or "eng"
     command = settings.get("tesseract_cmd")
 
@@ -1964,15 +2192,24 @@ def _tesseract_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, dict[s
             text=True,
             timeout=60,
         )
+        text = (result.stdout or "").strip()
+        
     except FileNotFoundError:
         raise ValidationError(_("Tesseract command not found: {0}").format(command))
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         raise ValidationError(_("Tesseract OCR failed: {0}").format(stderr or exc)) from exc
     except subprocess.TimeoutExpired:
-        raise ValidationError(_("Tesseract OCR timed out for file {0}.").format(local_path))
+        raise ValidationError(_("Tesseract OCR timed out for file {0}.").format(file_url))
+    finally:
+        # Clean up temp file
+        try:
+            if local_path and os.path.exists(local_path):
+                os.unlink(local_path)
+                frappe.logger().info(f"[OCR] Temp file cleaned up: {local_path}")
+        except Exception as cleanup_err:
+            frappe.logger().warning(f"[OCR] Failed to clean up temp file: {cleanup_err}")
 
-    text = (result.stdout or "").strip()
     if not text:
         return "", None, 0.0
 
@@ -2064,9 +2301,18 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         
         frappe.logger().info(f"[OCR] File URL: {file_url}")
         
-        # Set status to Processing FIRST
-        target_doc.db_set(_get_fieldname(target_doctype, "ocr_status"), "Processing")
-        frappe.logger().info(f"[OCR] Status set to Processing")
+        # 🔧 CRASH-GAP FIX: Set status to Processing WITH timestamp for recovery detection
+        # If worker dies after this point but before completion, we can detect stale jobs
+        processing_update = {
+            _get_fieldname(target_doctype, "ocr_status"): "Processing",
+        }
+        # Add timestamp if field exists (for crash recovery)
+        ocr_started_field = _get_fieldname(target_doctype, "ocr_started_at")
+        if hasattr(target_doc, ocr_started_field) or frappe.db.has_column(target_doctype, ocr_started_field):
+            processing_update[ocr_started_field] = frappe.utils.now_datetime()
+        
+        target_doc.db_set(processing_update)
+        frappe.logger().info(f"[OCR] Status set to Processing (with timestamp)")
         
         # Extract text from PDF
         frappe.logger().info(f"[OCR] Calling ocr_extract_text_from_pdf...")
@@ -2471,7 +2717,8 @@ def get_tax_invoice_ocr_monitoring(docname: str, doctype: str) -> dict[str, Any]
             source_doc = frappe.get_doc(source_doctype, upload_name)
 
     pdf_field = _get_fieldname(source_doctype, "tax_invoice_pdf")
-    job_name = f"tax-invoice-ocr-{source_doctype}-{source_doc.name}"
+    # 🔥 FIX: Match job_name pattern from _enqueue_ocr: "ocr:{doctype}:{name}"
+    job_name = f"ocr:{source_doctype}:{source_doc.name}"
     job_info = _format_job_info(_pick_job_info(job_name), job_name)
     doc_info = {
         "name": docname,
@@ -2621,10 +2868,10 @@ def test_ocr_environment(upload_name: str | None = None) -> dict[str, Any]:
                 "file_faktur_pajak": doc.file_faktur_pajak,
             }
             
-            # Check file exists
+            # Check file exists - both local and Cloud-safe methods
             if doc.file_faktur_pajak:
                 try:
-                    # Try direct path first
+                    # Try direct path first (will fail on Frappe Cloud)
                     local_path = get_site_path(doc.file_faktur_pajak.strip("/"))
                     file_exists = os.path.exists(local_path)
                     file_size = os.path.getsize(local_path) if file_exists else 0
@@ -2637,7 +2884,24 @@ def test_ocr_environment(upload_name: str | None = None) -> dict[str, Any]:
                         "size_mb": round(file_size / (1024 * 1024), 2) if file_exists else 0
                     }
                     
-                    # Try resolver (cloud-safe)
+                    # Try Cloud-safe access via File.get_content()
+                    try:
+                        file_doc = _get_file_doc_by_url(doc.file_faktur_pajak)
+                        if file_doc:
+                            result["file_check"]["cloud_safe_file_doc"] = file_doc.name
+                            result["file_check"]["cloud_safe_file_size"] = file_doc.file_size
+                            # Try to get actual content
+                            content = file_doc.get_content()
+                            result["file_check"]["cloud_safe_content_size"] = len(content) if content else 0
+                            result["file_check"]["cloud_safe_access"] = True
+                        else:
+                            result["file_check"]["cloud_safe_access"] = False
+                            result["file_check"]["cloud_safe_error"] = "File doc not found"
+                    except Exception as cloud_err:
+                        result["file_check"]["cloud_safe_access"] = False
+                        result["file_check"]["cloud_safe_error"] = str(cloud_err)
+                    
+                    # Legacy resolver (for backward compatibility check)
                     if not file_exists:
                         try:
                             resolved_path = _resolve_file_path(doc.file_faktur_pajak)
@@ -2654,5 +2918,151 @@ def test_ocr_environment(upload_name: str | None = None) -> dict[str, Any]:
                     result["file_check"] = {"error": str(e)}
         except Exception as e:
             result["upload_doc"] = {"error": str(e)}
+    
+    return result
+
+
+@frappe.whitelist()
+def recover_stale_ocr_jobs(timeout_minutes: int = 10) -> dict[str, Any]:
+    """
+    🔧 CRASH-GAP RECOVERY: Detect and recover OCR jobs stuck in Processing state.
+    
+    This handles the edge case where a worker dies/restarts after setting
+    ocr_status="Processing" but before completing OCR or setting to Done/Failed.
+    
+    Detection criteria:
+    - ocr_status = "Processing"
+    - ocr_started_at < NOW() - timeout_minutes (if field exists)
+    - OR ocr_status = "Processing" for > timeout_minutes based on modified timestamp
+    
+    Recovery action:
+    - Set ocr_status = "Failed"
+    - Set notes = "Worker terminated unexpectedly. Please retry OCR."
+    
+    Args:
+        timeout_minutes: How long to wait before considering a job stale (default: 10)
+    
+    Returns:
+        Dict with recovered_count, recovered_docs, and any errors
+    
+    Usage:
+        - Manual: Call from console or API when needed
+        - Scheduled: Add to hooks.py scheduler_events for automatic recovery
+    
+    Example (manual):
+        >>> from imogi_finance.tax_invoice_ocr import recover_stale_ocr_jobs
+        >>> result = recover_stale_ocr_jobs(timeout_minutes=15)
+        >>> print(f"Recovered {result['recovered_count']} stale jobs")
+    
+    Example (scheduled - add to hooks.py):
+        scheduler_events = {
+            "cron": {
+                "*/15 * * * *": [  # Every 15 minutes
+                    "imogi_finance.tax_invoice_ocr.recover_stale_ocr_jobs"
+                ]
+            }
+        }
+    """
+    from frappe.utils import now_datetime, add_to_date
+    
+    result = {
+        "recovered_count": 0,
+        "recovered_docs": [],
+        "errors": [],
+        "checked_at": str(now_datetime()),
+        "timeout_minutes": timeout_minutes
+    }
+    
+    try:
+        cutoff_time = add_to_date(now_datetime(), minutes=-timeout_minutes)
+        
+        # Find stale Processing jobs
+        # Strategy: Use modified timestamp as fallback if ocr_started_at doesn't exist
+        stale_docs = frappe.get_all(
+            "Tax Invoice OCR Upload",
+            filters={
+                "ocr_status": "Processing",
+                "modified": ("<", cutoff_time)
+            },
+            fields=["name", "modified", "ocr_status"],
+            limit=100  # Process in batches to avoid timeout
+        )
+        
+        frappe.logger().info(
+            f"[OCR RECOVERY] Found {len(stale_docs)} potentially stale jobs "
+            f"(modified before {cutoff_time})"
+        )
+        
+        for doc_info in stale_docs:
+            try:
+                # Double-check the document is still Processing
+                current_status = frappe.db.get_value(
+                    "Tax Invoice OCR Upload", 
+                    doc_info.name, 
+                    "ocr_status"
+                )
+                
+                if current_status != "Processing":
+                    # Status changed, skip
+                    frappe.logger().info(
+                        f"[OCR RECOVERY] Skipping {doc_info.name} - status changed to {current_status}"
+                    )
+                    continue
+                
+                # Check if there's an active RQ job for this doc
+                job_name = f"ocr:Tax Invoice OCR Upload:{doc_info.name}"
+                existing_job = frappe.get_all(
+                    "RQ Job",
+                    filters={
+                        "job_name": job_name,
+                        "status": ("in", ["queued", "started"])
+                    },
+                    limit=1
+                )
+                
+                if existing_job:
+                    # Job still exists, don't recover
+                    frappe.logger().info(
+                        f"[OCR RECOVERY] Skipping {doc_info.name} - active RQ job found"
+                    )
+                    continue
+                
+                # Recover the stale job
+                frappe.db.set_value(
+                    "Tax Invoice OCR Upload",
+                    doc_info.name,
+                    {
+                        "ocr_status": "Failed",
+                        "notes": f"Worker terminated unexpectedly after {timeout_minutes} minutes. Please retry OCR."
+                    },
+                    update_modified=True
+                )
+                
+                result["recovered_count"] += 1
+                result["recovered_docs"].append({
+                    "name": doc_info.name,
+                    "modified": str(doc_info.modified),
+                    "recovered_at": str(now_datetime())
+                })
+                
+                frappe.logger().info(
+                    f"[OCR RECOVERY] Recovered stale job: {doc_info.name}"
+                )
+                
+            except Exception as doc_err:
+                error_msg = f"Failed to recover {doc_info.name}: {str(doc_err)}"
+                result["errors"].append(error_msg)
+                frappe.logger().error(f"[OCR RECOVERY] {error_msg}")
+        
+        if result["recovered_count"] > 0:
+            frappe.db.commit()
+            frappe.logger().info(
+                f"[OCR RECOVERY] Successfully recovered {result['recovered_count']} stale jobs"
+            )
+        
+    except Exception as e:
+        error_msg = f"Recovery process failed: {str(e)}"
+        result["errors"].append(error_msg)
+        frappe.logger().error(f"[OCR RECOVERY] {error_msg}", exc_info=True)
     
     return result

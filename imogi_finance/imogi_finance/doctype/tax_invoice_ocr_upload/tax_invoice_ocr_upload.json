@@ -39,6 +39,7 @@
     "verification_notes",
     "section_ocr",
     "ocr_status",
+    "ocr_started_at",
     "ocr_confidence",
     "column_break_ocr",
     "ocr_raw_json",
@@ -240,6 +241,14 @@
       "label": "Status OCR",
       "options": "Not Started\nQueued\nProcessing\nDone\nFailed",
       "read_only": 1
+    },
+    {
+      "fieldname": "ocr_started_at",
+      "fieldtype": "Datetime",
+      "label": "OCR Started At",
+      "read_only": 1,
+      "hidden": 1,
+      "description": "Timestamp when OCR processing started (for crash recovery)"
     },
     {
       "fieldname": "ocr_confidence",

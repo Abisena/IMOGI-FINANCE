@@ -136,16 +136,11 @@ class TaxInvoiceOCRUpload(Document):
         if not self.tax_invoice_pdf:
             frappe.throw(_("No PDF attached"))
         
-        # Get absolute path to PDF using cloud-safe resolver
-        try:
-            from imogi_finance.tax_invoice_ocr import _resolve_file_path
-            pdf_path = _resolve_file_path(self.tax_invoice_pdf)
-            frappe.logger().info(f"[PARSE] Resolved PDF path: {pdf_path}")
-        except Exception as resolve_err:
-            frappe.logger().error(f"[PARSE] Failed to resolve PDF path: {resolve_err}")
-            # Fallback to old method
-            pdf_path = get_site_path(self.tax_invoice_pdf.strip("/"))
-            frappe.logger().info(f"[PARSE] Using fallback path: {pdf_path}")
+        # 🔥 FRAPPE CLOUD SAFE: Pass file_url directly to parser
+        # The parser now uses bytes-based extraction via Frappe File API
+        # This works with local files, S3, and remote storage
+        file_url = self.tax_invoice_pdf
+        frappe.logger().info(f"[PARSE] Using file URL for Cloud-safe extraction: {file_url}")
 
         
         # Try to load vision_json from ocr_raw_json if available (for scanned PDFs)
@@ -163,9 +158,14 @@ class TaxInvoiceOCRUpload(Document):
                 vision_json_present = False
         
         try:
-            # Parse invoice using unified parser (PyMuPDF or Vision OCR)
+            # 🔥 Parse invoice using Cloud-safe unified parser
+            # Uses bytes-based extraction via Frappe File API
             tax_rate = flt(self.tax_rate or 0.11)
-            parse_result = parse_invoice(pdf_path=pdf_path, vision_json=vision_json, tax_rate=tax_rate)
+            parse_result = parse_invoice(
+                file_url_or_path=file_url,  # Cloud-safe: passes URL, not path
+                vision_json=vision_json, 
+                tax_rate=tax_rate
+            )
             
             # Inject vision_json_present into debug_info for troubleshooting
             if "debug_info" not in parse_result:

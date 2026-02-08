@@ -8,11 +8,14 @@ PyMuPDF-based layout-aware parser for Indonesian Tax Invoices (Faktur Pajak).
 This module extracts line items from PDF tax invoices using token positions
 to accurately map Harga Jual, DPP, and PPN columns, solving multi-line item
 extraction bugs.
+
+🔥 FRAPPE CLOUD SAFE: Uses bytes-based PDF reading via Frappe File API.
+   Works with local files, S3, and remote storage.
 """
 
 import json
 import re
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Union
 from collections import defaultdict
 
 import frappe
@@ -128,44 +131,193 @@ class ColumnRange:
 		}
 
 
-def extract_text_with_bbox(pdf_path: str) -> List[Token]:
+# =============================================================================
+# 🔥 FRAPPE CLOUD SAFE PDF HANDLING
+# =============================================================================
+
+def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 	"""
-	Extract text with bounding boxes from ALL PAGES of PDF using PyMuPDF.
+	Get PDF file content as bytes via Frappe File API.
 	
-	Multi-page support: Extracts tokens from all pages with page_no tracking.
-	Backward compatible: Single-page PDFs work identically.
+	🔥 FRAPPE CLOUD SAFE: Works with local files, S3, and remote storage.
+	This is the recommended way to read files in Frappe Cloud environments
+	where get_local_path() may return non-existent paths.
 	
 	Args:
-		pdf_path: Absolute path to PDF file
+		file_url_or_name: Can be:
+			- File URL: /private/files/xxx.pdf or /files/xxx.pdf
+			- File doctype name
+			- Absolute path (fallback for backward compatibility)
+	
+	Returns:
+		PDF content as bytes
+	
+	Raises:
+		ValueError: If file not found, empty, or not a valid PDF
+	"""
+	import os
+	
+	if not file_url_or_name:
+		raise ValueError("File URL/name is empty or None")
+	
+	frappe.logger().info(f"[PDF] Getting bytes for: {file_url_or_name}")
+	
+	file_doc = None
+	content = None
+	
+	# Strategy 1: Try as File doctype name
+	try:
+		if frappe.db.exists("File", file_url_or_name):
+			file_doc = frappe.get_doc("File", file_url_or_name)
+			frappe.logger().info(f"[PDF] Found File doc by name: {file_doc.name}")
+	except Exception as e:
+		frappe.logger().debug(f"[PDF] Not a File doc name: {e}")
+	
+	# Strategy 2: Try as file_url
+	if not file_doc:
+		try:
+			file_doc_name = frappe.db.get_value("File", {"file_url": file_url_or_name}, "name")
+			if file_doc_name:
+				file_doc = frappe.get_doc("File", file_doc_name)
+				frappe.logger().info(f"[PDF] Found File doc by file_url: {file_doc.name}")
+		except Exception as e:
+			frappe.logger().debug(f"[PDF] Could not find by file_url: {e}")
+	
+	# Strategy 3: Try with normalized URL (strip leading /)
+	if not file_doc and file_url_or_name.startswith("/"):
+		try:
+			normalized_url = file_url_or_name.lstrip("/")
+			file_doc_name = frappe.db.get_value(
+				"File", 
+				{"file_url": ["like", f"%{normalized_url}"]}, 
+				"name"
+			)
+			if file_doc_name:
+				file_doc = frappe.get_doc("File", file_doc_name)
+				frappe.logger().info(f"[PDF] Found File doc by normalized URL: {file_doc.name}")
+		except Exception as e:
+			frappe.logger().debug(f"[PDF] Could not find by normalized URL: {e}")
+	
+	# Get content from File doc
+	if file_doc:
+		try:
+			content = file_doc.get_content()
+			frappe.logger().info(
+				f"[PDF] Got content via File API: {len(content) if content else 0} bytes"
+			)
+		except Exception as e:
+			frappe.logger().warning(f"[PDF] File.get_content() failed: {e}")
+			content = None
+	
+	# Strategy 4: Fallback to direct file read (for absolute paths)
+	if not content and os.path.isabs(file_url_or_name) and os.path.exists(file_url_or_name):
+		try:
+			with open(file_url_or_name, "rb") as f:
+				content = f.read()
+			frappe.logger().info(f"[PDF] Read from absolute path: {len(content)} bytes")
+		except Exception as e:
+			frappe.logger().warning(f"[PDF] Direct file read failed: {e}")
+	
+	# Strategy 5: Fallback to site_path resolution
+	if not content:
+		try:
+			from frappe.utils import get_site_path
+			site_path = get_site_path(file_url_or_name.strip("/"))
+			if os.path.exists(site_path):
+				with open(site_path, "rb") as f:
+					content = f.read()
+				frappe.logger().info(f"[PDF] Read from site_path: {len(content)} bytes")
+		except Exception as e:
+			frappe.logger().warning(f"[PDF] Site path resolution failed: {e}")
+	
+	# Validate content
+	if not content:
+		raise ValueError(
+			f"Could not read PDF file: {file_url_or_name}. "
+			"File may not exist or is in remote storage that is not accessible."
+		)
+	
+	if len(content) == 0:
+		raise ValueError(f"PDF file is empty (0 bytes): {file_url_or_name}")
+	
+	# Validate PDF header (allow some whitespace before %PDF)
+	header_check = content[:20].lstrip()
+	if not header_check.startswith(b"%PDF"):
+		# Check if it might be gzipped or otherwise compressed
+		if content[:2] == b"\x1f\x8b":
+			raise ValueError(
+				f"File appears to be gzipped, not a PDF: {file_url_or_name}"
+			)
+		raise ValueError(
+			f"File is not a valid PDF (missing %PDF header): {file_url_or_name}. "
+			f"First bytes: {content[:20]!r}"
+		)
+	
+	frappe.logger().info(
+		f"[PDF] Successfully loaded {len(content)} bytes from {file_url_or_name}"
+	)
+	return content
+
+
+def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "bytes") -> List[Token]:
+	"""
+	Extract text with bounding boxes from PDF bytes using PyMuPDF.
+	
+	🔥 FRAPPE CLOUD SAFE: Opens PDF from bytes, not file path.
+	This avoids issues with S3/remote storage where local paths don't exist.
+	
+	Args:
+		pdf_bytes: PDF content as bytes
+		source_name: Name for logging (e.g., file URL)
 	
 	Returns:
 		List of Token objects with text, coordinates, and page_no
-		Empty list if PyMuPDF not available
 	
 	Raises:
-		Exception for file access or PDF parsing errors
+		ValueError: If PyMuPDF not available, PDF encrypted, or corrupted
 	"""
 	if not PYMUPDF_AVAILABLE:
 		frappe.log_error(
 			title="PyMuPDF Not Installed",
 			message=(
 				"PyMuPDF is required for Tax Invoice OCR line item parsing. "
-				"Add 'PyMuPDF>=1.23.0' to imogi_finance/requirements.txt and redeploy. "
-				"Check Frappe Cloud build logs for dependency installation errors."
+				"Add 'PyMuPDF>=1.23.0' to imogi_finance/requirements.txt and redeploy."
 			)
 		)
 		return []
 	
+	if not pdf_bytes:
+		raise ValueError("PDF bytes is empty or None")
+	
+	if len(pdf_bytes) < 100:
+		frappe.logger().warning(
+			f"[PyMuPDF] PDF suspiciously small ({len(pdf_bytes)} bytes): {source_name}"
+		)
+	
 	tokens = []
+	doc = None
 	
 	try:
-		doc = fitz.open(pdf_path)
+		# 🔥 Open from bytes, not path - this is the key fix!
+		doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+		
+		# Defensive check: verify document is actually open
+		if doc.is_closed:
+			raise ValueError(f"PDF document closed immediately after open (corrupted): {source_name}")
+		
+		# Check for encrypted PDFs
+		if doc.is_encrypted:
+			if not doc.authenticate(""):  # Try empty password
+				raise ValueError(f"PDF is encrypted and requires password: {source_name}")
+			frappe.logger().info(f"[PyMuPDF] PDF encrypted but opened with empty password: {source_name}")
 		
 		if len(doc) == 0:
-			frappe.throw(_("PDF has no pages"))
+			raise ValueError(f"PDF has no pages: {source_name}")
 		
-		# Process ALL pages (not just first page)
-		for page_index in range(len(doc)):
+		page_count = len(doc)
+		
+		# Process ALL pages
+		for page_index in range(page_count):
 			page_no = page_index + 1  # 1-based page numbering
 			page = doc[page_index]
 			
@@ -196,26 +348,69 @@ def extract_text_with_bbox(pdf_path: str) -> List[Token]:
 							)
 							tokens.append(token)
 		
-		doc.close()
-		
 		frappe.logger().info(
-			f"Extracted {len(tokens)} tokens from {len(doc)} page(s) in PDF: {pdf_path}"
+			f"[PyMuPDF] Extracted {len(tokens)} tokens from {page_count} page(s): {source_name}"
 		)
 		
 		if len(tokens) == 0:
-			frappe.log_error(
-				title="Empty PDF Text Layer",
-				message=f"No text tokens extracted from {pdf_path}. PDF may be scanned image."
+			frappe.logger().warning(
+				f"[PyMuPDF] No text tokens extracted: {source_name}. PDF may be scanned image."
 			)
 		
 		return tokens
 	
+	except fitz.FileDataError as e:
+		raise ValueError(f"PDF file is corrupted or invalid: {source_name}. Error: {e}")
 	except Exception as e:
+		error_str = str(e).lower()
+		if "encrypted" in error_str:
+			raise ValueError(f"PDF is encrypted: {source_name}")
+		if "closed" in error_str or "invalid" in error_str:
+			raise ValueError(f"PDF corrupted or closed unexpectedly: {source_name}. Error: {e}")
 		frappe.log_error(
 			title="PyMuPDF Text Extraction Failed",
-			message=f"Error extracting text from {pdf_path}: {str(e)}"
+			message=f"Error extracting text from {source_name}: {e}\n{frappe.get_traceback()}"
 		)
 		raise
+	
+	finally:
+		# Always close the document to prevent resource leaks
+		if doc is not None and not doc.is_closed:
+			try:
+				doc.close()
+			except Exception:
+				pass
+
+
+def extract_text_with_bbox(file_url_or_path: str) -> List[Token]:
+	"""
+	Extract text with bounding boxes from PDF using PyMuPDF.
+	
+	🔥 FRAPPE CLOUD SAFE: Now uses bytes-based extraction internally.
+	Accepts file URLs, File doc names, or absolute paths.
+	
+	Args:
+		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path
+	
+	Returns:
+		List of Token objects with text, coordinates, and page_no
+		Empty list if PyMuPDF not available
+	
+	Raises:
+		ValueError: If file not found, empty, encrypted, or corrupted
+	"""
+	if not PYMUPDF_AVAILABLE:
+		frappe.log_error(
+			title="PyMuPDF Not Installed",
+			message="PyMuPDF is required for Tax Invoice OCR line item parsing."
+		)
+		return []
+	
+	# Get PDF bytes via Cloud-safe method
+	pdf_bytes = _get_pdf_bytes(file_url_or_path)
+	
+	# Extract using bytes-based method
+	return extract_text_with_bbox_from_bytes(pdf_bytes, source_name=file_url_or_path)
 
 
 def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
@@ -310,58 +505,105 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 	return tokens
 
 
-def extract_tokens(pdf_path: Optional[str] = None, vision_json: Optional[Dict] = None) -> List[Token]:
+def extract_tokens(
+	file_url_or_path: Optional[str] = None, 
+	vision_json: Optional[Dict] = None,
+	pdf_bytes: Optional[bytes] = None
+) -> List[Token]:
 	"""
 	Unified token extraction with automatic fallback.
+	
+	🔥 FRAPPE CLOUD SAFE: Now accepts file URLs for bytes-based extraction.
 	
 	Pure extraction layer - does not perform any parsing logic.
 	Returns unified Token list regardless of source.
 	
 	Extraction Priority (automatic fallback):
 		1. Vision JSON (if provided) - Best for scanned PDFs
-		2. PyMuPDF (if pdf_path provided) - Best for text-layer PDFs
-		3. Raise ValueError if both fail or none provided
+		2. PDF bytes (if provided) - Direct bytes extraction
+		3. PyMuPDF via file URL (if file_url_or_path provided) - Best for text-layer PDFs
+		4. Raise ValueError if all fail or none provided
 	
 	Args:
-		pdf_path: Absolute path to PDF file (for PyMuPDF extraction)
+		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path
 		vision_json: Google Vision OCR JSON result (for scanned PDFs)
+		pdf_bytes: Direct PDF bytes (optional, for pre-loaded content)
 	
 	Returns:
 		List of Token objects
 	
 	Raises:
-		ValueError if neither pdf_path nor vision_json provided, or both extraction methods fail
-		Exception for extraction errors
+		ValueError if no input provided or all extraction methods fail
 	"""
-	if not pdf_path and not vision_json:
-		raise ValueError("Either pdf_path or vision_json must be provided")
+	if not file_url_or_path and not vision_json and not pdf_bytes:
+		raise ValueError("At least one of file_url_or_path, vision_json, or pdf_bytes must be provided")
 	
-	# Try vision_json first (preferred for scanned PDFs)
+	# Track errors for final error message
+	vision_error = None
+	pymupdf_error = None
+	
+	# STEP 1: Try vision_json first (preferred for scanned PDFs)
 	if vision_json:
 		try:
 			tokens = vision_to_tokens(vision_json)
-			if tokens:  # Success - return immediately
+			if tokens:
 				frappe.logger().info(f"Extracted {len(tokens)} tokens from Vision OCR JSON")
 				return tokens
 			else:
-				frappe.logger().warning("Vision JSON provided but returned 0 tokens - falling back to PyMuPDF")
+				vision_error = "returned 0 tokens (empty or invalid JSON structure)"
+				frappe.logger().warning(f"Vision JSON provided but {vision_error} - falling back to PyMuPDF")
 		except Exception as e:
-			frappe.logger().warning(f"Vision OCR extraction failed: {str(e)} - falling back to PyMuPDF")
+			vision_error = str(e)
+			frappe.logger().warning(f"Vision OCR extraction failed: {vision_error} - falling back to PyMuPDF")
 	
-	# Fallback to PyMuPDF if vision_json failed or unavailable
-	if pdf_path:
+	# STEP 2: Try direct bytes if provided
+	if pdf_bytes:
 		try:
-			tokens = extract_text_with_bbox(pdf_path)
+			tokens = extract_text_with_bbox_from_bytes(pdf_bytes, source_name="direct_bytes")
+			if tokens:
+				frappe.logger().info(f"Extracted {len(tokens)} tokens from PDF bytes")
+				return tokens
+			else:
+				pymupdf_error = "returned 0 tokens (PDF may be scanned image without text layer)"
+		except ValueError as e:
+			pymupdf_error = str(e)
+		except Exception as e:
+			pymupdf_error = f"unexpected error - {str(e)}"
+	
+	# STEP 3: Try file URL/path via Cloud-safe method
+	# NOTE: Always try if file_url_or_path is provided, even if Step 2 failed
+	# (Step 2 might fail with direct bytes, but Step 3 could work with file lookup)
+	if file_url_or_path:
+		try:
+			# Get bytes first, then extract - Cloud safe!
+			file_bytes = _get_pdf_bytes(file_url_or_path)
+			tokens = extract_text_with_bbox_from_bytes(file_bytes, source_name=file_url_or_path)
 			if tokens:
 				frappe.logger().info(f"Extracted {len(tokens)} tokens from PyMuPDF (text layer)")
 				return tokens
 			else:
-				raise ValueError("PyMuPDF extraction returned 0 tokens")
+				# Use 'or' to preserve error from Step 2 if it had more context
+				pymupdf_error = pymupdf_error or "returned 0 tokens (PDF may be scanned image without text layer)"
+		except ValueError as e:
+			pymupdf_error = pymupdf_error or str(e)
 		except Exception as e:
-			raise ValueError(f"Both extraction methods failed. Vision OCR: {'not provided' if not vision_json else 'failed'}, PyMuPDF: {str(e)}")
+			error_str = str(e).lower()
+			if "closed" in error_str or "invalid" in error_str or "corrupt" in error_str:
+				pymupdf_error = pymupdf_error or f"document corrupted - {str(e)}"
+			elif "not found" in error_str or "could not read" in error_str:
+				pymupdf_error = pymupdf_error or f"file access error - {str(e)}"
+			else:
+				pymupdf_error = pymupdf_error or str(e)
 	
-	# Should never reach here due to guard at top, but explicit for clarity
-	raise ValueError("No extraction source available")
+	# Build clear error message
+	vision_status = "not provided" if not vision_json else f"failed ({vision_error})" if vision_error else "failed"
+	pymupdf_status = "not attempted" if not file_url_or_path and not pdf_bytes else pymupdf_error or "unknown error"
+	
+	raise ValueError(
+		f"Both extraction methods failed. "
+		f"Vision OCR: {vision_status}. "
+		f"PyMuPDF: {pymupdf_status}"
+	)
 
 
 def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str, ColumnRange], str]:
@@ -728,12 +970,15 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 
 
 def parse_invoice(
-	pdf_path: Optional[str] = None,
+	file_url_or_path: Optional[str] = None,
 	vision_json: Optional[Dict] = None,
-	tax_rate: float = 0.11
+	tax_rate: float = 0.11,
+	pdf_path: Optional[str] = None  # Backward compatibility alias
 ) -> Dict[str, Any]:
 	"""
 	🆕 LINE ITEM PARSER - Token+Bounding Box Based
+	
+	🔥 FRAPPE CLOUD SAFE: Now uses bytes-based PDF reading.
 	
 	Scope:
 		Extracts LINE ITEMS (individual rows) from Faktur Pajak using spatial coordinates.
@@ -787,9 +1032,10 @@ def parse_invoice(
 		from imogi_finance.tax_invoice_ocr import parse_faktur_pajak_text
 	
 	Args:
-		pdf_path: Absolute path to PDF file (for PyMuPDF extraction)
+		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path (🔥 Cloud-safe)
 		vision_json: Google Vision OCR JSON result (for scanned PDFs)
 		tax_rate: PPN tax rate for validation (default 11%)
+		pdf_path: DEPRECATED - use file_url_or_path instead (backward compatibility)
 	
 	Returns:
 		Dictionary with:
@@ -800,13 +1046,17 @@ def parse_invoice(
 	
 	Example:
 		>>> from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
-		>>> result = parse_invoice(pdf_path="/path/to/faktur.pdf", tax_rate=0.11)
+		>>> result = parse_invoice(file_url_or_path="/private/files/faktur.pdf", tax_rate=0.11)
 		>>> if result["success"]:
 		...     for item in result["items"]:
 		...         print(f"Line {item['line_no']}: {item['description']} - Rp {item['harga_jual']}")
 		>>> else:
 		...     print(f"Parsing failed: {result['errors']}")
 	"""
+	# Backward compatibility: pdf_path -> file_url_or_path
+	if pdf_path and not file_url_or_path:
+		file_url_or_path = pdf_path
+	
 	result = {
 		"items": [],
 		"debug_info": {},
@@ -815,8 +1065,8 @@ def parse_invoice(
 	}
 	
 	try:
-		# Step 1: Extract tokens (source-specific)
-		tokens = extract_tokens(pdf_path=pdf_path, vision_json=vision_json)
+		# Step 1: Extract tokens (source-specific, Cloud-safe)
+		tokens = extract_tokens(file_url_or_path=file_url_or_path, vision_json=vision_json)
 		
 		if not tokens:
 			result["errors"].append("No text extracted from source")

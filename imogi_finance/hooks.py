@@ -392,6 +392,13 @@ scheduler_events = {
     "monthly": [
         "imogi_finance.reporting.tasks.run_monthly_reconciliation",
     ],
+    # 🔧 OCR Crash-Gap Recovery: Detect and recover stale Processing jobs
+    # Runs every 15 minutes to handle worker crashes/restarts
+    "cron": {
+        "*/15 * * * *": [
+            "imogi_finance.tax_invoice_ocr.recover_stale_ocr_jobs"
+        ]
+    },
 }
 
 # Testing
