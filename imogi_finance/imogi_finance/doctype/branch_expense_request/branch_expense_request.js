@@ -364,7 +364,7 @@ frappe.ui.form.on("Branch Expense Request", {
 		addDeferredExpenseItemActions(frm);
 		updateDeferredExpenseIndicators(frm);
 		updateTotalsSummaryBer(frm);
-		maybeAddOcrButton(frm);
+		// OCR button removed - OCR only via Tax Invoice OCR Upload DocType
 		maybeAddUploadActions(frm);
 		addCheckRouteButton(frm);
 	},
@@ -453,15 +453,7 @@ function update_totals(frm) {
 	updateTotalsSummaryBer(frm);
 }
 
-async function maybeAddOcrButton(frm) {
-	if (!frm.doc.name) {
-		return;
-	}
-
-	// OCR button removed - OCR should only be triggered from Tax Invoice OCR Upload DocType
-	// Users can click 'Open Tax Invoice Upload' button to access the Upload form and run OCR there
-	return;
-}
+// maybeAddOcrButton removed - OCR only via Tax Invoice OCR Upload DocType
 
 function maybeAddUploadActions(frm) {
 	if (!frm.doc.name || !frm.doc.ti_tax_invoice_upload) {

@@ -103,9 +103,27 @@ class TaxInvoiceOCRUpload(Document):
         This method is called after OCR completes to extract individual
         line items from the tax invoice with proper column mapping.
         
+        Race condition guards:
+        - If auto_triggered and ocr_status is Queued/Processing, skip (OCR not done)
+        - Manual trigger always allowed (user responsibility)
+        
         Args:
             auto_triggered: If True, triggered automatically after OCR (no user message)
         """
+        # 🔥 Race condition guard: Prevent parsing while OCR is still running
+        if self.ocr_status in ("Queued", "Processing") and auto_triggered:
+            frappe.logger().warning(
+                f"[PARSE SKIP] {self.name}: OCR status is {self.ocr_status}, cannot auto-parse"
+            )
+            return {"success": False, "error": f"OCR is {self.ocr_status}"}
+        
+        # Additional guard: For auto-triggered, ensure we have parseable data
+        if auto_triggered and self.ocr_status != "Done" and not self.ocr_raw_json:
+            frappe.logger().warning(
+                f"[PARSE SKIP] {self.name}: No parseable data (ocr_status={self.ocr_status}, no ocr_raw_json)"
+            )
+            return {"success": False, "error": "No OCR data to parse"}
+        
         from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
         from imogi_finance.imogi_finance.parsers.normalization import normalize_all_items
         from imogi_finance.imogi_finance.parsers.validation import (
@@ -118,8 +136,17 @@ class TaxInvoiceOCRUpload(Document):
         if not self.tax_invoice_pdf:
             frappe.throw(_("No PDF attached"))
         
-        # Get absolute path to PDF
-        pdf_path = get_site_path(self.tax_invoice_pdf.strip("/"))
+        # Get absolute path to PDF using cloud-safe resolver
+        try:
+            from imogi_finance.tax_invoice_ocr import _resolve_file_path
+            pdf_path = _resolve_file_path(self.tax_invoice_pdf)
+            frappe.logger().info(f"[PARSE] Resolved PDF path: {pdf_path}")
+        except Exception as resolve_err:
+            frappe.logger().error(f"[PARSE] Failed to resolve PDF path: {resolve_err}")
+            # Fallback to old method
+            pdf_path = get_site_path(self.tax_invoice_pdf.strip("/"))
+            frappe.logger().info(f"[PARSE] Using fallback path: {pdf_path}")
+
         
         # Try to load vision_json from ocr_raw_json if available (for scanned PDFs)
         vision_json = None
@@ -318,30 +345,56 @@ class TaxInvoiceOCRUpload(Document):
     
     def on_update(self):
         """Hook to auto-trigger line item parsing after OCR completes."""
+        frappe.logger().info(
+            f"[ON_UPDATE] {self.name}: ocr_status={self.ocr_status}, "
+            f"parse_status={self.parse_status}, items_count={len(self.items)}"
+        )
+        
         # Guard: Only enqueue if ALL conditions met (prevent duplicate jobs)
         should_enqueue = (
             self.ocr_status == "Done" and  # OCR completed
             self.tax_invoice_pdf and       # PDF exists
             not self.items and              # No items yet
-            self.parse_status in ["Draft", None, ""]  # Not yet parsed/processing
+            self.parse_status in ["Draft", None, ""] and  # Not yet parsed/processing
+            self.ocr_raw_json  # Ensure we have OCR data to parse (extra safety)
         )
         
+        frappe.logger().info(f"[ON_UPDATE] Should enqueue auto-parse: {should_enqueue}")
+        
         if should_enqueue:
+            # 🔥 CRITICAL: Use flag to prevent duplicate enqueues in same transaction
+            if getattr(self, '_auto_parse_enqueued', False):
+                frappe.logger().debug(f"[ON_UPDATE] Auto-parse already enqueued in this transaction, skipping")
+                return
+            
             # Additional guard: Check if already enqueued (prevent double-click spam)
             # This prevents multiple jobs if user saves multiple times quickly
             if not frappe.flags.in_test:
                 # In production: check for existing queued jobs
-                from frappe.utils.background_jobs import get_jobs
-                existing_jobs = get_jobs(
-                    site=frappe.local.site,
-                    queue="default",
-                    key="job_name"
-                )
-                
-                job_signature = f"tax-invoice-auto-parse:{self.name}"
-                if any(job_signature in str(job) for job in existing_jobs):
-                    frappe.logger().debug(f"Parse job already queued for {self.name}, skipping")
-                    return
+                try:
+                    from frappe.utils.background_jobs import get_jobs
+                    existing_jobs = get_jobs(
+                        site=frappe.local.site,
+                        queue="default",
+                        key="job_name"
+                    )
+                    
+                    # Deterministic job_name pattern: "parse:Tax Invoice OCR Upload:{docname}"
+                    job_signature = f"parse:Tax Invoice OCR Upload:{self.name}"
+                    if any(job_signature in str(job) for job in existing_jobs):
+                        frappe.logger().debug(f"[ON_UPDATE] Parse job already queued for {self.name}, skipping")
+                        return
+                except Exception as e:
+                    # If get_jobs fails, continue (better to enqueue duplicate than miss)
+                    frappe.logger().warning(f"[ON_UPDATE] Could not check existing jobs: {e}")
+            
+            frappe.logger().info(f"[ON_UPDATE] Enqueueing auto-parse for {self.name}")
+            
+            # Mark as enqueued to prevent duplicate in same transaction
+            self._auto_parse_enqueued = True
+            
+            # Deterministic job_name: "parse:Tax Invoice OCR Upload:{docname}"
+            job_name = f"parse:Tax Invoice OCR Upload:{self.name}"
             
             # Enqueue background job with unique job_name per document
             frappe.enqueue(
@@ -349,9 +402,12 @@ class TaxInvoiceOCRUpload(Document):
                 queue="default",
                 timeout=60,
                 doc_name=self.name,
-                job_name=f"tax-invoice-auto-parse:{self.name}",  # Unique per document for deduplication
-                now=frappe.flags.in_test
+                job_name=job_name,
+                now=frappe.flags.in_test,
+                enqueue_after_commit=True  # Ensure doc.save() is committed before job runs
             )
+            frappe.logger().info(f"[ON_UPDATE] Enqueued parse job: {job_name}")
+
     
     def _update_validation_summary(self):
         """Update validation summary HTML based on current items."""
@@ -445,19 +501,51 @@ def auto_parse_line_items(doc_name: str):
     """
     Background job to auto-parse line items after OCR completes.
     
+    Race condition guards:
+    - Skip if doc already has items (another job parsed first)
+    - Skip if ocr_status != "Done" (OCR not complete or failed)
+    - Skip if no ocr_raw_json and no PDF (no data to parse)
+    
     Args:
         doc_name: Name of Tax Invoice OCR Upload document
     """
+    frappe.logger().info(f"[AUTO-PARSE START] {doc_name}")
+    
     try:
         doc = frappe.get_doc("Tax Invoice OCR Upload", doc_name)
+        frappe.logger().info(
+            f"[AUTO-PARSE] Doc loaded: ocr_status={doc.ocr_status}, "
+            f"parse_status={doc.parse_status}, items_count={len(doc.items)}"
+        )
+        
+        # 🔥 Guard: Skip if already parsed (race condition protection)
+        if doc.items and len(doc.items) > 0:
+            frappe.logger().info(f"[AUTO-PARSE SKIP] {doc_name} already has {len(doc.items)} items")
+            return
+        
+        # Guard: Skip if OCR not done
+        if doc.ocr_status != "Done":
+            frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name} OCR status is {doc.ocr_status}, not Done")
+            return
+        
+        # 🔥 Additional guard: Ensure we have parseable data
+        if not doc.ocr_raw_json and not doc.tax_invoice_pdf:
+            frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name}: No ocr_raw_json and no PDF")
+            return
+        
+        frappe.logger().info(f"[AUTO-PARSE] Starting parse for {doc_name}")
         doc.parse_line_items(auto_triggered=True)
         frappe.db.commit()
         
         frappe.logger().info(
-            f"Auto-parsed line items for {doc_name}: "
+            f"[AUTO-PARSE SUCCESS] {doc_name}: "
             f"Status={doc.parse_status}, Items={len(doc.items)}"
         )
     except Exception as e:
+        frappe.logger().error(
+            f"[AUTO-PARSE FAILED] {doc_name}: {str(e)}",
+            exc_info=True
+        )
         frappe.log_error(
             title="Auto-Parse Line Items Failed",
             message=f"Failed to auto-parse {doc_name}: {str(e)}\n{frappe.get_traceback()}"

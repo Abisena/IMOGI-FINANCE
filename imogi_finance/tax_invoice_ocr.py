@@ -1999,13 +1999,23 @@ def _update_doc_after_ocr(
     confidence: float,
     raw_json: dict[str, Any] | None = None,
 ):
+    """
+    Update document with OCR results.
+    Uses save() to properly trigger hooks and update modified timestamp.
+    """
     allowed_keys = set(tax_invoice_fields.get_field_map(doctype).keys()) & ALLOWED_OCR_FIELDS
     extra_notes: list[str] = []
-    updates: dict[str, Any] = {
-        _get_fieldname(doctype, "status"): "Needs Review",
-        _get_fieldname(doctype, "ocr_status"): "Done",
-        _get_fieldname(doctype, "ocr_confidence"): confidence,
-    }
+    
+    # Set OCR status and confidence
+    ocr_status_field = _get_fieldname(doctype, "ocr_status")
+    status_field = _get_fieldname(doctype, "status")
+    confidence_field = _get_fieldname(doctype, "ocr_confidence")
+    
+    setattr(doc, ocr_status_field, "Done")
+    setattr(doc, status_field, "Needs Review")
+    setattr(doc, confidence_field, confidence)
+    
+    # Update parsed fields
     for key, value in parsed.items():
         if key not in allowed_keys:
             continue
@@ -2017,24 +2027,27 @@ def _update_doc_after_ocr(
                 continue
             value = sanitized
 
-        updates[_get_fieldname(doctype, key)] = value
+        setattr(doc, _get_fieldname(doctype, key), value)
 
+    # Update notes if any
     if extra_notes:
         notes_field = _get_fieldname(doctype, "notes")
         existing_notes = getattr(doc, notes_field, None) or ""
         combined = f"{existing_notes}\n" if existing_notes else ""
         combined += "\n".join(extra_notes)
-        updates[notes_field] = combined
+        setattr(doc, notes_field, combined)
 
+    # Update raw JSON
     if raw_json is not None:
-        updates[_get_fieldname(doctype, "ocr_raw_json")] = json.dumps(raw_json, indent=2)
-
-    db_set = getattr(doc, "db_set", None)
-    if callable(db_set):
-        db_set(updates)
-    else:
-        for field, value in updates.items():
-            setattr(doc, field, value)
+        setattr(doc, _get_fieldname(doctype, "ocr_raw_json"), json.dumps(raw_json, indent=2))
+    
+    # 🔥 CRITICAL: Use save() to trigger hooks properly
+    # This ensures on_update() is called automatically with correct state
+    doc.flags.ignore_validate = True  # Skip validation in background job
+    doc.flags.ignore_permissions = True
+    doc.save()
+    
+    frappe.logger().info(f"[OCR] Doc saved with ocr_status=Done, modified={doc.modified}")
 
 
 def _run_ocr_job(name: str, target_doctype: str, provider: str):
@@ -2093,6 +2106,10 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
             raw_json if cint(settings.get("store_raw_ocr_json", 1)) else None,
         )
         
+        # ✅ save() already called in _update_doc_after_ocr()
+        # This automatically triggers on_update() hook which enqueues auto-parse
+        # No need for manual commit/reload/on_update() call
+        
         frappe.logger().info(f"[OCR JOB SUCCESS] {target_doctype} {name}")
         
     except Exception as exc:
@@ -2128,28 +2145,49 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
 
 
 def _enqueue_ocr(doc: Any, doctype: str):
+    """Enqueue OCR background job with race condition protection.
+    
+    Uses try-finally to ensure status is set to Failed if enqueue fails,
+    preventing stuck "Queued" status.
+    
+    Job name pattern: "ocr:Tax Invoice OCR Upload:{docname}" for deterministic deduplication.
+    """
     settings = get_settings()
     pdf_field = _get_fieldname(doctype, "tax_invoice_pdf")
     _validate_pdf_size(getattr(doc, pdf_field, None), cint(settings.get("ocr_file_max_mb", 10)))
 
-    doc.db_set(
-        {
-            _get_fieldname(doctype, "ocr_status"): "Queued",
-            _get_fieldname(doctype, "notes"): None,
-        }
-    )
+    status_field = _get_fieldname(doctype, "ocr_status")
+    notes_field = _get_fieldname(doctype, "notes")
+    
+    # Set status to Queued first
+    doc.db_set({status_field: "Queued", notes_field: None})
+    
     provider = settings.get("ocr_provider", "Manual Only")
-
     method_path = f"{__name__}._run_ocr_job"
-    frappe.enqueue(
-        method_path,
-        queue="long",
-        job_name=f"tax-invoice-ocr-{doctype}-{doc.name}",
-        timeout=300,
-        now=getattr(frappe.flags, "in_test", False),
-        is_async=not getattr(frappe.flags, "in_test", False),
-        **{"name": doc.name, "target_doctype": doctype, "provider": provider},
-    )
+    
+    # Deterministic job_name: "ocr:Tax Invoice OCR Upload:{docname}"
+    job_name = f"ocr:{doctype}:{doc.name}"
+    
+    try:
+        frappe.enqueue(
+            method_path,
+            queue="long",
+            job_name=job_name,
+            timeout=300,
+            now=getattr(frappe.flags, "in_test", False),
+            is_async=not getattr(frappe.flags, "in_test", False),
+            enqueue_after_commit=True,  # Ensure Queued status is committed first
+            **{"name": doc.name, "target_doctype": doctype, "provider": provider},
+        )
+        frappe.logger().info(f"[OCR ENQUEUE] Job queued: {job_name}")
+    except Exception as enqueue_err:
+        # Rollback: if enqueue fails, set status to Failed to avoid stuck Queued
+        frappe.logger().error(f"[OCR ENQUEUE FAILED] {job_name}: {enqueue_err}")
+        doc.db_set({
+            status_field: "Failed",
+            notes_field: f"Enqueue failed: {str(enqueue_err)[:200]}"
+        })
+        raise
 
 
 def _get_party_npwp(doc: Any, doctype: str) -> str | None:
@@ -2326,6 +2364,13 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
 
 
 def run_ocr(docname: str, doctype: str):
+    """Run OCR for Tax Invoice OCR Upload document.
+    
+    Race condition guards:
+    - Only allows doctype "Tax Invoice OCR Upload" (hard guard)
+    - Returns early if ocr_status is already "Queued" or "Processing"
+    - Uses deterministic job_name for RQ deduplication
+    """
     if doctype != "Tax Invoice OCR Upload":
         frappe.throw(_("OCR only allowed via Tax Invoice OCR Upload"))
     
@@ -2338,6 +2383,17 @@ def run_ocr(docname: str, doctype: str):
         _raise_validation_error(provider_error)
 
     doc = frappe.get_doc(doctype, docname)
+    
+    # 🔥 Race condition guard: Prevent duplicate OCR jobs
+    current_status = getattr(doc, _get_fieldname(doctype, "ocr_status"), None)
+    if current_status in ("Queued", "Processing"):
+        frappe.logger().info(f"[OCR SKIP] {doctype} {docname} already {current_status}")
+        return {
+            "queued": False,
+            "message": _("OCR is already {0}. Please wait for completion.").format(current_status),
+            "status": current_status
+        }
+    
     _enqueue_ocr(doc, doctype)
     return {"queued": True}
 
