@@ -46,6 +46,12 @@ class TaxInvoiceOCRUpload(Document):
         self.tax_invoice_type = tax_invoice_type
         self.tax_invoice_type_description = type_description
         
+        # Prevent manual changes to parse_status (must be set via parse_line_items only)
+        if self.has_value_changed("parse_status") and not self.flags.allow_parse_status_update:
+            old_status = self.get_doc_before_save().parse_status if self.get_doc_before_save() else None
+            if old_status:
+                frappe.throw(_("Parse Status tidak boleh diubah manual. Gunakan tombol 'Parse Line Items'."))
+        
         # Update validation summary if items exist
         if self.items:
             self._update_validation_summary()
@@ -233,7 +239,8 @@ class TaxInvoiceOCRUpload(Document):
             debug_info["auto_triggered"] = auto_triggered
             self.parsing_debug_json = json.dumps(debug_info, indent=2, ensure_ascii=False)
             
-            # Set parse status
+            # Set parse status (set flag to allow update during parsing)
+            self.flags.allow_parse_status_update = True
             self.parse_status = parse_status
             
             # Generate validation summary HTML

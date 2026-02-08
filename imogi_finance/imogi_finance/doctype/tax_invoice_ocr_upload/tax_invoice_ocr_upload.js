@@ -85,38 +85,45 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
-		// Add Parse Line Items button after OCR completes
-		if (frm.doc.ocr_status === 'Done' && frm.doc.tax_invoice_pdf) {
+		// Add Parse Line Items button when OCR is done OR when user wants to re-parse
+		if (frm.doc.tax_invoice_pdf && (frm.doc.ocr_status === 'Done' || frm.doc.parse_status !== 'Draft')) {
 			frm.add_custom_button(__('Parse Line Items'), async () => {
 				await frappe.call({
 					doc: frm.doc,
 					method: 'parse_line_items',
+					args: { auto_triggered: false },
 					freeze: true,
-					freeze_message: __('Parsing line items...'),
+					freeze_message: __('Parsing line items dari PDF...'),
+				});
+				frappe.show_alert({ 
+					message: __('Parsing selesai. Status: {0}', [frm.doc.parse_status]), 
+					indicator: frm.doc.parse_status === 'Approved' ? 'green' : 'orange' 
 				});
 				await frm.reload_doc();
 			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
-		// Add Review & Approve button for items needing review
+		// Show info for Needs Review status (no manual approval - user must fix data)
 		if (frm.doc.parse_status === 'Needs Review' && !frm.is_new()) {
-			frm.add_custom_button(__('Review & Approve'), async () => {
-				frappe.confirm(
-					__('Have you reviewed all flagged items? This will mark the parsing as Approved.'),
-					async () => {
-						frm.set_value('parse_status', 'Approved');
-						await frm.save();
-						frappe.show_alert({ message: __('Parse status updated to Approved'), indicator: 'green' });
-					}
-				);
-			}, TAX_INVOICE_OCR_GROUP);
+			frm.dashboard.set_headline_alert(
+				__('⚠️ Parse Status: Needs Review - Ada items dengan confidence rendah atau total tidak cocok. Periksa validation summary di bawah.'),
+				'orange'
+			);
 		}
 		
-		// Add Generate Purchase Invoice button when approved
-		if (frm.doc.parse_status === 'Approved' && frm.doc.items && frm.doc.items.length > 0) {
-			frm.add_custom_button(__('Generate Purchase Invoice'), () => {
-				frappe.msgprint(__('Purchase Invoice generation will be implemented in integration phase.'));
-			}, TAX_INVOICE_OCR_GROUP);
+		// Show success for Approved status
+		if (frm.doc.parse_status === 'Approved' && !frm.is_new()) {
+			frm.dashboard.set_headline_alert(
+				__('✅ Parse Status: Approved - Semua line items valid dan siap digunakan.'),
+				'green'
+			);
+			
+			// Add Generate Purchase Invoice button when approved
+			if (frm.doc.items && frm.doc.items.length > 0) {
+				frm.add_custom_button(__('Generate Purchase Invoice'), () => {
+					frappe.msgprint(__('Purchase Invoice generation akan diimplementasi di fase integrasi.'));
+				}, TAX_INVOICE_OCR_GROUP);
+			}
 		}
 
 		frm.add_custom_button(__('Verify Tax Invoice'), async () => {

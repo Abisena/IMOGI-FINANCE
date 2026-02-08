@@ -172,9 +172,10 @@
       "fieldname": "parse_status",
       "fieldtype": "Select",
       "label": "Parse Status",
-      "options": "Draft\nParsed\nNeeds Review\nApproved\nPosted",
+      "options": "Draft\nNeeds Review\nApproved",
       "bold": 1,
-      "description": "Status parsing line items"
+      "read_only": 1,
+      "description": "Auto-calculated status dari hasil parsing (Read Only)"
     },
     {
       "fieldname": "validation_summary",
