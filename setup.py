@@ -15,4 +15,7 @@ setup(
     license="mit",
     packages=find_packages(),
     include_package_data=True,
+    install_requires=[
+        "PyMuPDF>=1.23.0",  # PDF text extraction with coordinates
+    ],
 )
