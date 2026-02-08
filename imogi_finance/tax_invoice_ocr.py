@@ -1952,15 +1952,31 @@ def _update_doc_after_ocr(
 
 
 def _run_ocr_job(name: str, target_doctype: str, provider: str):
-    target_doc = frappe.get_doc(target_doctype, name)
-    settings = get_settings()
-    pdf_field = _get_fieldname(target_doctype, "tax_invoice_pdf")
+    # 🔥 EARLY LOG: Kalau ini tidak muncul → worker crash sebelum function executed
+    frappe.logger().info(f"[OCR JOB START] {target_doctype} {name} | Provider: {provider}")
+    
     try:
-        target_doc.db_set(_get_fieldname(target_doctype, "ocr_status"), "Processing")
+        target_doc = frappe.get_doc(target_doctype, name)
+        frappe.logger().info(f"[OCR] Doc loaded: {name}")
+        
+        settings = get_settings()
+        pdf_field = _get_fieldname(target_doctype, "tax_invoice_pdf")
         file_url = getattr(target_doc, pdf_field)
+        
+        frappe.logger().info(f"[OCR] File URL: {file_url}")
+        
+        # Set status to Processing FIRST
+        target_doc.db_set(_get_fieldname(target_doctype, "ocr_status"), "Processing")
+        frappe.logger().info(f"[OCR] Status set to Processing")
+        
+        # Extract text from PDF
+        frappe.logger().info(f"[OCR] Calling ocr_extract_text_from_pdf...")
         text, raw_json, confidence = ocr_extract_text_from_pdf(file_url, provider)
+        frappe.logger().info(f"[OCR] Extraction complete | Confidence: {confidence} | Text length: {len(text or '')}")
+        
         if not (text or "").strip():
             error_msg = _("OCR returned empty text for file {0}.").format(file_url)
+            frappe.logger().warning(f"[OCR] Empty text returned: {error_msg}")
             update_payload = {
                 _get_fieldname(target_doctype, "ocr_status"): "Failed",
                 _get_fieldname(target_doctype, "notes"): error_msg,
@@ -1969,11 +1985,20 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                 update_payload[_get_fieldname(target_doctype, "ocr_raw_json")] = json.dumps(raw_json, indent=2)
             target_doc.db_set(update_payload)
             return
+        
+        # Parse the extracted text
+        frappe.logger().info(f"[OCR] Parsing faktur pajak text...")
         parsed, estimated_confidence = parse_faktur_pajak_text(text or "")
+        frappe.logger().info(f"[OCR] Parse complete | Found fp_no: {parsed.get('fp_no')}")
+        
         if not parsed.get("fp_no"):
             raw_fp_no = _extract_faktur_number_from_json(raw_json)
             if raw_fp_no:
                 parsed["fp_no"] = raw_fp_no
+                frappe.logger().info(f"[OCR] Extracted fp_no from JSON: {raw_fp_no}")
+        
+        # Update doc with OCR results
+        frappe.logger().info(f"[OCR] Updating doc with OCR results...")
         _update_doc_after_ocr(
             target_doc,
             target_doctype,
@@ -1981,21 +2006,37 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
             confidence or estimated_confidence,
             raw_json if cint(settings.get("store_raw_ocr_json", 1)) else None,
         )
+        
+        frappe.logger().info(f"[OCR JOB SUCCESS] {target_doctype} {name}")
+        
     except Exception as exc:
+        frappe.logger().error(
+            f"[OCR JOB CRASHED] {target_doctype} {name} | Error: {str(exc)[:200]}",
+            exc_info=True
+        )
+        
         error_message = getattr(exc, "message", None) or str(exc)
-        # Truncate to 500 chars untuk field size limit
         error_message_short = error_message[:500] if len(error_message) > 500 else error_message
         
-        target_doc.db_set(
-            {
-                _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                _get_fieldname(target_doctype, "notes"): error_message_short,
-            }
-        )
+        try:
+            # Try to update status to Failed
+            target_doc = frappe.get_doc(target_doctype, name)
+            target_doc.db_set(
+                {
+                    _get_fieldname(target_doctype, "ocr_status"): "Failed",
+                    _get_fieldname(target_doctype, "notes"): error_message_short,
+                }
+            )
+            frappe.logger().info(f"[OCR] Status set to Failed for {name}")
+        except Exception as db_exc:
+            # Even db_set failed - log it
+            frappe.logger().error(f"[OCR] Could not set Failed status: {str(db_exc)}")
+        
         frappe.log_error(
             title=f"OCR FAILED: {target_doctype} {name}",
             message=frappe.get_traceback()
         )
+        
         # 🔥 CRITICAL: Re-raise exception agar worker tahu job gagal
         raise
 
@@ -2337,3 +2378,123 @@ def get_tax_invoice_ocr_monitoring(docname: str, doctype: str) -> dict[str, Any]
         "provider": settings.get("ocr_provider"),
         "max_retry": settings.get("ocr_max_retry"),
     }
+
+
+# ============================================================================
+# DIAGNOSTIC FUNCTIONS (FOR DEBUGGING)
+# ============================================================================
+
+def check_ocr_dependencies() -> dict[str, Any]:
+    """
+    Check if all OCR dependencies are available.
+    Call this from console to diagnose dependency issues.
+    
+    Usage:
+        from imogi_finance.tax_invoice_ocr import check_ocr_dependencies
+        check_ocr_dependencies()
+    """
+    result = {
+        "all_ok": True,
+        "dependencies": {},
+        "errors": []
+    }
+    
+    # Check google-auth
+    try:
+        import google.auth
+        result["dependencies"]["google-auth"] = {
+            "installed": True,
+            "version": getattr(google.auth, "__version__", "unknown")
+        }
+    except ImportError as e:
+        result["all_ok"] = False
+        result["dependencies"]["google-auth"] = {"installed": False, "error": str(e)}
+        result["errors"].append("google-auth not installed")
+    
+    # Check requests
+    try:
+        import requests
+        result["dependencies"]["requests"] = {
+            "installed": True,
+            "version": requests.__version__
+        }
+    except ImportError as e:
+        result["all_ok"] = False
+        result["dependencies"]["requests"] = {"installed": False, "error": str(e)}
+        result["errors"].append("requests not installed")
+    
+    # Check PyMuPDF (fitz)
+    try:
+        import fitz
+        result["dependencies"]["PyMuPDF"] = {
+            "installed": True,
+            "version": fitz.version
+        }
+    except ImportError as e:
+        result["all_ok"] = False
+        result["dependencies"]["PyMuPDF"] = {"installed": False, "error": str(e)}
+        result["errors"].append("PyMuPDF (fitz) not installed")
+    
+    return result
+
+
+def test_ocr_environment(upload_name: str | None = None) -> dict[str, Any]:
+    """
+    Test OCR environment and configuration.
+    
+    Usage:
+        from imogi_finance.tax_invoice_ocr import test_ocr_environment
+        test_ocr_environment("04002600021035998")
+    """
+    result = {
+        "dependencies": check_ocr_dependencies(),
+        "settings": {},
+        "upload_doc": None,
+        "file_check": None
+    }
+    
+    # Check settings
+    try:
+        settings = get_settings()
+        result["settings"] = {
+            "enable_tax_invoice_ocr": settings.get("enable_tax_invoice_ocr"),
+            "ocr_provider": settings.get("ocr_provider"),
+            "google_vision_service_account_file": settings.get("google_vision_service_account_file"),
+            "google_vision_endpoint": settings.get("google_vision_endpoint"),
+        }
+        
+        provider_ready, provider_error = _get_provider_status(settings)
+        result["settings"]["provider_ready"] = provider_ready
+        result["settings"]["provider_error"] = provider_error
+    except Exception as e:
+        result["settings"]["error"] = str(e)
+    
+    # Check upload doc if provided
+    if upload_name:
+        try:
+            doc = frappe.get_doc("Tax Invoice OCR Upload", upload_name)
+            result["upload_doc"] = {
+                "name": doc.name,
+                "ocr_status": doc.ocr_status,
+                "file_faktur_pajak": doc.file_faktur_pajak,
+            }
+            
+            # Check file exists
+            if doc.file_faktur_pajak:
+                try:
+                    local_path = get_site_path(doc.file_faktur_pajak.strip("/"))
+                    file_exists = os.path.exists(local_path)
+                    file_size = os.path.getsize(local_path) if file_exists else 0
+                    
+                    result["file_check"] = {
+                        "path": local_path,
+                        "exists": file_exists,
+                        "size_bytes": file_size,
+                        "size_mb": round(file_size / (1024 * 1024), 2) if file_exists else 0
+                    }
+                except Exception as e:
+                    result["file_check"] = {"error": str(e)}
+        except Exception as e:
+            result["upload_doc"] = {"error": str(e)}
+    
+    return result
