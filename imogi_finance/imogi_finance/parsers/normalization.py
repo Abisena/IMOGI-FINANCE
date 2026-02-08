@@ -116,36 +116,6 @@ def clean_description(text: str) -> str:
 	return text
 
 
-def parse_idr_amount_extended(text: str, min_value: float = 0, max_value: float = None) -> Optional[float]:
-	"""
-	Extended version of IDR amount parsing with validation.
-	
-	This extends the existing parse_idr_amount from tax_invoice_ocr.py
-	with additional normalization and validation.
-	
-	Args:
-		text: Text to parse
-		min_value: Minimum acceptable value (default 0)
-		max_value: Maximum acceptable value (default None = no limit)
-	
-	Returns:
-		Float value or None if invalid
-	"""
-	value = normalize_indonesian_number(text)
-	
-	if value is None:
-		return None
-	
-	# Validate range
-	if value < min_value:
-		return None
-	
-	if max_value is not None and value > max_value:
-		return None
-	
-	return value
-
-
 def extract_npwp(text: str) -> Optional[str]:
 	"""
 	Extract and normalize NPWP (Indonesian Tax ID).

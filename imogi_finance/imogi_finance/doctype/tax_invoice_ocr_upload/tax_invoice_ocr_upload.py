@@ -46,11 +46,11 @@ class TaxInvoiceOCRUpload(Document):
         self.tax_invoice_type = tax_invoice_type
         self.tax_invoice_type_description = type_description
         
-        # Prevent manual changes to parse_status (must be set via parse_line_items only)
+        # Prevent manual changes to parse_status (set automatically by parser or via approve_parse method)
         if self.has_value_changed("parse_status") and not self.flags.allow_parse_status_update:
             old_status = self.get_doc_before_save().parse_status if self.get_doc_before_save() else None
             if old_status:
-                frappe.throw(_("Parse Status tidak boleh diubah manual. Gunakan tombol 'Parse Line Items'."))
+                frappe.throw(_("Parse Status tidak boleh diubah manual. Status ini di-set otomatis oleh sistem atau via tombol 'Review & Approve'."))
         
         # Update validation summary if items exist
         if self.items:
@@ -95,7 +95,10 @@ class TaxInvoiceOCRUpload(Document):
     @frappe.whitelist()
     def parse_line_items(self, auto_triggered: bool = False):
         """
-        Parse line items from PDF using layout-aware parser.
+        Parse line items from PDF using unified layout-aware parser.
+        
+        Supports both text-layer PDFs (PyMuPDF) and scanned PDFs (Google Vision OCR).
+        Automatically uses vision_json from ocr_raw_json if PyMuPDF extraction fails.
         
         This method is called after OCR completes to extract individual
         line items from the tax invoice with proper column mapping.
@@ -118,10 +121,29 @@ class TaxInvoiceOCRUpload(Document):
         # Get absolute path to PDF
         pdf_path = get_site_path(self.tax_invoice_pdf.strip("/"))
         
+        # Try to load vision_json from ocr_raw_json if available (for scanned PDFs)
+        vision_json = None
+        vision_json_present = False
+        if self.ocr_raw_json:
+            try:
+                vision_json = json.loads(self.ocr_raw_json)
+                vision_json_present = bool(vision_json)  # Track if valid JSON loaded
+            except Exception as json_err:
+                frappe.logger().warning(
+                    f"Failed to parse ocr_raw_json for {self.name}: {str(json_err)}. "
+                    "Will fallback to PyMuPDF extraction."
+                )
+                vision_json_present = False
+        
         try:
-            # Parse invoice using PyMuPDF-based parser
+            # Parse invoice using unified parser (PyMuPDF or Vision OCR)
             tax_rate = flt(self.tax_rate or 0.11)
-            parse_result = parse_invoice(pdf_path, tax_rate)
+            parse_result = parse_invoice(pdf_path=pdf_path, vision_json=vision_json, tax_rate=tax_rate)
+            
+            # Inject vision_json_present into debug_info for troubleshooting
+            if "debug_info" not in parse_result:
+                parse_result["debug_info"] = {}
+            parse_result["debug_info"]["vision_json_present"] = vision_json_present
             
             if not parse_result.get("success"):
                 errors = "; ".join(parse_result.get("errors", []))
@@ -132,7 +154,7 @@ class TaxInvoiceOCRUpload(Document):
                 <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
                     <strong>⚠️ Parsing Failed</strong><br>
                     {errors}<br><br>
-                    <small>Check Error Log for details. For Frappe Cloud: verify build logs show PyMuPDF installation.</small>
+                    <small>Check Error Log for details. Unified parser supports both PyMuPDF (text-layer) and Google Vision OCR (scanned PDFs).</small>
                 </div>
                 """
                 self.save()
@@ -157,22 +179,24 @@ class TaxInvoiceOCRUpload(Document):
                 
                 self.parse_status = "Needs Review"
                 
-                # Differentiate: no tokens (PyMuPDF/dependency) vs layout issue
+                # Differentiate: no tokens (extraction failed) vs layout issue
                 if token_count == 0:
-                    # No text extracted - likely PyMuPDF missing or scanned PDF
+                    # No text extracted - both PyMuPDF and Vision OCR failed
                     self.validation_summary = """
                     <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
                         <strong>⚠️ No Text Extracted from PDF</strong><br>
                         Token count: 0<br><br>
+                        The unified parser tried both extraction methods:<br>
+                        • <strong>PyMuPDF</strong> (for text-layer PDFs)<br>
+                        • <strong>Google Vision OCR</strong> (from ocr_raw_json, if available)<br><br>
                         Possible causes:<br>
-                        • <strong>PyMuPDF not installed on server</strong> (most likely)<br>
-                        • PDF is scanned image without text layer<br>
-                        • PDF file corrupted or empty<br><br>
-                        <small><strong>For Frappe Cloud:</strong> Verify build logs show PyMuPDF installation. 
-                        If console import works but worker fails, try <strong>Clear Cache & Deploy</strong>.</small>
+                        • PDF file corrupted or empty<br>
+                        • OCR was not run (ocr_raw_json empty)<br>
+                        • PyMuPDF not installed AND no OCR data available<br><br>
+                        <small><strong>Solution:</strong> If this is a scanned PDF, run OCR first to populate ocr_raw_json, then re-parse.</small>
                     </div>
                     """
-                    debug_info["warning"] = "No tokens extracted - PyMuPDF missing or scanned PDF"
+                    debug_info["warning"] = "No tokens extracted - both PyMuPDF and Vision OCR failed"
                 else:
                     # Tokens extracted but no table detected - layout issue
                     self.validation_summary = f"""
@@ -254,6 +278,18 @@ class TaxInvoiceOCRUpload(Document):
             
             # Save document
             self.save()
+            
+            # Auto-trigger verification after successful parsing
+            # This validates business rules (NPWP match, duplicate, PPN calculation)
+            if parse_status == "Approved" and self.fp_no:
+                try:
+                    from imogi_finance.tax_invoice_ocr import verify_tax_invoice
+                    verify_tax_invoice(self, doctype="Tax Invoice OCR Upload", force=False)
+                except Exception as e:
+                    frappe.log_error(
+                        title="Auto-Verify Failed After Parse",
+                        message=f"Failed to verify {self.name} after parsing: {str(e)}"
+                    )
             
             if not auto_triggered:
                 frappe.msgprint(
@@ -351,6 +387,58 @@ class TaxInvoiceOCRUpload(Document):
             self.parse_status or "Draft"
         )
         self.validation_summary = validation_html
+
+
+@frappe.whitelist()
+def approve_parse(docname: str):
+    """
+    Manually approve parse status after user has reviewed and fixed data.
+    
+    This method bypasses the read_only restriction on parse_status field.
+    Should only be called when user has verified all line items.
+    
+    Args:
+        docname: Name of Tax Invoice OCR Upload document
+    
+    Returns:
+        dict: {"ok": True} if successful, {"ok": False, "message": error} if failed
+    """
+    try:
+        doc = frappe.get_doc("Tax Invoice OCR Upload", docname)
+        
+        # Validation: Check if document has items
+        if not doc.items or len(doc.items) == 0:
+            return {
+                "ok": False,
+                "message": _("Cannot approve: No line items found. Line items are parsed automatically after OCR completes.")
+            }
+        
+        # Optional: Check if any items have very low confidence (user decision to override)
+        # low_confidence_items = [item for item in doc.items if flt(item.row_confidence) < 0.85]
+        # if low_confidence_items:
+        #     return {
+        #         "ok": False,
+        #         "message": _("Cannot approve: {0} items have confidence below 0.85").format(len(low_confidence_items))
+        #     }
+        
+        # Set flag to allow parse_status update
+        doc.flags.allow_parse_status_update = True
+        doc.parse_status = "Approved"
+        doc.save(ignore_permissions=True)
+        
+        frappe.logger().info(f"Parse status manually approved for {docname} by {frappe.session.user}")
+        
+        return {"ok": True}
+        
+    except Exception as e:
+        frappe.log_error(
+            title="Manual Parse Approval Failed",
+            message=f"Failed to approve parse for {docname}: {str(e)}\n{frappe.get_traceback()}"
+        )
+        return {
+            "ok": False,
+            "message": _("Error: {0}").format(str(e))
+        }
 
 
 def auto_parse_line_items(doc_name: str):

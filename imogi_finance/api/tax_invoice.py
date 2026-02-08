@@ -14,26 +14,6 @@ from imogi_finance.tax_invoice_ocr import (
 
 
 @frappe.whitelist()
-def run_ocr_for_purchase_invoice(pi_name: str):
-    return run_ocr(pi_name, "Purchase Invoice")
-
-
-@frappe.whitelist()
-def run_ocr_for_expense_request(er_name: str):
-    return run_ocr(er_name, "Expense Request")
-
-
-@frappe.whitelist()
-def run_ocr_for_branch_expense_request(ber_name: str):
-    return run_ocr(ber_name, "Branch Expense Request")
-
-
-@frappe.whitelist()
-def run_ocr_for_sales_invoice(si_name: str):
-    return run_ocr(si_name, "Sales Invoice")
-
-
-@frappe.whitelist()
 def run_ocr_for_upload(upload_name: str):
     return run_ocr(upload_name, "Tax Invoice OCR Upload")
 

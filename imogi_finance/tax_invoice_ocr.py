@@ -105,6 +105,21 @@ def _normalize_google_vision_path(path: str | None, *, is_pdf: bool = True) -> s
 
 
 def normalize_npwp(npwp: str | None) -> str | None:
+    """
+    Normalize NPWP by removing dots, dashes, and spaces.
+    
+    Use this function when you already have an NPWP string and need to normalize it.
+    
+    For EXTRACTING NPWP from raw OCR text, use:
+        from imogi_finance.imogi_finance.parsers.normalization import extract_npwp
+        npwp = extract_npwp(ocr_text)  # Extracts + normalizes
+    
+    Args:
+        npwp: NPWP string (may contain formatting like dots/dashes)
+    
+    Returns:
+        Normalized NPWP (digits only) or None
+    """
     if not npwp:
         return npwp
     settings = get_settings()
@@ -144,16 +159,6 @@ INDO_MONTHS = {
 def _get_fieldname(doctype: str, key: str) -> str:
     mapping = tax_invoice_fields.get_field_map(doctype)
     return mapping.get(key, key)
-
-
-def _get_canonical_key(fieldname: str) -> str:
-    if fieldname.startswith("ti_fp_"):
-        return fieldname.replace("ti_fp_", "")
-    if fieldname.startswith("out_fp_"):
-        return fieldname.replace("out_fp_", "")
-    if fieldname == "out_buyer_tax_id":
-        return "npwp"
-    return fieldname
 
 
 def _get_value(doc: Any, doctype: str, key: str, default: Any = None) -> Any:
@@ -318,17 +323,26 @@ def _extract_section(text: str, start_label: str, end_label: str | None = None) 
 
 
 def _parse_idr_amount(value: str) -> float:
-    cleaned = (value or "").strip()
-    last_dot = cleaned.rfind(".")
-    last_comma = cleaned.rfind(",")
-    if last_dot == -1 and last_comma == -1:
-        return flt(cleaned)
-
-    decimal_index = max(last_dot, last_comma)
-    integer_part = re.sub(r"[.,]", "", cleaned[:decimal_index])
-    decimal_part = cleaned[decimal_index + 1 :]
-    normalized = f"{integer_part}.{decimal_part}"
-    return flt(normalized)
+    """
+    LEGACY WRAPPER: Parse Indonesian Rupiah amount format.
+    
+    Delegates to parsers.normalization.parse_idr_amount for unified logic.
+    Maintained for backward compatibility with existing code.
+    
+    Indonesian format:
+    - Thousand separator: . (dot)
+    - Decimal separator: , (comma)
+    - Example: "1.234.567,89" -> 1234567.89
+    
+    Args:
+        value: String representation of IDR amount
+    
+    Returns:
+        Float value (defaults to 0.0 if parsing fails)
+    """
+    from imogi_finance.imogi_finance.parsers.normalization import parse_idr_amount
+    result = parse_idr_amount(value)
+    return result if result is not None else 0.0
 
 
 def _sanitize_amount(value: Any, *, max_abs: float = 9_999_999_999_999.99) -> float | None:
@@ -864,13 +878,57 @@ def _extract_faktur_number_from_json(raw_json: dict[str, Any] | str | None) -> s
 
 def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     """
-    🔧 FIXED VERSION: Parse Faktur Pajak text with improved Harga Jual extraction.
-
-    Key improvements:
-    1. Prioritize signature section amounts over table amounts
-    2. Better filtering of signature amounts with DPP validation
-    3. Enhanced fallback logic when signature extraction fails
-    4. More robust logging for debugging
+    ⚠️ LEGACY HEADER/TOTALS EXTRACTOR - OCR Text-Based Parsing
+    
+    Scope:
+        Extracts HEADER FIELDS and DOCUMENT TOTALS from OCR text using regex patterns.
+        Does NOT extract line items (use parse_invoice() for that).
+    
+    Extracted Fields:
+        - fp_no (Faktur Pajak number)
+        - fp_date (Invoice date)
+        - npwp (Seller NPWP)
+        - harga_jual (TOTAL from signature section)
+        - dpp (TOTAL Dasar Pengenaan Pajak)
+        - ppn (TOTAL Pajak Pertambahan Nilai)
+        - ppnbm (TOTAL PPnBM if applicable)
+    
+    Used By:
+        - _run_ocr_job() → Sets header fields on:
+          * Purchase Invoice
+          * Expense Request
+          * Branch Expense Request
+          * Sales Invoice
+          * Tax Invoice OCR Upload
+    
+    Parsing Strategy:
+        1. Regex-based extraction from plain OCR text
+        2. Label-based amount extraction (prioritized)
+        3. Signature section fallback (6-amount format)
+        4. Validation: Harga Jual >= DPP
+    
+    Why Legacy?
+        - Proven stable in production for header extraction
+        - Regex works well for unstructured header text
+        - Different use case than token-based line item parsing
+    
+    ⚠️ DO NOT USE FOR LINE ITEMS
+        For line item extraction, use:
+        from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
+    
+    Args:
+        text: Raw OCR text from Google Vision or other OCR provider
+    
+    Returns:
+        Tuple of (matches_dict, confidence_score)
+        - matches_dict: Extracted field values
+        - confidence_score: Float 0.0-1.0 based on extraction success
+    
+    Example:
+        >>> ocr_text = frappe.get_value("Tax Invoice OCR Upload", upload_name, "ocr_text")
+        >>> matches, conf = parse_faktur_pajak_text(ocr_text)
+        >>> print(matches["fp_no"])  # "010.000-24.12345678"
+        >>> print(matches["harga_jual"])  # 10000000.00 (TOTAL)
     """
     matches: dict[str, Any] = {}
     confidence = 0.0
@@ -2133,6 +2191,9 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
 
 
 def run_ocr(docname: str, doctype: str):
+    if doctype != "Tax Invoice OCR Upload":
+        frappe.throw(_("OCR only allowed via Tax Invoice OCR Upload"))
+    
     settings = get_settings()
     if not cint(settings.get("enable_tax_invoice_ocr", 0)):
         _raise_validation_error(_("Tax Invoice OCR is disabled. Enable it in Tax Invoice OCR Settings."))

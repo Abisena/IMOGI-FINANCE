@@ -85,57 +85,116 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
-		// Add Parse Line Items button when OCR is done OR when user wants to re-parse
-		if (frm.doc.tax_invoice_pdf && (frm.doc.ocr_status === 'Done' || frm.doc.parse_status !== 'Draft')) {
-			frm.add_custom_button(__('Parse Line Items'), async () => {
-				await frappe.call({
-					doc: frm.doc,
-					method: 'parse_line_items',
-					args: { auto_triggered: false },
-					freeze: true,
-					freeze_message: __('Parsing line items dari PDF...'),
-				});
-				frappe.show_alert({ 
-					message: __('Parsing selesai. Status: {0}', [frm.doc.parse_status]), 
-					indicator: frm.doc.parse_status === 'Approved' ? 'green' : 'orange' 
-				});
-				await frm.reload_doc();
+		// Show info: Auto-parsing is triggered automatically after OCR completes
+		if (frm.doc.ocr_status === 'Done' && frm.doc.parse_status === 'Draft' && !frm.doc.items.length) {
+			frm.dashboard.set_headline_alert(
+				__('⏳ Parsing line items automatically... Refresh halaman dalam beberapa detik untuk melihat hasil.'),
+				'blue'
+			);
+		}
+		
+		// Add Re-Parse button ONLY when items already exist (for manual re-parse)
+		if (frm.doc.tax_invoice_pdf && frm.doc.items && frm.doc.items.length > 0) {
+			frm.add_custom_button(__('🔄 Re-Parse Line Items'), async () => {
+				frappe.confirm(
+					__('Re-parse akan menghapus semua line items yang ada dan parse ulang dari PDF. Lanjutkan?'),
+					async () => {
+						await frappe.call({
+							doc: frm.doc,
+							method: 'parse_line_items',
+							args: { auto_triggered: false },
+							freeze: true,
+							freeze_message: __('Re-parsing line items dari PDF...'),
+						});
+						frappe.show_alert({ 
+							message: __('Re-parsing selesai. Status: {0}', [frm.doc.parse_status]), 
+							indicator: frm.doc.parse_status === 'Approved' ? 'green' : 'orange' 
+						});
+						await frm.reload_doc();
+					}
+				);
 			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
-		// Show info for Needs Review status (no manual approval - user must fix data)
+		// Show Review & Approve button when parse_status is Needs Review
 		if (frm.doc.parse_status === 'Needs Review' && !frm.is_new()) {
 			frm.dashboard.set_headline_alert(
 				__('⚠️ Parse Status: Needs Review - Ada items dengan confidence rendah atau total tidak cocok. Periksa validation summary di bawah.'),
 				'orange'
 			);
+			
+			// Add Review & Approve button for manual approval after user fixes data
+			frm.add_custom_button(__('Review & Approve'), () => {
+				frappe.call({
+					method: 'imogi_finance.imogi_finance.doctype.tax_invoice_ocr_upload.tax_invoice_ocr_upload.approve_parse',
+					args: { docname: frm.doc.name },
+					freeze: true,
+					freeze_message: __('Approving parsed line items...'),
+					callback: (r) => {
+						if (r.message && r.message.ok) {
+							frappe.show_alert({
+								message: __('Parse status approved successfully'),
+								indicator: 'green'
+							});
+							frm.reload_doc();
+						} else {
+							frappe.msgprint({
+								message: r.message?.message || __('Failed to approve parse status'),
+								indicator: 'red'
+							});
+						}
+					}
+				});
+			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
 		// Show success for Approved status
 		if (frm.doc.parse_status === 'Approved' && !frm.is_new()) {
-			frm.dashboard.set_headline_alert(
-				__('✅ Parse Status: Approved - Semua line items valid dan siap digunakan.'),
-				'green'
-			);
+			// Check if verification also passed
+			const verificationPassed = frm.doc.verification_status === 'Verified';
+			const verificationIssues = !frm.doc.npwp_match || frm.doc.duplicate_flag;
 			
-			// Add Generate Purchase Invoice button when approved
-			if (frm.doc.items && frm.doc.items.length > 0) {
+			if (verificationPassed) {
+				frm.dashboard.set_headline_alert(
+					__('✅ Parse Status: Approved - Semua line items valid dan siap digunakan.'),
+					'green'
+				);
+			} else if (verificationIssues) {
+				// Show warning if there are verification issues
+				let issues = [];
+				if (!frm.doc.npwp_match) issues.push('NPWP tidak match');
+				if (frm.doc.duplicate_flag) issues.push('Faktur duplikat terdeteksi');
+				
+				frm.dashboard.set_headline_alert(
+					__('⚠️ Parse OK, tapi ada masalah verifikasi: {0}', [issues.join(', ')]),
+					'orange'
+				);
+			}
+			
+			// Add Generate Purchase Invoice button when approved AND verified
+			if (frm.doc.items && frm.doc.items.length > 0 && verificationPassed) {
 				frm.add_custom_button(__('Generate Purchase Invoice'), () => {
 					frappe.msgprint(__('Purchase Invoice generation akan diimplementasi di fase integrasi.'));
 				}, TAX_INVOICE_OCR_GROUP);
 			}
 		}
 
-		frm.add_custom_button(__('Verify Tax Invoice'), async () => {
-			await frappe.call({
-				method: 'imogi_finance.api.tax_invoice.verify_tax_invoice_upload',
-				args: { upload_name: frm.doc.name },
-				freeze: true,
-				freeze_message: __('Verifying Tax Invoice...'),
-			});
-			frappe.show_alert({ message: __('Tax Invoice verification queued.'), indicator: 'green' });
-			await refreshUploadStatus(frm);
-		}, TAX_INVOICE_OCR_GROUP);
+		// Add Manual Verify button only if auto-verify failed or not yet run
+		// (normally auto-verify runs after parse succeeds)
+		if (frm.doc.parse_status === 'Approved' && 
+		    frm.doc.verification_status === 'Needs Review' &&
+		    frm.doc.fp_no) {
+			frm.add_custom_button(__('🔍 Re-Run Verification'), async () => {
+				await frappe.call({
+					method: 'imogi_finance.api.tax_invoice.verify_tax_invoice_upload',
+					args: { upload_name: frm.doc.name },
+					freeze: true,
+					freeze_message: __('Verifying Tax Invoice...'),
+				});
+				frappe.show_alert({ message: __('Verification complete.'), indicator: 'green' });
+				await frm.reload_doc();
+			}, TAX_INVOICE_OCR_GROUP);
+		}
 	},
 	
 	items_on_form_rendered(frm) {
