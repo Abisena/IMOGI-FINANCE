@@ -1598,16 +1598,102 @@ def _get_provider_status(settings: dict[str, Any]) -> tuple[bool, str | None]:
         return False, _("OCR provider not configured. Please update Tax Invoice OCR Settings.")
 
 
+def _resolve_file_path(file_url: str) -> str:
+    """
+    Resolve file URL to actual local file path.
+    Handles both local files and Frappe Cloud S3/remote files.
+    
+    Args:
+        file_url: File URL from File doctype (can be /private/files/xxx or /files/xxx)
+    
+    Returns:
+        Absolute local file path that exists and is readable
+    
+    Raises:
+        ValidationError: If file cannot be found or accessed
+    """
+    if not file_url:
+        raise ValidationError(_("File URL is empty"))
+    
+    frappe.logger().info(f"[OCR] Resolving file: {file_url}")
+    
+    # Try 1: Direct local path (most common in on-premise)
+    try:
+        local_path = get_site_path(file_url.strip("/"))
+        if os.path.exists(local_path) and os.path.isfile(local_path):
+            frappe.logger().info(f"[OCR] File found at local path: {local_path}")
+            return local_path
+    except Exception as e:
+        frappe.logger().warning(f"[OCR] Could not resolve as local path: {e}")
+    
+    # Try 2: Get File doc and use file_url or file_path
+    try:
+        # Find File doc by file_url
+        file_filters = [
+            ["file_url", "=", file_url],
+            ["file_name", "like", f"%{os.path.basename(file_url)}%"]
+        ]
+        
+        for filter_cond in file_filters:
+            files = frappe.get_all("File", filters=[filter_cond], fields=["name", "file_url", "file_name"], limit=1)
+            if files:
+                file_doc = frappe.get_doc("File", files[0].name)
+                frappe.logger().info(f"[OCR] Found File doc: {file_doc.name}")
+                
+                # Try file_name (actual path on disk)
+                if file_doc.file_name:
+                    file_path = get_site_path(file_doc.file_name.strip("/"))
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        frappe.logger().info(f"[OCR] File found via File.file_name: {file_path}")
+                        return file_path
+                
+                # Try file_url
+                if file_doc.file_url and file_doc.file_url != file_url:
+                    file_path = get_site_path(file_doc.file_url.strip("/"))
+                    if os.path.exists(file_path) and os.path.isfile(file_path):
+                        frappe.logger().info(f"[OCR] File found via File.file_url: {file_path}")
+                        return file_path
+                
+                break
+    except Exception as e:
+        frappe.logger().warning(f"[OCR] Could not find File doc: {e}")
+    
+    # Try 3: Check if it's already an absolute path
+    if os.path.isabs(file_url) and os.path.exists(file_url) and os.path.isfile(file_url):
+        frappe.logger().info(f"[OCR] File is already absolute path: {file_url}")
+        return file_url
+    
+    # All attempts failed
+    error_msg = _(
+        "Could not find or access PDF file. "
+        "URL: {0}. "
+        "File may be in remote storage (S3) or deleted. "
+        "Please re-upload the file."
+    ).format(file_url)
+    frappe.logger().error(f"[OCR] {error_msg}")
+    raise ValidationError(error_msg)
+
+
 def _load_pdf_content_base64(file_url: str) -> tuple[str, str]:
     if not file_url:
         raise ValidationError(_("Tax Invoice PDF is missing. Please attach the file before running OCR."))
 
-    local_path = get_site_path(file_url.strip("/"))
+    # Use cloud-safe file resolver
+    local_path = _resolve_file_path(file_url)
+    
+    frappe.logger().info(f"[OCR] Reading PDF from: {local_path}")
+    
     try:
         with open(local_path, "rb") as handle:
             content = base64.b64encode(handle.read()).decode("utf-8")
+        frappe.logger().info(f"[OCR] PDF read successfully, size: {len(content)} bytes (base64)")
     except FileNotFoundError:
-        raise ValidationError(_("Could not read Tax Invoice PDF from {0}.").format(file_url))
+        raise ValidationError(_("Could not read Tax Invoice PDF from {0}.").format(local_path))
+    except PermissionError:
+        raise ValidationError(_("Permission denied reading PDF file: {0}").format(local_path))
+    except Exception as e:
+        raise ValidationError(_("Error reading PDF file {0}: {1}").format(local_path, str(e)))
+    
     return local_path, content
 
 
@@ -2482,16 +2568,32 @@ def test_ocr_environment(upload_name: str | None = None) -> dict[str, Any]:
             # Check file exists
             if doc.file_faktur_pajak:
                 try:
+                    # Try direct path first
                     local_path = get_site_path(doc.file_faktur_pajak.strip("/"))
                     file_exists = os.path.exists(local_path)
                     file_size = os.path.getsize(local_path) if file_exists else 0
                     
                     result["file_check"] = {
-                        "path": local_path,
-                        "exists": file_exists,
+                        "file_url": doc.file_faktur_pajak,
+                        "direct_path": local_path,
+                        "direct_path_exists": file_exists,
                         "size_bytes": file_size,
                         "size_mb": round(file_size / (1024 * 1024), 2) if file_exists else 0
                     }
+                    
+                    # Try resolver (cloud-safe)
+                    if not file_exists:
+                        try:
+                            resolved_path = _resolve_file_path(doc.file_faktur_pajak)
+                            result["file_check"]["resolved_path"] = resolved_path
+                            result["file_check"]["resolved_exists"] = os.path.exists(resolved_path)
+                            if os.path.exists(resolved_path):
+                                result["file_check"]["resolved_size_mb"] = round(
+                                    os.path.getsize(resolved_path) / (1024 * 1024), 2
+                                )
+                        except Exception as resolve_err:
+                            result["file_check"]["resolve_error"] = str(resolve_err)
+                    
                 except Exception as e:
                     result["file_check"] = {"error": str(e)}
         except Exception as e:

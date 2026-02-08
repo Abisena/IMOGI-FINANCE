@@ -17,5 +17,8 @@ setup(
     include_package_data=True,
     install_requires=[
         "PyMuPDF>=1.23.0",  # PDF text extraction with coordinates
+        "google-auth>=2.16.0",  # Google Cloud authentication
+        "google-auth-oauthlib>=1.0.0",  # OAuth2 for Google APIs
+        "requests>=2.28.0",  # HTTP library for API calls
     ],
 )
