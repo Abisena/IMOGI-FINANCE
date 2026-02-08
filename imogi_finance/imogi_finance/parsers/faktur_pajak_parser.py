@@ -540,19 +540,19 @@ def parse_invoice(pdf_path: str, tax_rate: float = 0.11) -> Dict[str, Any]:
 				result["errors"].append("No text extracted from PDF (may be scanned image)")
 			return result
 		
-# Store tokens in debug info (truncate if too large)
-	MAX_DEBUG_TOKENS = 500  # Limit to prevent huge JSON
-	if len(tokens) <= MAX_DEBUG_TOKENS:
-		result["debug_info"]["tokens"] = [t.to_dict() for t in tokens]
-	else:
-		# Store only first and last tokens as sample
-		result["debug_info"]["tokens"] = (
-			[t.to_dict() for t in tokens[:100]] +
-			[{"text": f"... {len(tokens) - 200} tokens truncated ...", "bbox": [0, 0, 0, 0]}] +
-			[t.to_dict() for t in tokens[-100:]]
-		)
-		result["debug_info"]["tokens_truncated"] = True
-		result["debug_info"]["token_count"] = len(tokens)
+		# Store tokens in debug info (truncate if too large)
+		MAX_DEBUG_TOKENS = 500  # Limit to prevent huge JSON
+		if len(tokens) <= MAX_DEBUG_TOKENS:
+			result["debug_info"]["tokens"] = [t.to_dict() for t in tokens]
+		else:
+			# Store only first and last tokens as sample
+			result["debug_info"]["tokens"] = (
+				[t.to_dict() for t in tokens[:100]] +
+				[{"text": f"... {len(tokens) - 200} tokens truncated ...", "bbox": [0, 0, 0, 0]}] +
+				[t.to_dict() for t in tokens[-100:]]
+			)
+			result["debug_info"]["tokens_truncated"] = True
+			result["debug_info"]["token_count"] = len(tokens)
 		
 		# Step 2: Detect table header and column ranges
 		header_y, column_ranges = detect_table_header(tokens)
