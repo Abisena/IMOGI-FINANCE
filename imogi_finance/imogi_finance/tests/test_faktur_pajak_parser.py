@@ -21,7 +21,7 @@ from unittest.mock import Mock, patch, MagicMock
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from imogi_finance.parsers.faktur_pajak_parser import (
+from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import (
     Token,
     ColumnRange,
     detect_table_header,
@@ -32,13 +32,13 @@ from imogi_finance.parsers.faktur_pajak_parser import (
     merge_description_wraparounds,
     parse_invoice
 )
-from imogi_finance.parsers.normalization import (
+from imogi_finance.imogi_finance.parsers.normalization import (
     normalize_indonesian_number,
     clean_description,
     normalize_line_item,
     extract_npwp
 )
-from imogi_finance.parsers.validation import (
+from imogi_finance.imogi_finance.parsers.validation import (
     validate_line_item,
     validate_invoice_totals,
     determine_parse_status,

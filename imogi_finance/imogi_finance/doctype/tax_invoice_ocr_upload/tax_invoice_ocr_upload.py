@@ -103,9 +103,9 @@ class TaxInvoiceOCRUpload(Document):
         Args:
             auto_triggered: If True, triggered automatically after OCR (no user message)
         """
-        from imogi_finance.parsers.faktur_pajak_parser import parse_invoice
-        from imogi_finance.parsers.normalization import normalize_all_items
-        from imogi_finance.parsers.validation import (
+        from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
+        from imogi_finance.imogi_finance.parsers.normalization import normalize_all_items
+        from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
             determine_parse_status,
@@ -323,7 +323,7 @@ class TaxInvoiceOCRUpload(Document):
             self.validation_summary = ""
             return
         
-        from imogi_finance.parsers.validation import (
+        from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
             generate_validation_summary_html
