@@ -19,11 +19,17 @@
     "section_tax_details",
     "npwp",
     "ppn_type",
+    "tax_rate",
     "column_break_tax",
     "harga_jual",
     "dpp",
     "ppn",
     "ppnbm",
+    "section_line_items",
+    "items",
+    "section_parse_validation",
+    "parse_status",
+    "validation_summary",
     "section_verification",
     "verification_status",
     "column_break_verification",
@@ -36,6 +42,7 @@
     "ocr_confidence",
     "column_break_ocr",
     "ocr_raw_json",
+    "parsing_debug_json",
     "created_by_user",
     "submit_on"
   ],
@@ -101,11 +108,18 @@
       "description": "Nomor Pokok Wajib Pajak"
     },
     {
-      "default": "Standard",
       "fieldname": "ppn_type",
       "fieldtype": "Select",
       "label": "Tipe PPN",
       "options": "Standard\nZero Rated\nExempt/Not PPN"
+    },
+    {
+      "default": "0.11",
+      "fieldname": "tax_rate",
+      "fieldtype": "Float",
+      "label": "Tax Rate (PPN %)",
+      "description": "Tarif PPN untuk validasi (default 11%)",
+      "precision": 4
     },
     {
       "fieldname": "column_break_tax",
@@ -133,6 +147,40 @@
       "fieldname": "ppnbm",
       "fieldtype": "Currency",
       "label": "PPnBM (Pajak Penjualan Barang Mewah)"
+    },
+    {
+      "collapsible": 0,
+      "fieldname": "section_line_items",
+      "fieldtype": "Section Break",
+      "label": "📋 Line Items (Detail Barang/Jasa)",
+      "description": "Daftar item dari faktur pajak yang berhasil di-parse"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "Tax Invoice OCR Upload Item"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_parse_validation",
+      "fieldtype": "Section Break",
+      "label": "✅ Parse Status & Validation"
+    },
+    {
+      "default": "Draft",
+      "fieldname": "parse_status",
+      "fieldtype": "Select",
+      "label": "Parse Status",
+      "options": "Draft\nParsed\nNeeds Review\nApproved\nPosted",
+      "bold": 1,
+      "description": "Status parsing line items"
+    },
+    {
+      "fieldname": "validation_summary",
+      "fieldtype": "HTML",
+      "label": "Validation Summary",
+      "description": "Ringkasan hasil validasi"
     },
     {
       "collapsible": 0,
@@ -209,6 +257,14 @@
       "label": "Data OCR Lengkap (JSON)",
       "options": "JSON",
       "read_only": 1
+    },
+    {
+      "fieldname": "parsing_debug_json",
+      "fieldtype": "Code",
+      "label": "Parsing Debug Data (JSON)",
+      "options": "JSON",
+      "read_only": 1,
+      "description": "Token positions, column ranges, table boundaries untuk debugging"
     },
     {
       "fieldname": "created_by_user",

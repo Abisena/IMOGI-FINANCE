@@ -1,0 +1,174 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2026-02-08 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "line_no",
+    "description",
+    "qty",
+    "uom",
+    "column_break_1",
+    "harga_jual",
+    "dpp",
+    "ppn",
+    "row_confidence",
+    "notes",
+    "section_debug",
+    "raw_harga_jual",
+    "raw_dpp",
+    "raw_ppn",
+    "column_break_debug",
+    "col_x_harga_jual",
+    "col_x_dpp",
+    "col_x_ppn",
+    "row_y"
+  ],
+  "fields": [
+    {
+      "fieldname": "line_no",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "No",
+      "width": "60px",
+      "bold": 1
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Text",
+      "in_list_view": 1,
+      "label": "Deskripsi Barang/Jasa",
+      "width": "250px"
+    },
+    {
+      "fieldname": "qty",
+      "fieldtype": "Float",
+      "label": "Jumlah",
+      "width": "80px",
+      "precision": 2
+    },
+    {
+      "fieldname": "uom",
+      "fieldtype": "Data",
+      "label": "Satuan",
+      "width": "60px"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "harga_jual",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Harga Jual",
+      "width": "120px"
+    },
+    {
+      "fieldname": "dpp",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "DPP",
+      "width": "120px"
+    },
+    {
+      "fieldname": "ppn",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "PPN",
+      "width": "120px"
+    },
+    {
+      "fieldname": "row_confidence",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Confidence",
+      "read_only": 1,
+      "width": "80px",
+      "precision": 4,
+      "description": "Confidence score (0.0 - 1.0)"
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "in_list_view": 1,
+      "label": "Catatan",
+      "read_only": 1,
+      "width": "150px"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_debug",
+      "fieldtype": "Section Break",
+      "label": "🔧 Debug Info (Hidden)",
+      "hidden": 1
+    },
+    {
+      "fieldname": "raw_harga_jual",
+      "fieldtype": "Data",
+      "label": "Raw Harga Jual",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "raw_dpp",
+      "fieldtype": "Data",
+      "label": "Raw DPP",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "raw_ppn",
+      "fieldtype": "Data",
+      "label": "Raw PPN",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "column_break_debug",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "col_x_harga_jual",
+      "fieldtype": "Data",
+      "label": "X Range Harga Jual",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "col_x_dpp",
+      "fieldtype": "Data",
+      "label": "X Range DPP",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "col_x_ppn",
+      "fieldtype": "Data",
+      "label": "X Range PPN",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "row_y",
+      "fieldtype": "Float",
+      "label": "Y Position",
+      "read_only": 1,
+      "hidden": 1,
+      "precision": 2
+    }
+  ],
+  "istable": 1,
+  "modified": "2026-02-08 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Imogi Finance",
+  "name": "Tax Invoice OCR Upload Item",
+  "owner": "Administrator",
+  "permissions": [],
+  "quick_entry": 0,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}
