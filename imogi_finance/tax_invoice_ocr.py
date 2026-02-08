@@ -1960,11 +1960,10 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         file_url = getattr(target_doc, pdf_field)
         text, raw_json, confidence = ocr_extract_text_from_pdf(file_url, provider)
         if not (text or "").strip():
+            error_msg = _("OCR returned empty text for file {0}.").format(file_url)
             update_payload = {
                 _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                _get_fieldname(target_doctype, "notes"): _(
-                    "OCR returned empty text for file {0}."
-                ).format(file_url),
+                _get_fieldname(target_doctype, "notes"): error_msg,
             }
             if raw_json is not None:
                 update_payload[_get_fieldname(target_doctype, "ocr_raw_json")] = json.dumps(raw_json, indent=2)
@@ -1983,13 +1982,22 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
             raw_json if cint(settings.get("store_raw_ocr_json", 1)) else None,
         )
     except Exception as exc:
+        error_message = getattr(exc, "message", None) or str(exc)
+        # Truncate to 500 chars untuk field size limit
+        error_message_short = error_message[:500] if len(error_message) > 500 else error_message
+        
         target_doc.db_set(
             {
                 _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                _get_fieldname(target_doctype, "notes"): getattr(exc, "message", None) or str(exc),
+                _get_fieldname(target_doctype, "notes"): error_message_short,
             }
         )
-        frappe.log_error(frappe.get_traceback(), "Tax Invoice OCR failed")
+        frappe.log_error(
+            title=f"OCR FAILED: {target_doctype} {name}",
+            message=frappe.get_traceback()
+        )
+        # 🔥 CRITICAL: Re-raise exception agar worker tahu job gagal
+        raise
 
 
 def _enqueue_ocr(doc: Any, doctype: str):

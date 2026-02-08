@@ -458,29 +458,9 @@ async function maybeAddOcrButton(frm) {
 		return;
 	}
 
-	const enabled = await frappe.db.get_single_value("Tax Invoice OCR Settings", "enable_tax_invoice_ocr");
-	if (!enabled || !frm.doc.ti_tax_invoice_upload) {
-		return;
-	}
-
-	if (frm.taxInvoiceProviderReady === false) {
-		const message = frm.taxInvoiceProviderError
-			? __("OCR cannot run: {0}", [frm.taxInvoiceProviderError])
-			: __("OCR provider is not configured.");
-		frm.dashboard.set_headline(`<span class="indicator red">${message}</span>`);
-		return;
-	}
-
-	frm.add_custom_button(__("Run OCR"), async () => {
-		await frappe.call({
-			method: "imogi_finance.api.tax_invoice.run_ocr_for_upload",
-			args: { upload_name: frm.doc.ti_tax_invoice_upload },
-			freeze: true,
-			freeze_message: __("Queueing OCR..."),
-		});
-		frappe.show_alert({ message: __("OCR queued."), indicator: "green" });
-		await syncBerUpload(frm);
-	}, __("Tax Invoice"));
+	// OCR button removed - OCR should only be triggered from Tax Invoice OCR Upload DocType
+	// Users can click 'Open Tax Invoice Upload' button to access the Upload form and run OCR there
+	return;
 }
 
 function maybeAddUploadActions(frm) {

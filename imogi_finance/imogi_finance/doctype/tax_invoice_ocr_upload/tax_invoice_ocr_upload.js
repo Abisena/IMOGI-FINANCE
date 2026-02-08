@@ -68,6 +68,14 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			frm.dashboard.set_headline(`<span class="indicator red">${message}</span>`);
 		}
 
+		// 🔥 Show OCR failure error prominently
+		if (frm.doc.ocr_status === 'Failed' && frm.doc.notes) {
+			frm.dashboard.set_headline_alert(
+				__('❌ OCR Failed: {0}', [frm.doc.notes]),
+				'red'
+			);
+		}
+
 		frm.add_custom_button(__('Refresh OCR Status'), async () => {
 			await refreshUploadStatus(frm);
 		}, TAX_INVOICE_OCR_GROUP);
