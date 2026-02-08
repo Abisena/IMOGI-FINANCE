@@ -180,64 +180,103 @@ def extract_text_with_bbox(pdf_path: str) -> List[Token]:
 		raise
 
 
-def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str, ColumnRange]]:
+def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str, ColumnRange], str]:
 	"""
 	Detect table header row and extract column ranges.
 	
-	Looks for row containing "Harga Jual", "DPP", "PPN" keywords
-	and determines X-coordinate ranges for each column.
+	Supports two Faktur Pajak formats:
+	1. Multi-column: Separate Harga Jual, DPP, PPN columns per line item
+	2. Single-column: Only Harga Jual per line, DPP/PPN in summary section
 	
 	Args:
 		tokens: List of Token objects
 	
 	Returns:
-		Tuple of (header_y_position, column_ranges_dict)
+		Tuple of (header_y_position, column_ranges_dict, format_type)
+		format_type is either "multi_column" or "single_column"
 	"""
 	# Group tokens by Y coordinate (rows)
 	rows = cluster_tokens_by_row(tokens, y_tolerance=5)
 	
-	# Keywords to identify header row (Indonesian tax invoice standard)
-	header_keywords = {
+	# Keywords to identify header row - Multi-column format
+	multi_col_keywords = {
 		"harga_jual": ["harga jual", "harga", "jual"],
 		"dpp": ["dpp", "dasar pengenaan", "dasar"],
 		"ppn": ["ppn", "pajak pertambahan"]
 	}
 	
+	# Keywords for single-column format header
+	# Standard DJP format: "Harga Jual / Penggantian / Uang Muka / Termin"
+	single_col_keywords = [
+		"harga jual / penggantian",
+		"harga jual/penggantian", 
+		"uang muka / termin",
+		"uang muka/termin",
+		"harga jual"
+	]
+	
 	column_ranges = {}
 	header_y = None
+	format_type = None
 	
 	for y_pos, row_tokens in rows:
 		# Combine tokens in row for keyword matching
 		row_text = " ".join([t.text.lower() for t in row_tokens])
 		
-		# Check if this row contains all required keywords
+		# First, check for multi-column format (all 3 separate columns)
 		found_columns = {}
-		for col_name, keywords in header_keywords.items():
+		for col_name, keywords in multi_col_keywords.items():
 			for keyword in keywords:
 				if keyword in row_text:
-					# Find token(s) matching this keyword
 					matching_tokens = [t for t in row_tokens if keyword in t.text.lower()]
 					if matching_tokens:
-						# Use bounding box of matching token(s)
 						x_min = min(t.x0 for t in matching_tokens)
 						x_max = max(t.x1 for t in matching_tokens)
 						found_columns[col_name] = (x_min, x_max)
 						break
 		
-		# If we found all 3 columns, this is the header row
+		# If we found all 3 columns, this is multi-column format
 		if len(found_columns) >= 3:
 			header_y = y_pos
+			format_type = "multi_column"
 			
-			# Create ColumnRange objects with expansion
 			for col_name, (x_min, x_max) in found_columns.items():
 				col_range = ColumnRange(col_name, x_min, x_max)
-				col_range.expand()  # Default expansion: max(10px, 5%)
+				col_range.expand()
 				column_ranges[col_name] = col_range
 			
 			frappe.logger().info(
-				f"Found table header at Y={header_y:.1f} with columns: "
+				f"Found MULTI-COLUMN header at Y={header_y:.1f} with columns: "
 				f"{list(column_ranges.keys())}"
 			)
+			break
+		
+		# Check for single-column format (Harga Jual only)
+		for keyword in single_col_keywords:
+			if keyword in row_text:
+				# Find the Harga Jual column header token
+				matching_tokens = [t for t in row_tokens if any(kw in t.text.lower() for kw in ["harga", "jual", "termin", "(rp)"])]
+				if matching_tokens:
+					# Use rightmost token as the value column
+					rightmost = max(matching_tokens, key=lambda t: t.x1)
+					x_min = rightmost.x0
+					x_max = rightmost.x1
+					
+					header_y = y_pos
+					format_type = "single_column"
+					
+					# Only create harga_jual column - DPP/PPN will be calculated from summary
+					col_range = ColumnRange("harga_jual", x_min, x_max)
+					col_range.expand(pixels=30)  # Wider expansion for single column
+					column_ranges["harga_jual"] = col_range
+					
+					frappe.logger().info(
+						f"Found SINGLE-COLUMN header at Y={header_y:.1f}. "
+						f"DPP/PPN will be extracted from summary section."
+					)
+					break
+		
+		if format_type:
 			break
 	
 	if not column_ranges:
@@ -245,12 +284,13 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 			title="Table Header Not Found",
 			message="Could not detect table header row with Harga Jual/DPP/PPN columns"
 		)
-		# Try fallback: look for 3 rightmost numeric columns
+		# Try fallback: look for rightmost numeric columns
 		header_y, column_ranges = _fallback_column_detection(rows)
 		if column_ranges:
+			format_type = "multi_column"  # Fallback assumes multi-column
 			frappe.logger().info("Used fallback column detection")
 	
-	return header_y, column_ranges
+	return header_y, column_ranges, format_type
 
 
 def _fallback_column_detection(rows: List[Tuple[float, List[Token]]]) -> Tuple[Optional[float], Dict[str, ColumnRange]]:
@@ -507,6 +547,10 @@ def parse_invoice(pdf_path: str, tax_rate: float = 0.11) -> Dict[str, Any]:
 	"""
 	Main parsing function: extract line items from Tax Invoice PDF.
 	
+	Supports two formats:
+	1. Multi-column: Separate Harga Jual, DPP, PPN columns per line item
+	2. Single-column: Only Harga Jual per line, DPP/PPN extracted from summary
+	
 	Args:
 		pdf_path: Absolute path to PDF file
 		tax_rate: PPN tax rate for validation (default 11%)
@@ -540,28 +584,30 @@ def parse_invoice(pdf_path: str, tax_rate: float = 0.11) -> Dict[str, Any]:
 				result["errors"].append("No text extracted from PDF (may be scanned image)")
 			return result
 		
+		# Store token count in debug
+		result["debug_info"]["token_count"] = len(tokens)
+		
 		# Store tokens in debug info (truncate if too large)
-		MAX_DEBUG_TOKENS = 500  # Limit to prevent huge JSON
+		MAX_DEBUG_TOKENS = 500
 		if len(tokens) <= MAX_DEBUG_TOKENS:
 			result["debug_info"]["tokens"] = [t.to_dict() for t in tokens]
 		else:
-			# Store only first and last tokens as sample
 			result["debug_info"]["tokens"] = (
 				[t.to_dict() for t in tokens[:100]] +
 				[{"text": f"... {len(tokens) - 200} tokens truncated ...", "bbox": [0, 0, 0, 0]}] +
 				[t.to_dict() for t in tokens[-100:]]
 			)
 			result["debug_info"]["tokens_truncated"] = True
-			result["debug_info"]["token_count"] = len(tokens)
 		
-		# Step 2: Detect table header and column ranges
-		header_y, column_ranges = detect_table_header(tokens)
+		# Step 2: Detect table header, column ranges, and format type
+		header_y, column_ranges, format_type = detect_table_header(tokens)
 		
 		if not header_y or not column_ranges:
 			result["errors"].append("Could not detect table header")
 			return result
 		
 		result["debug_info"]["header_y"] = header_y
+		result["debug_info"]["format_type"] = format_type
 		result["debug_info"]["column_ranges"] = {
 			k: v.to_dict() for k, v in column_ranges.items()
 		}
@@ -570,72 +616,82 @@ def parse_invoice(pdf_path: str, tax_rate: float = 0.11) -> Dict[str, Any]:
 		table_end_y = find_table_end(tokens, header_y)
 		result["debug_info"]["table_end_y"] = table_end_y
 		
-		# Step 4: Filter tokens in table region
+		# Step 4: For single-column format, extract summary totals (DPP, PPN)
+		summary_totals = {}
+		if format_type == "single_column":
+			summary_totals = _extract_summary_totals(tokens, header_y)
+			result["debug_info"]["summary_totals"] = summary_totals
+		
+		# Step 5: Filter tokens in table region
 		table_tokens = [t for t in tokens if t.y0 > header_y]
 		if table_end_y:
 			table_tokens = [t for t in table_tokens if t.y0 < table_end_y]
 		
 		result["debug_info"]["table_token_count"] = len(table_tokens)
 		
-		# Step 5: Cluster into rows
+		# Step 6: Cluster into rows
 		rows = cluster_tokens_by_row(table_tokens, y_tolerance=3)
 		result["debug_info"]["row_count_before_merge"] = len(rows)
 		
-		# Step 6: Parse each row
+		# Step 7: Parse each row based on format type
 		parsed_rows = []
 		for y_pos, row_tokens in rows:
 			# Assign tokens to columns
 			column_assignments = assign_tokens_to_columns(row_tokens, column_ranges)
 			
-			# Extract values from columns
-			row_data = {
-				"row_y": y_pos,
-				"harga_jual": get_rightmost_value(column_assignments.get("harga_jual", [])),
-				"dpp": get_rightmost_value(column_assignments.get("dpp", [])),
-				"ppn": get_rightmost_value(column_assignments.get("ppn", [])),
-			}
-			
-			# Sanity check: Warn if no values extracted (possible column misalignment)
-			if not any([row_data["harga_jual"], row_data["dpp"], row_data["ppn"]]):
-				# Check if description has numeric patterns (might indicate wrong column detection)
-				desc_tokens = [t for t in row_tokens 
-				               if not any(t in col_list for col_list in column_assignments.values())]
-				has_numbers_in_desc = any(re.search(r'[\d\.,]+', t.text) for t in desc_tokens)
-				
-				if has_numbers_in_desc:
-					frappe.logger().warning(
-						f"Row at Y={y_pos:.1f} has numbers in description but none in amount columns. "
-						"This may be a description-only row (e.g., PPnBM line) - will be merged."
-					)
+			# Extract values based on format
+			if format_type == "multi_column":
+				row_data = {
+					"row_y": y_pos,
+					"harga_jual": get_rightmost_value(column_assignments.get("harga_jual", [])),
+					"dpp": get_rightmost_value(column_assignments.get("dpp", [])),
+					"ppn": get_rightmost_value(column_assignments.get("ppn", [])),
+				}
+			else:  # single_column
+				# Only Harga Jual from table, DPP/PPN will be calculated later
+				harga_jual_value = get_rightmost_value(column_assignments.get("harga_jual", []))
+				row_data = {
+					"row_y": y_pos,
+					"harga_jual": harga_jual_value,
+					"dpp": None,  # Will be calculated from summary
+					"ppn": None,  # Will be calculated from summary
+				}
 			
 			# Get description (tokens not in numeric columns)
 			desc_tokens = [t for t in row_tokens 
 			               if not any(t in col_list for col_list in column_assignments.values())]
 			row_data["description"] = " ".join([t.text for t in desc_tokens]) if desc_tokens else ""
 			
-			# Store column X positions for debug
-			row_data["col_x_harga_jual"] = f"{column_ranges['harga_jual'].x_min:.1f}-{column_ranges['harga_jual'].x_max:.1f}"
-			row_data["col_x_dpp"] = f"{column_ranges['dpp'].x_min:.1f}-{column_ranges['dpp'].x_max:.1f}"
-			row_data["col_x_ppn"] = f"{column_ranges['ppn'].x_min:.1f}-{column_ranges['ppn'].x_max:.1f}"
+			# Store column X positions for debug (only for columns that exist)
+			if "harga_jual" in column_ranges:
+				row_data["col_x_harga_jual"] = f"{column_ranges['harga_jual'].x_min:.1f}-{column_ranges['harga_jual'].x_max:.1f}"
+			if "dpp" in column_ranges:
+				row_data["col_x_dpp"] = f"{column_ranges['dpp'].x_min:.1f}-{column_ranges['dpp'].x_max:.1f}"
+			if "ppn" in column_ranges:
+				row_data["col_x_ppn"] = f"{column_ranges['ppn'].x_min:.1f}-{column_ranges['ppn'].x_max:.1f}"
 			
 			parsed_rows.append(row_data)
 		
-		# Step 7: Merge description wraparounds
+		# Step 8: Merge description wraparounds
 		merged_rows = merge_description_wraparounds(parsed_rows)
 		result["debug_info"]["row_count_after_merge"] = len(merged_rows)
 		
-		# Step 8: Assign line numbers and store raw values
+		# Step 9: For single-column format, calculate DPP/PPN from summary
+		if format_type == "single_column" and merged_rows:
+			merged_rows = _apply_summary_totals_to_items(merged_rows, summary_totals, tax_rate)
+		
+		# Step 10: Assign line numbers and store raw values
 		for idx, row in enumerate(merged_rows, start=1):
 			row["line_no"] = idx
-			row["raw_harga_jual"] = row.get("harga_jual", "")
-			row["raw_dpp"] = row.get("dpp", "")
-			row["raw_ppn"] = row.get("ppn", "")
+			row["raw_harga_jual"] = row.get("harga_jual", "") or ""
+			row["raw_dpp"] = row.get("dpp", "") or ""
+			row["raw_ppn"] = row.get("ppn", "") or ""
 		
 		result["items"] = merged_rows
 		result["success"] = True
 		
 		frappe.logger().info(
-			f"Successfully parsed {len(merged_rows)} line items from {pdf_path}"
+			f"Successfully parsed {len(merged_rows)} line items from {pdf_path} (format: {format_type})"
 		)
 		
 	except Exception as e:
@@ -647,3 +703,125 @@ def parse_invoice(pdf_path: str, tax_rate: float = 0.11) -> Dict[str, Any]:
 		)
 	
 	return result
+
+
+def _extract_summary_totals(tokens: List[Token], header_y: float) -> Dict[str, str]:
+	"""
+	Extract DPP and PPN totals from summary section (for single-column format).
+	
+	Looks for keywords like:
+	- "Dasar Pengenaan Pajak" or "DPP" followed by amount
+	- "Jumlah PPN" or "PPN (Pajak Pertambahan Nilai)" followed by amount
+	
+	Args:
+		tokens: All tokens from PDF
+		header_y: Y-position of table header
+	
+	Returns:
+		Dictionary with 'dpp' and 'ppn' values (as strings)
+	"""
+	summary = {"dpp": None, "ppn": None, "harga_jual_total": None}
+	
+	# Group tokens by row
+	rows = cluster_tokens_by_row(tokens, y_tolerance=5)
+	
+	# Keywords to find summary rows
+	dpp_keywords = ["dasar pengenaan pajak", "dpp"]
+	ppn_keywords = ["jumlah ppn", "ppn (pajak pertambahan", "pajak pertambahan nilai"]
+	harga_jual_keywords = ["harga jual / penggantian / uang muka", "harga jual/penggantian"]
+	
+	numeric_pattern = re.compile(r'[\d\.\,]+')
+	
+	for y_pos, row_tokens in rows:
+		# Only check rows below header (summary is after line items)
+		if y_pos <= header_y:
+			continue
+		
+		row_text = " ".join([t.text.lower() for t in row_tokens])
+		
+		# Find numeric tokens in this row
+		numeric_tokens = [t for t in row_tokens if numeric_pattern.search(t.text)]
+		if not numeric_tokens:
+			continue
+		
+		# Get rightmost numeric value
+		rightmost_num = max(numeric_tokens, key=lambda t: t.x1)
+		
+		# Check for DPP
+		if any(kw in row_text for kw in dpp_keywords) and summary["dpp"] is None:
+			summary["dpp"] = rightmost_num.text
+			frappe.logger().debug(f"Found summary DPP: {rightmost_num.text} at Y={y_pos:.1f}")
+		
+		# Check for PPN
+		elif any(kw in row_text for kw in ppn_keywords) and summary["ppn"] is None:
+			summary["ppn"] = rightmost_num.text
+			frappe.logger().debug(f"Found summary PPN: {rightmost_num.text} at Y={y_pos:.1f}")
+		
+		# Check for Harga Jual total (for validation)
+		elif any(kw in row_text for kw in harga_jual_keywords) and summary["harga_jual_total"] is None:
+			summary["harga_jual_total"] = rightmost_num.text
+			frappe.logger().debug(f"Found summary Harga Jual: {rightmost_num.text} at Y={y_pos:.1f}")
+	
+	return summary
+
+
+def _apply_summary_totals_to_items(
+	items: List[Dict],
+	summary_totals: Dict[str, str],
+	tax_rate: float
+) -> List[Dict]:
+	"""
+	Apply DPP/PPN from summary to line items (for single-column format).
+	
+	For single-item invoices: Use summary DPP/PPN directly
+	For multi-item invoices: Distribute proportionally based on Harga Jual
+	
+	Args:
+		items: Parsed line items (with harga_jual only)
+		summary_totals: DPP and PPN from summary section
+		tax_rate: PPN rate for calculations
+	
+	Returns:
+		Updated items with DPP and PPN values
+	"""
+	from imogi_finance.imogi_finance.parsers.normalization import normalize_indonesian_number
+	
+	# Parse summary values
+	summary_dpp = normalize_indonesian_number(summary_totals.get("dpp") or "")
+	summary_ppn = normalize_indonesian_number(summary_totals.get("ppn") or "")
+	
+	if not summary_dpp and not summary_ppn:
+		frappe.logger().warning("No summary DPP/PPN found - items will have empty DPP/PPN")
+		return items
+	
+	# Calculate total Harga Jual from items
+	total_harga_jual = 0
+	for item in items:
+		hj = normalize_indonesian_number(item.get("harga_jual") or "")
+		if hj:
+			total_harga_jual += hj
+	
+	if total_harga_jual == 0:
+		frappe.logger().warning("Total Harga Jual is 0 - cannot distribute DPP/PPN")
+		return items
+	
+	# Distribute DPP/PPN proportionally
+	for item in items:
+		hj = normalize_indonesian_number(item.get("harga_jual") or "")
+		if hj and total_harga_jual > 0:
+			ratio = hj / total_harga_jual
+			
+			if summary_dpp:
+				item_dpp = round(summary_dpp * ratio, 2)
+				item["dpp"] = f"{item_dpp:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+			
+			if summary_ppn:
+				item_ppn = round(summary_ppn * ratio, 2)
+				item["ppn"] = f"{item_ppn:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+	
+	frappe.logger().info(
+		f"Applied summary totals to {len(items)} items: "
+		f"DPP={summary_dpp}, PPN={summary_ppn}"
+	)
+	
+	return items
