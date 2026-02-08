@@ -1139,6 +1139,22 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		"dasar pengenaan pajak", "dikurangi potongan"
 	]
 	
+	# 🔥 Summary row keywords - rows containing these are NEVER valid line items
+	# This is the LAST LINE OF DEFENSE against summary rows leaking into items
+	SUMMARY_ROW_KEYWORDS = {
+		"harga jual / pengganti",
+		"harga jual/pengganti",
+		"dasar pengenaan pajak",
+		"jumlah ppn",
+		"jumlah ppnbm",
+		"ppn = ",
+		"ppnbm = ",
+		"grand total",
+		"potongan harga",
+		"uang muka",
+		"nilai lain",
+	}
+	
 	for page_no in range(1, page_count + 1):
 		frappe.logger().debug(f"Processing page {page_no}/{page_count}")
 		
@@ -1280,15 +1296,54 @@ def _parse_page(
 	# Merge wraparounds
 	merged_rows = merge_description_wraparounds(parsed_rows)
 	
-	# Assign global line numbers
+	# 🔥 CRITICAL FIX: Filter out summary rows that leaked past table_end detection
+	# Summary section rows (e.g., "Harga Jual / Pengganti", "Dasar Pengenaan Pajak")
+	# are NEVER valid line items - they belong to the totals footer
+	SUMMARY_ROW_KEYWORDS = {
+		"harga jual / pengganti",
+		"harga jual/pengganti", 
+		"dasar pengenaan pajak",
+		"jumlah ppn",
+		"jumlah ppnbm",
+		"ppn = ",
+		"ppnbm = ",
+		"grand total",
+		"potongan harga",
+		"uang muka",
+		"nilai lain",
+	}
+	
+	def _is_summary_row(description: str) -> bool:
+		"""Check if row description matches summary/totals section keywords."""
+		if not description:
+			return False
+		text_lower = description.lower().strip()
+		return any(kw in text_lower for kw in SUMMARY_ROW_KEYWORDS)
+	
+	filtered_rows = []
 	for row in merged_rows:
+		desc = row.get("description", "")
+		if _is_summary_row(desc):
+			frappe.logger().info(
+				f"[PARSE] Skipping summary row: '{desc[:50]}...' (page {row.get('page_no')})"
+			)
+			continue
+		filtered_rows.append(row)
+	
+	# Log if any rows were filtered
+	filtered_count = len(merged_rows) - len(filtered_rows)
+	if filtered_count > 0:
+		frappe.logger().info(f"[PARSE] Filtered {filtered_count} summary row(s) from page {page_no}")
+	
+	# Assign global line numbers
+	for row in filtered_rows:
 		row["line_no"] = global_line_no
 		row["raw_harga_jual"] = row.get("harga_jual", "") or ""
 		row["raw_dpp"] = row.get("dpp", "") or ""
 		row["raw_ppn"] = row.get("ppn", "") or ""
 		global_line_no += 1
 	
-	page_result["items"] = merged_rows
+	page_result["items"] = filtered_rows
 	return page_result
 
 
