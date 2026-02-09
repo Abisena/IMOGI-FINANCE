@@ -86,6 +86,73 @@ class TaxInvoiceOCRUpload(Document):
             for record in monitoring_records:
                 frappe.delete_doc("Tax Invoice OCR Monitoring", record, ignore_permissions=True, force=True)
 
+    def after_insert(self):
+        """
+        Auto-detect scanned PDFs and trigger OCR on new document creation.
+        
+        Flow:
+        1. Try PyMuPDF to check if PDF has text layer
+        2. If no text (scanned PDF) → Auto-queue OCR
+        3. OCR completes → on_update triggers auto-parse
+        """
+        if not self.tax_invoice_pdf:
+            return
+        
+        # Check if OCR is enabled
+        try:
+            from imogi_finance.tax_invoice_ocr import get_settings
+            settings = get_settings()
+            if not settings.get("enable_tax_invoice_ocr"):
+                frappe.logger().debug(f"[AFTER_INSERT] OCR disabled, skipping auto-detect")
+                return
+        except Exception:
+            return
+        
+        # Try quick text extraction to detect scanned PDF
+        try:
+            from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import extract_tokens
+            
+            # Quick extraction (PyMuPDF only, no vision_json)
+            tokens = extract_tokens(file_url_or_path=self.tax_invoice_pdf, vision_json=None)
+            
+            has_text_layer = bool(tokens and len(tokens) > 10)  # At least 10 tokens = has text
+            
+            frappe.logger().info(
+                f"[AFTER_INSERT] {self.name}: PDF text detection - "
+                f"tokens={len(tokens) if tokens else 0}, has_text_layer={has_text_layer}"
+            )
+            
+            if not has_text_layer:
+                # Scanned PDF detected - auto-queue OCR
+                frappe.logger().info(f"[AFTER_INSERT] {self.name}: Scanned PDF detected, auto-queueing OCR")
+                
+                from imogi_finance.api.tax_invoice import run_ocr_for_upload
+                run_ocr_for_upload(self.name)
+                
+                # Update status to show OCR is queued
+                frappe.db.set_value(
+                    "Tax Invoice OCR Upload", 
+                    self.name, 
+                    {
+                        "ocr_status": "Queued",
+                        "validation_summary": """
+                        <div style="padding: 10px; background: #d1ecf1; border-left: 4px solid #0c5460;">
+                            <strong>🔄 Scanned PDF Detected</strong><br><br>
+                            This PDF appears to be a scanned image.<br>
+                            OCR has been queued automatically.<br><br>
+                            <small>Refresh this page in a few seconds to see progress.</small>
+                        </div>
+                        """
+                    },
+                    update_modified=False
+                )
+                
+        except Exception as e:
+            # Don't fail document creation if detection fails
+            frappe.logger().warning(
+                f"[AFTER_INSERT] {self.name}: Auto-detect failed: {str(e)}"
+            )
+
     @frappe.whitelist()
     def refresh_status(self):
         from imogi_finance.api.tax_invoice import monitor_tax_invoice_ocr
@@ -262,6 +329,48 @@ class TaxInvoiceOCRUpload(Document):
                 debug_info = parse_result.get("debug_info", {})
                 token_count = debug_info.get("token_count", 0)
 
+                # 🔥 AUTO-OCR FALLBACK: If no tokens and OCR not run, auto-trigger OCR
+                if token_count == 0 and not vision_json_present and self.ocr_status != "Done":
+                    # Check if OCR is enabled and provider ready
+                    try:
+                        from imogi_finance.api.tax_invoice import run_ocr_for_upload
+                        
+                        frappe.logger().info(
+                            f"[AUTO-OCR] {self.name}: No text extracted, auto-triggering OCR"
+                        )
+                        
+                        # Set status to indicate OCR is being queued
+                        self.parse_status = "Needs Review"
+                        self.validation_summary = """
+                        <div style="padding: 10px; background: #d1ecf1; border-left: 4px solid #0c5460;">
+                            <strong>🔄 Auto-OCR Triggered</strong><br><br>
+                            PDF appears to be a scanned image without text layer.<br>
+                            OCR is being queued automatically.<br><br>
+                            <strong>Next steps:</strong><br>
+                            1. Wait for OCR to complete (ocr_status → Done)<br>
+                            2. Line items will be parsed automatically after OCR<br><br>
+                            <small>Refresh this page in a few seconds to see progress.</small>
+                        </div>
+                        """
+                        self.save()
+                        
+                        # Queue OCR
+                        run_ocr_for_upload(self.name)
+                        
+                        frappe.db.commit()
+                        
+                        return {
+                            "success": False, 
+                            "auto_ocr_triggered": True,
+                            "message": "OCR queued automatically for scanned PDF"
+                        }
+                        
+                    except Exception as ocr_err:
+                        frappe.logger().warning(
+                            f"[AUTO-OCR FAILED] {self.name}: {str(ocr_err)}"
+                        )
+                        # Continue with normal error handling below
+
                 self.parse_status = "Needs Review"
 
                 # Differentiate: no tokens (extraction failed) vs layout issue
@@ -284,19 +393,32 @@ class TaxInvoiceOCRUpload(Document):
                     debug_info["warning"] = "No tokens extracted - both PyMuPDF and Vision OCR failed"
                 else:
                     # Tokens extracted but no table detected - layout issue
+                    # Check if OCR was run
+                    ocr_available = bool(vision_json_present)
+                    ocr_hint = ""
+                    if not ocr_available:
+                        ocr_hint = """<br><br>
+                        <strong>🔥 Tip:</strong> If this is a scanned PDF, you may need to:<br>
+                        1. Click <strong>"Run OCR"</strong> button first<br>
+                        2. Wait for OCR to complete<br>
+                        3. Then click <strong>"🔄 Re-Parse Line Items"</strong>
+                        """
+                    
                     self.validation_summary = f"""
                     <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
-                        <strong>⚠️ Layout Not Detected</strong><br>
-                        Token count: {token_count} (text extracted successfully)<br><br>
+                        <strong>⚠️ Table Header Not Found</strong><br>
+                        Token count: {token_count} (text extracted)<br>
+                        OCR data available: {'Yes' if ocr_available else 'No'}<br><br>
+                        Could not detect table header row with Harga Jual/DPP/PPN columns.<br><br>
                         Possible causes:<br>
                         • <strong>Non-standard Faktur Pajak template</strong><br>
-                        • Table header keywords not found ("Harga Jual", "DPP", "PPN")<br>
-                        • Unusual PDF layout or formatting<br><br>
-                        <small>Check parsing_debug_json field for extracted tokens.
-                        Header keywords may be spelled differently or missing.</small>
+                        • Table header keywords not found<br>
+                        • PDF is scanned image without OCR{ocr_hint}<br><br>
+                        <small>Check parsing_debug_json field for extracted tokens.</small>
                     </div>
                     """
-                    debug_info["warning"] = f"Layout not detected - {token_count} tokens extracted but no table found"
+                    debug_info["warning"] = f"Table header not found - {token_count} tokens extracted"
+                    debug_info["ocr_available"] = ocr_available
 
                 # Store debug info to help troubleshooting
                 debug_info["auto_triggered"] = auto_triggered

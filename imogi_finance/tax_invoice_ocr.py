@@ -1498,9 +1498,8 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         duplicate_detected = True
 
     if ppn_final and dpp_final and ppn_final == dpp_final:
-        logger.error(f"❌ CRITICAL ERROR: PPN ({ppn_final}) sama dengan DPP ({dpp_final}) - INI BUG!")
-        duplicate_detected = True
         # 🔧 ENHANCED FIX: More aggressive PPN correction with dynamic rate
+        ppn_corrected = False
         if dpp_final:
             fp_date = matches.get("fp_date")
             effective_rate = infer_tax_rate(dpp=dpp_final, ppn=None, fp_date=fp_date)
@@ -1519,8 +1518,8 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             if best_ppn_candidate:
                 matches["ppn"] = best_ppn_candidate
                 ppn_final = best_ppn_candidate
-                logger.info(f"🔍 ✅ CORRECTED PPN to: {best_ppn_candidate} (found amount matching ~{effective_rate*100:.0f}% of DPP)")
-                duplicate_detected = False
+                logger.info(f"🔍 ✅ CORRECTED PPN from {dpp_final} to: {best_ppn_candidate} (found amount matching ~{effective_rate*100:.0f}% of DPP)")
+                ppn_corrected = True
             else:
                 # Last resort: Calculate PPN using effective rate
                 calculated_ppn = round(dpp_final * effective_rate, 2)
@@ -1529,28 +1528,63 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                     if amt != dpp_final and abs(amt - calculated_ppn) <= 1000:
                         matches["ppn"] = amt
                         ppn_final = amt
-                        logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (close to calculated {effective_rate*100:.0f}%: {calculated_ppn})")
-                        duplicate_detected = False
+                        logger.info(f"🔍 ✅ CORRECTED PPN from {dpp_final} to: {amt} (close to calculated {effective_rate*100:.0f}%: {calculated_ppn})")
+                        ppn_corrected = True
                         break
                 else:
                     # If no matching amount found, use calculated value
                     matches["ppn"] = calculated_ppn
                     ppn_final = calculated_ppn
-                    logger.warning(f"🔍 ⚠️ ESTIMATED PPN to: {calculated_ppn} ({effective_rate*100:.0f}% of DPP, no matching amount found)")
+                    logger.info(f"🔍 ✅ ESTIMATED PPN: {calculated_ppn} ({effective_rate*100:.0f}% of DPP, no exact match found)")
+                    ppn_corrected = True
                     confidence = min(confidence, 0.5)  # Lower confidence for estimated value
+        
+        # Only log error and set duplicate flag if correction failed
+        if not ppn_corrected:
+            logger.error(f"❌ CRITICAL ERROR: PPN ({ppn_final}) sama dengan DPP ({dpp_final}) - CORRECTION FAILED!")
+            duplicate_detected = True
 
     if harga_jual_final and ppn_final and harga_jual_final == ppn_final:
         logger.error(f"❌ CRITICAL ERROR: Harga Jual ({harga_jual_final}) sama dengan PPN ({ppn_final}) - INI BUG!")
         duplicate_detected = True
-
-    if duplicate_detected:
-        logger.error("❌ DUPLICATE VALUES DETECTED - Extraction likely failed!")
-        confidence = min(confidence, 0.3)  # Mark as very low confidence
-
-    # Validate Harga Jual vs DPP relationship
+    # Validate Harga Jual vs DPP relationship - BEFORE checking duplicate_detected
+    # This allows recovery to happen first
     if harga_jual_final and dpp_final and harga_jual_final < dpp_final:
-        logger.error(f"❌ ERROR: Harga Jual ({harga_jual_final}) LEBIH KECIL dari DPP ({dpp_final}) - TIDAK VALID!")
-        confidence = min(confidence, 0.5)
+        logger.warning(f"⚠️ WARNING: Harga Jual ({harga_jual_final}) LEBIH KECIL dari DPP ({dpp_final}) - attempting recovery...")
+        
+        # 🔥 RECOVERY: Try to find correct Harga Jual from amounts
+        # Harga Jual should be >= DPP (typically DPP + PPN or with small discount)
+        hj_recovered = False
+        candidates = [amt for amt in amounts if amt >= dpp_final]
+        if candidates:
+            # Use the smallest value >= DPP (most likely correct Harga Jual)
+            candidates.sort()
+            recovered_hj = candidates[0]
+            matches["harga_jual"] = recovered_hj
+            harga_jual_final = recovered_hj
+            logger.info(f"🔍 ✅ RECOVERED Harga Jual: {recovered_hj} (smallest amount >= DPP)")
+            hj_recovered = True
+            confidence = min(confidence, 0.6)  # Still lower confidence
+        else:
+            # 🔥 LAST RESORT: Calculate Harga Jual = DPP + PPN
+            ppn_val = matches.get("ppn", 0)
+            if ppn_val and ppn_val > 0 and ppn_val != dpp_final:
+                calculated_hj = dpp_final + ppn_val
+                matches["harga_jual"] = calculated_hj
+                harga_jual_final = calculated_hj
+                logger.info(f"🔍 ✅ CALCULATED Harga Jual: {calculated_hj} (DPP + PPN)")
+                hj_recovered = True
+                confidence = min(confidence, 0.5)
+        
+        if not hj_recovered:
+            # Give up - set confidence very low for manual review
+            logger.error(f"❌ Cannot recover Harga Jual - manual review required")
+            confidence = min(confidence, 0.3)
+
+    # Only log duplicate error if still have issues after all recovery attempts
+    if duplicate_detected:
+        logger.warning("⚠️ DUPLICATE VALUES DETECTED - some extraction issues occurred but may have been corrected")
+        confidence = min(confidence, 0.4)  # Mark as lower confidence
 
     ppn_rate = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
