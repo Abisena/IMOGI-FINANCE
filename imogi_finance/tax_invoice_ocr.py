@@ -47,7 +47,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "notes"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes"}
 
 
 def _raise_validation_error(message: str):
@@ -154,6 +154,66 @@ INDO_MONTHS = {
     "november": 11,
     "desember": 12,
 }
+
+
+def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None) -> float:
+    """
+    Infer effective PPN tax rate based on actual values or document date.
+    
+    Priority:
+        1. Infer from actual ppn/dpp ratio (if both valid and ratio in 8-13% range)
+        2. Based on fp_date: >= 2025-01-01 → 12%, else 11%
+        3. Default: 0.11 (backward compatible)
+    
+    Args:
+        dpp: Dasar Pengenaan Pajak (tax base)
+        ppn: Pajak Pertambahan Nilai (VAT amount)
+        fp_date: Faktur Pajak date (ISO format: YYYY-MM-DD)
+    
+    Returns:
+        Tax rate as float (0.11 or 0.12)
+    
+    Example:
+        >>> infer_tax_rate(dpp=1010625, ppn=121275, fp_date="2025-12-20")
+        0.12
+        >>> infer_tax_rate(dpp=1000000, ppn=110000, fp_date="2024-06-15")
+        0.11
+    """
+    # Priority 1: Infer from actual values
+    if dpp and ppn and dpp > 0:
+        ratio = ppn / dpp
+        # Round to 2 decimal places for comparison
+        if 0.10 <= ratio <= 0.13:
+            # Return closest standard rate
+            if abs(ratio - 0.11) < abs(ratio - 0.12):
+                return 0.11
+            else:
+                return 0.12
+    
+    # Priority 2: Based on document date (PPN 12% effective 1 Jan 2025)
+    if fp_date:
+        try:
+            from datetime import datetime
+            if isinstance(fp_date, str):
+                # Handle ISO format and common date formats
+                for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+                    try:
+                        date_obj = datetime.strptime(fp_date, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    date_obj = None
+            else:
+                date_obj = fp_date
+            
+            if date_obj and date_obj.year >= 2025:
+                return 0.12
+        except Exception:
+            pass
+    
+    # Priority 3: Default (backward compatible)
+    return 0.11
 
 
 def _get_fieldname(doctype: str, key: str) -> str:
@@ -1316,12 +1376,14 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                 logger.info(f"🔍 parse_faktur_pajak_text: Fallback DPP: {distinct_amounts[0]}")
 
             if "ppn" not in matches and len(distinct_amounts) >= 2:
-                # PPN is typically smaller than DPP (around 11% of DPP)
-                # Look for an amount that's roughly 10-12% of DPP
+                # PPN is typically smaller than DPP (around 11-12% of DPP)
+                # Look for an amount that's roughly 10-13% of DPP
                 dpp_val = matches.get("dpp", distinct_amounts[0])
+                fp_date = matches.get("fp_date")
 
-                # Find amount closest to 11% of DPP
-                expected_ppn = dpp_val * 0.11
+                # 🔥 FIX: Use dynamic tax rate based on document date
+                effective_rate = infer_tax_rate(dpp=dpp_val, ppn=None, fp_date=fp_date)
+                expected_ppn = dpp_val * effective_rate
                 best_ppn_candidate = None
                 best_ppn_diff = float('inf')
 
@@ -1334,7 +1396,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
                 if best_ppn_candidate:
                     matches["ppn"] = best_ppn_candidate
-                    logger.info(f"🔍 parse_faktur_pajak_text: Fallback PPN (matched ~11% rule): {best_ppn_candidate}")
+                    logger.info(f"🔍 parse_faktur_pajak_text: Fallback PPN (matched ~{effective_rate*100:.0f}% rule): {best_ppn_candidate}")
                 elif len(distinct_amounts) >= 2:
                     # Fallback to second distinct amount
                     matches["ppn"] = distinct_amounts[1]
@@ -1438,13 +1500,15 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     if ppn_final and dpp_final and ppn_final == dpp_final:
         logger.error(f"❌ CRITICAL ERROR: PPN ({ppn_final}) sama dengan DPP ({dpp_final}) - INI BUG!")
         duplicate_detected = True
-        # 🔧 ENHANCED FIX: More aggressive PPN correction
+        # 🔧 ENHANCED FIX: More aggressive PPN correction with dynamic rate
         if dpp_final:
-            expected_ppn = dpp_final * 0.11
+            fp_date = matches.get("fp_date")
+            effective_rate = infer_tax_rate(dpp=dpp_final, ppn=None, fp_date=fp_date)
+            expected_ppn = dpp_final * effective_rate
             best_ppn_candidate = None
             best_ppn_diff = float('inf')
             
-            # Search for amount close to expected PPN (9-12% of DPP range)
+            # Search for amount close to expected PPN (8-13% of DPP range)
             for amt in amounts:
                 if amt != dpp_final and 0.08 * dpp_final <= amt <= 0.13 * dpp_final:
                     diff = abs(amt - expected_ppn)
@@ -1455,24 +1519,24 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             if best_ppn_candidate:
                 matches["ppn"] = best_ppn_candidate
                 ppn_final = best_ppn_candidate
-                logger.info(f"🔍 ✅ CORRECTED PPN to: {best_ppn_candidate} (found amount matching ~11% of DPP)")
+                logger.info(f"🔍 ✅ CORRECTED PPN to: {best_ppn_candidate} (found amount matching ~{effective_rate*100:.0f}% of DPP)")
                 duplicate_detected = False
             else:
-                # Last resort: Calculate PPN as 11% of DPP
-                calculated_ppn = round(dpp_final * 0.11, 2)
+                # Last resort: Calculate PPN using effective rate
+                calculated_ppn = round(dpp_final * effective_rate, 2)
                 # Verify calculated PPN exists in amounts (within 1000 IDR tolerance)
                 for amt in amounts:
                     if amt != dpp_final and abs(amt - calculated_ppn) <= 1000:
                         matches["ppn"] = amt
                         ppn_final = amt
-                        logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (close to calculated 11%: {calculated_ppn})")
+                        logger.info(f"🔍 ✅ CORRECTED PPN to: {amt} (close to calculated {effective_rate*100:.0f}%: {calculated_ppn})")
                         duplicate_detected = False
                         break
                 else:
                     # If no matching amount found, use calculated value
                     matches["ppn"] = calculated_ppn
                     ppn_final = calculated_ppn
-                    logger.warning(f"🔍 ⚠️ ESTIMATED PPN to: {calculated_ppn} (11% of DPP, no matching amount found)")
+                    logger.warning(f"🔍 ⚠️ ESTIMATED PPN to: {calculated_ppn} ({effective_rate*100:.0f}% of DPP, no matching amount found)")
                     confidence = min(confidence, 0.5)  # Lower confidence for estimated value
 
     if harga_jual_final and ppn_final and harga_jual_final == ppn_final:
@@ -1504,7 +1568,16 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     matches["ppn_type"] = ppn_type
 
-    # 🔧 VALIDATION: Check for suspicious Harga Jual = DPP (possible bug)
+    # � FIX: Set tax_rate from infer_tax_rate() for validation
+    # This ensures doctype validation uses the correct rate (11% or 12%)
+    dpp_final_for_rate = matches.get("dpp")
+    ppn_final_for_rate = matches.get("ppn")
+    fp_date_for_rate = matches.get("fp_date")
+    inferred_rate = infer_tax_rate(dpp=dpp_final_for_rate, ppn=ppn_final_for_rate, fp_date=fp_date_for_rate)
+    matches["tax_rate"] = inferred_rate
+    logger.info(f"🔍 parse_faktur_pajak_text: Inferred tax_rate = {inferred_rate} (based on DPP={dpp_final_for_rate}, PPN={ppn_final_for_rate}, date={fp_date_for_rate})")
+
+    # �🔧 VALIDATION: Check for suspicious Harga Jual = DPP (possible bug)
     harga_jual_final = matches.get("harga_jual")
     dpp_final = matches.get("dpp")
 

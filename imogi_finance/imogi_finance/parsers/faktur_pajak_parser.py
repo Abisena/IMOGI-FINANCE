@@ -33,6 +33,20 @@ except ImportError:
 		        "Install with: pip install PyMuPDF>=1.23.0"
 	)
 
+# =============================================================================
+# 🔥 SIGNATURE/FOOTER STOP KEYWORDS - Single Source of Truth
+# =============================================================================
+# These keywords indicate footer/signature section that should STOP table parsing
+# and should NEVER be treated as line items.
+SIGNATURE_STOP_KEYWORDS = {
+	"ditandatangani secara elektronik",
+	"sesuai dengan ketentuan",
+	"direktorat jenderal pajak",
+	"tidak diperlukan tanda tangan basah",
+	"referensi: invoice",
+	"(referensi:",
+}
+
 
 class Token:
 	"""
@@ -780,7 +794,9 @@ def find_table_end(tokens: List[Token], header_y: float) -> Optional[float]:
 	# Keywords that indicate end of line items table
 	stop_keywords = [
 		"jumlah", "total", "grand total", "subtotal",
-		"dasar pengenaan pajak", "harga jual / penggantian"
+		"dasar pengenaan pajak", "harga jual / penggantian",
+		# 🔥 FIX: Include signature/footer keywords to stop before footer section
+		*SIGNATURE_STOP_KEYWORDS,
 	]
 	
 	# Filter tokens below header
@@ -1134,16 +1150,22 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 	]
 	
 	# Strong totals keywords (need 2+ to trigger table end)
+	# 🔥 FIX: Include signature keywords as hard-stop (single keyword sufficient)
 	TOTALS_KEYWORDS = [
 		"jumlah", "total", "grand total", "subtotal",
-		"dasar pengenaan pajak", "dikurangi potongan"
+		"dasar pengenaan pajak", "dikurangi potongan",
+		# Signature markers - single occurrence should stop parsing
+		*SIGNATURE_STOP_KEYWORDS,
 	]
 	
 	# 🔥 Summary row keywords - rows containing these are NEVER valid line items
 	# This is the LAST LINE OF DEFENSE against summary rows leaking into items
+	# Uses SIGNATURE_STOP_KEYWORDS as single source of truth
 	SUMMARY_ROW_KEYWORDS = {
 		"harga jual / pengganti",
 		"harga jual/pengganti",
+		"harga jual / pengganti / uang muka",
+		"harga jual/pengganti/uang muka",
 		"dasar pengenaan pajak",
 		"jumlah ppn",
 		"jumlah ppnbm",
@@ -1153,6 +1175,8 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		"potongan harga",
 		"uang muka",
 		"nilai lain",
+		# 🔥 FIX: Include signature/footer patterns
+		*SIGNATURE_STOP_KEYWORDS,
 	}
 	
 	for page_no in range(1, page_count + 1):
@@ -1306,10 +1330,13 @@ def _parse_page(
 				"ppn": get_rightmost_value(column_assignments.get("ppn", [])),
 			}
 		else:
+			# Single-column format
+			harga_jual_raw = get_rightmost_value(column_assignments.get("harga_jual", []))
+			
 			row_data = {
 				"row_y": y_pos,
 				"page_no": page_no,
-				"harga_jual": get_rightmost_value(column_assignments.get("harga_jual", [])),
+				"harga_jual": harga_jual_raw,
 				"dpp": None,
 				"ppn": None,
 			}
@@ -1318,6 +1345,38 @@ def _parse_page(
 		desc_tokens = [t for t in row_tokens 
 		               if not any(t in col_list for col_list in column_assignments.values())]
 		row_data["description"] = " ".join([t.text for t in desc_tokens]) if desc_tokens else ""
+		
+		# 🔥 FIX: Fallback harga_jual extraction for single-column format
+		# If harga_jual is empty/junk, extract last valid amount from description
+		if format_type != "multi_column":
+			hj_value = row_data.get("harga_jual")
+			# Check if harga_jual is missing or junk (like "(Rp)" or empty)
+			is_junk = not hj_value or hj_value in {"(Rp)", "Rp", "-", "0", "0,00"}
+			
+			if is_junk and row_data.get("description"):
+				# Extract amounts with thousand separator (to avoid qty like "1,00")
+				# Pattern: 1-3 digits, then groups of .XXX, optionally ending with ,XX
+				amount_pattern = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)')
+				desc_text = row_data["description"]
+				amount_matches = amount_pattern.findall(desc_text)
+				
+				if amount_matches:
+					# Take the LAST amount (usually the total for the line)
+					last_amount_str = amount_matches[-1]
+					# Parse Indonesian format: 360.500,00 -> 360500.00
+					try:
+						parsed_amount = float(
+							last_amount_str.replace(".", "").replace(",", ".")
+						)
+						# Guard: must be >= 10,000 IDR to be valid item amount
+						if parsed_amount >= 10000:
+							row_data["harga_jual"] = last_amount_str
+							frappe.logger().debug(
+								f"Single-column fallback: extracted harga_jual={last_amount_str} "
+								f"from description"
+							)
+					except (ValueError, TypeError):
+						pass
 		
 		parsed_rows.append(row_data)
 	
@@ -1329,6 +1388,7 @@ def _parse_page(
 	# and header rows (e.g., "No. Barang / Nama Barang") are NEVER valid line items
 	
 	# Keywords that indicate a summary/totals row (case-insensitive contains match)
+	# 🔥 FIX: Uses SIGNATURE_STOP_KEYWORDS for consistency (single source of truth)
 	SUMMARY_ROW_KEYWORDS = {
 		"harga jual / pengganti",
 		"harga jual/pengganti",
@@ -1348,6 +1408,8 @@ def _parse_page(
 		"total harga",
 		"sub total",
 		"subtotal",
+		# 🔥 FIX: Include signature/footer patterns from single source of truth
+		*SIGNATURE_STOP_KEYWORDS,
 	}
 	
 	# Keywords that indicate a header row (not a data row)

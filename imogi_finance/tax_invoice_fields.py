@@ -57,6 +57,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
         "ppn": "ppn",
         "ppnbm": "ppnbm",
         "ppn_type": "ppn_type",
+        "tax_rate": "tax_rate",  # 🔥 FIX: Add tax_rate mapping for dynamic PPN validation
         "status": "verification_status",
         "notes": "verification_notes",
         "duplicate_flag": "duplicate_flag",
