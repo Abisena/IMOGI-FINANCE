@@ -57,7 +57,8 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			enabled = await frappe.db.get_single_value('Tax Invoice OCR Settings', 'enable_tax_invoice_ocr');
 		}
 
-		if (!enabled || frm.is_new()) {
+		// Only skip if OCR is disabled (removed frm.is_new() check to support autoname behavior)
+		if (!enabled) {
 			return;
 		}
 
