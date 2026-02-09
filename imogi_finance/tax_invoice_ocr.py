@@ -139,6 +139,22 @@ FAKTUR_NO_LABEL_REGEX = re.compile(
     r"Kode\s+dan\s+Nomor\s+Seri\s+Faktur\s+Pajak\s*[:\-]?\s*(?P<fp>[\d.\-\s]{10,})",
     re.IGNORECASE,
 )
+
+# 🆕 Enhanced Faktur Pajak Number extraction with multiple label variations
+FP_NO_PATTERNS = [
+    re.compile(r"(?:No\.?\s*Faktur|Nomor\s*Faktur|No\.?\s*FP|Faktur\s*Pajak\s*No)\s*[:\-]?\s*(?P<fp>\d{2,3}[.\-\s]?\d{2,3}[.\-\s]?\d{1,2}[.\-\s]?\d{8})", re.IGNORECASE),
+    re.compile(r"(?:Kode\s+dan\s+Nomor\s+Seri)\s*[:\-]?\s*(?P<fp>\d{2,3}[.\-\s]?\d{2,3}[.\-\s]?\d{1,2}[.\-\s]?\d{8})", re.IGNORECASE),
+    # Fallback: standalone FP number pattern (stricter to avoid false positives)
+    re.compile(r"\b(?P<fp>\d{3}[.\-]\d{3}[.\-]\d{2}[.\-]\d{8})\b"),
+]
+
+# 🆕 Enhanced Date extraction with multiple label variations
+FP_DATE_PATTERNS = [
+    re.compile(r"(?:Tanggal\s*Faktur|Tanggal|Tgl\s*FP|Date)\s*[:\-]?\s*(?P<date>\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4})", re.IGNORECASE),
+    re.compile(r"(?:Tanggal\s*Faktur|Tanggal|Tgl\s*FP|Date)\s*[:\-]?\s*(?P<date>\d{1,2}\s+\w+\s+\d{4})", re.IGNORECASE),  # Indonesian date format
+    # Fallback: date near FP number (within same line or next line)
+    re.compile(r"(?P<date>\d{1,2}[\-/]\d{1,2}[\-/]\d{4})"),
+]
 INDO_DATE_REGEX = re.compile(r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})")
 INDO_MONTHS = {
     "januari": 1,
@@ -154,6 +170,104 @@ INDO_MONTHS = {
     "november": 11,
     "desember": 12,
 }
+
+
+def extract_fp_number_with_label(text: str) -> Optional[str]:
+    """
+    Extract Faktur Pajak number using label-based patterns.
+    
+    Tries multiple label variations in order of specificity:
+    1. "No. Faktur: xxx.xxx-xx.xxxxxxxx"
+    2. "Kode dan Nomor Seri: xxx.xxx-xx.xxxxxxxx"
+    3. Standalone pattern (fallback)
+    
+    Args:
+        text: Full invoice text
+        
+    Returns:
+        Faktur Pajak number (normalized with separators) or None
+        
+    Example:
+        >>> extract_fp_number_with_label("No. Faktur: 010.001-26.12345678")
+        '010.001-26.12345678'
+    """
+    if not text:
+        return None
+    
+    # Try each pattern in order (most specific first)
+    for pattern in FP_NO_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            fp_no = match.group("fp")
+            # Normalize: ensure standard format xxx.xxx-xx.xxxxxxxx
+            digits = re.sub(r"[^\d]", "", fp_no)
+            if len(digits) == 16:  # Valid FP has 16 digits
+                normalized = f"{digits[:3]}.{digits[3:6]}-{digits[6:8]}.{digits[8:]}"
+                frappe.logger().debug(f"[FP_EXTRACT] Found FP Number: {normalized} (pattern: {pattern.pattern[:50]})")
+                return normalized
+    
+    frappe.logger().debug("[FP_EXTRACT] No valid FP number found")
+    return None
+
+
+def extract_fp_date_with_label(text: str) -> Optional[str]:
+    """
+    Extract Faktur Pajak date using label-based patterns.
+    
+    Supports multiple date formats:
+    - DD/MM/YYYY or DD-MM-YYYY
+    - DD Month YYYY (Indonesian: "15 Januari 2026")
+    
+    Args:
+        text: Full invoice text
+        
+    Returns:
+        Date string in YYYY-MM-DD format or None
+        
+    Example:
+        >>> extract_fp_date_with_label("Tanggal Faktur: 15/01/2026")
+        '2026-01-15'
+    """
+    if not text:
+        return None
+    
+    from datetime import datetime
+    
+    # Try each pattern in order
+    for pattern in FP_DATE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            date_str = match.group("date")
+            
+            # Try parsing DD/MM/YYYY or DD-MM-YYYY
+            for fmt in ["%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y"]:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    normalized = dt.strftime("%Y-%m-%d")
+                    frappe.logger().debug(f"[FP_DATE] Found date: {normalized} (pattern: {pattern.pattern[:50]})")
+                    return normalized
+                except ValueError:
+                    continue
+            
+            # Try Indonesian format: DD Month YYYY
+            indo_match = INDO_DATE_REGEX.match(date_str)
+            if indo_match:
+                day = int(indo_match.group("day"))
+                month_name = indo_match.group("month").lower()
+                year = int(indo_match.group("year"))
+                month = INDO_MONTHS.get(month_name)
+                
+                if month:
+                    try:
+                        dt = datetime(year, month, day)
+                        normalized = dt.strftime("%Y-%m-%d")
+                        frappe.logger().debug(f"[FP_DATE] Found Indonesian date: {normalized}")
+                        return normalized
+                    except ValueError:
+                        continue
+    
+    frappe.logger().debug("[FP_DATE] No valid date found")
+    return None
 
 
 def detect_nilai_lain_factor(text: str) -> Optional[float]:
@@ -1066,19 +1180,27 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         text or "", "Pembeli Barang Kena Pajak", ("No.", "Kode Barang", "Nama Barang", "Harga Jual")
     )
 
-    faktur_match = FAKTUR_NO_LABEL_REGEX.search(text or "")
-    if faktur_match:
-        normalized_fp = _normalize_faktur_number(faktur_match.group("fp"))
-        if normalized_fp:
-            matches["fp_no"] = normalized_fp
-            confidence += 0.3
+    # 🔥 NEW: Use enhanced label-based extraction with multiple patterns
+    fp_no_extracted = extract_fp_number_with_label(text or "")
+    if fp_no_extracted:
+        matches["fp_no"] = fp_no_extracted
+        confidence += 0.35  # Higher confidence for label-based match
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ FP Number from label: {fp_no_extracted}")
     else:
-        fp_match = TAX_INVOICE_REGEX.search(text or "")
-        if fp_match:
-            normalized_fp = _normalize_faktur_number(fp_match.group("fp"))
+        # Fallback to legacy extraction
+        faktur_match = FAKTUR_NO_LABEL_REGEX.search(text or "")
+        if faktur_match:
+            normalized_fp = _normalize_faktur_number(faktur_match.group("fp"))
             if normalized_fp:
                 matches["fp_no"] = normalized_fp
-                confidence += 0.25
+                confidence += 0.3
+        else:
+            fp_match = TAX_INVOICE_REGEX.search(text or "")
+            if fp_match:
+                normalized_fp = _normalize_faktur_number(fp_match.group("fp"))
+                if normalized_fp:
+                    matches["fp_no"] = normalized_fp
+                    confidence += 0.25
 
     pkp_section = _extract_section(text or "", "Pengusaha Kena Pajak", "Pembeli")
     seller_npwp = _extract_npwp_with_label(pkp_section) or _extract_npwp_from_text(pkp_section)
@@ -1091,9 +1213,17 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             matches["npwp"] = seller_npwp
             confidence += 0.2
 
-    parsed_date = _parse_date_from_text(text or "")
-    if parsed_date:
-        matches["fp_date"] = parsed_date
+    # 🔥 NEW: Use enhanced label-based date extraction
+    fp_date_extracted = extract_fp_date_with_label(text or "")
+    if fp_date_extracted:
+        matches["fp_date"] = fp_date_extracted
+        confidence += 0.3  # Higher confidence for label-based match
+        logger.info(f"🔍 parse_faktur_pajak_text: ✅ FP Date from label: {fp_date_extracted}")
+    else:
+        # Fallback to legacy extraction
+        parsed_date = _parse_date_from_text(text or "")
+        if parsed_date:
+            matches["fp_date"] = parsed_date
         confidence += 0.15
 
     seller_name = _extract_first_after_label(seller_section, "Nama")

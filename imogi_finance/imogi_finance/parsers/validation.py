@@ -17,21 +17,72 @@ from frappe.utils import flt
 from .normalization import normalize_indonesian_number
 
 
-def get_tolerance_settings() -> float:
+def get_tolerance_settings(amount: float = None) -> float:
 	"""
 	Get validation tolerance percentage from Tax Invoice OCR Settings.
 	
 	ERPNext v15+ Best Practice: Single percentage-based tolerance
 	scales fairly for all amount sizes and tax rates (including low-rate PPN like 1.1%).
 	
+	🔥 NEW: Tiered tolerance for large amounts
+	- < 100 million: base tolerance (default 2%)
+	- 100M - 500M: base × 1.25 (2.5% max)
+	- 500M - 1B: base × 1.5 (3% max)
+	- > 1B: base × 2 (4% max, capped at 5%)
+	
+	Rationale: Large invoices have more rounding errors accumulation
+	but absolute IDR tolerance would be unfair to small invoices.
+	
+	Args:
+		amount: Optional amount to scale tolerance (DPP or PPN)
+	
 	Returns:
 		Tolerance as decimal (e.g., 0.02 for 2%)
+		
+	Example:
+		>>> get_tolerance_settings(50_000_000)  # 50M
+		0.02  # 2%
+		>>> get_tolerance_settings(200_000_000)  # 200M
+		0.025  # 2.5%
+		>>> get_tolerance_settings(2_000_000_000)  # 2B
+		0.05  # 5% (capped)
 	"""
 	try:
 		settings = frappe.get_single("Tax Invoice OCR Settings")
-		tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))
-		return tolerance_pct / 100  # Convert to decimal
-	except Exception:
+		base_tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))
+		base_tolerance = base_tolerance_pct / 100  # Convert to decimal
+		
+		# If no amount provided, return base tolerance
+		if amount is None or amount <= 0:
+			return base_tolerance
+		
+		# Tiered multiplier based on amount
+		amount_val = flt(amount)
+		
+		if amount_val < 100_000_000:  # < 100M
+			multiplier = 1.0
+		elif amount_val < 500_000_000:  # 100M - 500M
+			multiplier = 1.25
+		elif amount_val < 1_000_000_000:  # 500M - 1B
+			multiplier = 1.5
+		else:  # > 1B
+			multiplier = 2.0
+		
+		# Apply multiplier and cap at 5%
+		tiered_tolerance = min(base_tolerance * multiplier, 0.05)
+		
+		# Log if using tiered tolerance
+		if multiplier > 1.0:
+			frappe.logger().debug(
+				f"[TOLERANCE] Amount: {amount_val:,.0f} → "
+				f"Base: {base_tolerance_pct:.2f}% × {multiplier} = "
+				f"{tiered_tolerance*100:.2f}%"
+			)
+		
+		return tiered_tolerance
+		
+	except Exception as e:
+		frappe.logger().warning(f"[TOLERANCE] Error getting settings: {e}")
 		return 0.02  # 2% default (covers low-rate PPN)
 
 
@@ -60,13 +111,14 @@ def validate_line_item(
 	Returns:
 		Updated item dict with row_confidence, notes, and validation flags
 	"""
-	if tolerance_percentage is None:
-		tolerance_percentage = get_tolerance_settings()
-
 	harga_jual = flt(item.get("harga_jual"))
 	dpp = flt(item.get("dpp"))
 	ppn = flt(item.get("ppn"))
 	item_code = item.get("item_code")
+
+	# Get tiered tolerance based on DPP amount
+	if tolerance_percentage is None:
+		tolerance_percentage = get_tolerance_settings(amount=dpp)
 
 	notes = []
 	confidence = 1.0
@@ -164,7 +216,8 @@ def validate_all_line_items(
 	Returns:
 		Tuple of (validated_items, invalid_items_list)
 	"""
-	tolerance_percentage = get_tolerance_settings()
+	# Note: Each item will get its own tiered tolerance based on its DPP
+	# We don't calculate a single tolerance here anymore
 
 	validated_items = []
 	invalid_items = []
@@ -173,7 +226,7 @@ def validate_all_line_items(
 		validated_item = validate_line_item(
 			item,
 			tax_rate=tax_rate,
-			tolerance_percentage=tolerance_percentage
+			tolerance_percentage=None  # Let validate_line_item calculate tiered tolerance
 		)
 		validated_items.append(validated_item)
 
@@ -208,7 +261,9 @@ def validate_invoice_totals(
 			- notes: List of validation messages
 	"""
 	if tolerance_percentage is None:
-		tolerance_percentage = get_tolerance_settings()
+		# Use tiered tolerance based on header DPP amount
+		header_dpp = flt(header_totals.get("dpp", 0))
+		tolerance_percentage = get_tolerance_settings(amount=header_dpp)
 
 	# Calculate sums
 	sum_harga_jual = sum(flt(item.get("harga_jual", 0)) for item in items)

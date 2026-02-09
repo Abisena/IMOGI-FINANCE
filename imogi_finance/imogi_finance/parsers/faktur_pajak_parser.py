@@ -1368,12 +1368,25 @@ def _parse_page(
 						parsed_amount = float(
 							last_amount_str.replace(".", "").replace(",", ".")
 						)
-						# Guard: must be >= 10,000 IDR to be valid item amount
-						if parsed_amount >= 10000:
+						# 🔥 ENHANCED VALIDATION: Prevent qty extraction
+						# - Must be >= 10,000 IDR (valid item price)
+						# - Must NOT look like qty (1.000, 2.000, 100.000, etc.)
+						# - Must have reasonable decimal part (not .000,00 which suggests qty×1000)
+						is_valid_price = (
+							parsed_amount >= 10000 and  # Minimum reasonable price
+							not (parsed_amount % 1000 == 0 and parsed_amount < 1_000_000)  # Avoid 1000, 2000, etc.
+						)
+						
+						if is_valid_price:
 							row_data["harga_jual"] = last_amount_str
 							frappe.logger().debug(
 								f"Single-column fallback: extracted harga_jual={last_amount_str} "
-								f"from description"
+								f"(parsed: {parsed_amount:,.0f}) from description"
+							)
+						else:
+							frappe.logger().warning(
+								f"Single-column fallback: rejected amount {last_amount_str} "
+								f"(parsed: {parsed_amount:,.0f}) - looks like qty, not price"
 							)
 					except (ValueError, TypeError):
 						pass
