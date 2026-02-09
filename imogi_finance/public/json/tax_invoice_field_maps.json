@@ -81,11 +81,13 @@
       "ppn": "ppn",
       "ppnbm": "ppnbm",
       "ppn_type": "ppn_type",
+      "tax_rate": "tax_rate",
       "status": "verification_status",
       "notes": "verification_notes",
       "duplicate_flag": "duplicate_flag",
       "npwp_match": "npwp_match",
       "ocr_status": "ocr_status",
+      "ocr_started_at": "ocr_started_at",
       "ocr_confidence": "ocr_confidence",
       "ocr_raw_json": "ocr_raw_json",
       "tax_invoice_pdf": "tax_invoice_pdf"
