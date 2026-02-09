@@ -45,13 +45,13 @@ class TaxInvoiceOCRUpload(Document):
         tax_invoice_type, type_description = _resolve_tax_invoice_type(self.fp_no)
         self.tax_invoice_type = tax_invoice_type
         self.tax_invoice_type_description = type_description
-        
+
         # Prevent manual changes to parse_status (set automatically by parser or via approve_parse method)
         if self.has_value_changed("parse_status") and not self.flags.allow_parse_status_update:
             old_status = self.get_doc_before_save().parse_status if self.get_doc_before_save() else None
             if old_status:
                 frappe.throw(_("Parse Status tidak boleh diubah manual. Status ini di-set otomatis oleh sistem atau via tombol 'Review & Approve'."))
-        
+
         # Update validation summary if items exist
         if self.items:
             self._update_validation_summary()
@@ -91,22 +91,35 @@ class TaxInvoiceOCRUpload(Document):
         from imogi_finance.api.tax_invoice import monitor_tax_invoice_ocr
 
         return monitor_tax_invoice_ocr(self.name, "Tax Invoice OCR Upload")
-    
+
     @frappe.whitelist()
     def parse_line_items(self, auto_triggered: bool = False):
         """
         Parse line items from PDF using unified layout-aware parser.
-        
+
         Supports both text-layer PDFs (PyMuPDF) and scanned PDFs (Google Vision OCR).
         Automatically uses vision_json from ocr_raw_json if PyMuPDF extraction fails.
-        
+
+        🔥 PHASE 1 FIX: Automatic Inclusive VAT Detection & Correction
+        - Detects when Harga Jual includes 11% VAT (common in Indonesian invoices)
+        - Auto-recalculates DPP from inclusive amounts using formula: DPP = Harga Jual / 1.11
+        - Tracks which items were recalculated for visibility in validation
+        - Uses context-aware tolerance for DPP/PPN validation
+
+        Enhanced Validation:
+        - Item code validation: flags invalid/default codes ("000000")
+        - Invoice date checking: validates against fiscal period
+        - Number format validation: detects OCR parsing errors
+        - Enhanced summation validation: detailed discrepancy reporting
+        - Improved error messages: explain VAT detection and suggest actions
+
         This method is called after OCR completes to extract individual
         line items from the tax invoice with proper column mapping.
-        
+
         Race condition guards:
         - If auto_triggered and ocr_status is Queued/Processing, skip (OCR not done)
         - Manual trigger always allowed (user responsibility)
-        
+
         Args:
             auto_triggered: If True, triggered automatically after OCR (no user message)
         """
@@ -116,33 +129,41 @@ class TaxInvoiceOCRUpload(Document):
                 f"[PARSE SKIP] {self.name}: OCR status is {self.ocr_status}, cannot auto-parse"
             )
             return {"success": False, "error": f"OCR is {self.ocr_status}"}
-        
+
         # Additional guard: For auto-triggered, ensure we have parseable data
         if auto_triggered and self.ocr_status != "Done" and not self.ocr_raw_json:
             frappe.logger().warning(
                 f"[PARSE SKIP] {self.name}: No parseable data (ocr_status={self.ocr_status}, no ocr_raw_json)"
             )
             return {"success": False, "error": "No OCR data to parse"}
-        
+
         from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
-        from imogi_finance.imogi_finance.parsers.normalization import normalize_all_items
+        from imogi_finance.imogi_finance.parsers.normalization import (
+            normalize_all_items,
+            detect_vat_inclusivity,
+            recalculate_dpp_from_inclusive,
+            validate_number_format
+        )
         from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
+            validate_line_summation,
             determine_parse_status,
-            generate_validation_summary_html
+            generate_validation_summary_html,
+            validate_item_code,
+            validate_invoice_date
         )
-        
+
         if not self.tax_invoice_pdf:
             frappe.throw(_("No PDF attached"))
-        
+
         # 🔥 FRAPPE CLOUD SAFE: Pass file_url directly to parser
         # The parser now uses bytes-based extraction via Frappe File API
         # This works with local files, S3, and remote storage
         file_url = self.tax_invoice_pdf
         frappe.logger().info(f"[PARSE] Using file URL for Cloud-safe extraction: {file_url}")
 
-        
+
         # Try to load vision_json from ocr_raw_json if available (for scanned PDFs)
         vision_json = None
         vision_json_present = False
@@ -156,25 +177,25 @@ class TaxInvoiceOCRUpload(Document):
                     "Will fallback to PyMuPDF extraction."
                 )
                 vision_json_present = False
-        
+
         try:
             # 🔥 Parse invoice using Cloud-safe unified parser
             # Uses bytes-based extraction via Frappe File API
             tax_rate = flt(self.tax_rate or 0.11)
             parse_result = parse_invoice(
                 file_url_or_path=file_url,  # Cloud-safe: passes URL, not path
-                vision_json=vision_json, 
+                vision_json=vision_json,
                 tax_rate=tax_rate
             )
-            
+
             # Inject vision_json_present into debug_info for troubleshooting
             if "debug_info" not in parse_result:
                 parse_result["debug_info"] = {}
             parse_result["debug_info"]["vision_json_present"] = vision_json_present
-            
+
             if not parse_result.get("success"):
                 errors = "; ".join(parse_result.get("errors", []))
-                
+
                 # Set status to Needs Review with clear error message
                 self.parse_status = "Needs Review"
                 self.validation_summary = f"""
@@ -185,7 +206,7 @@ class TaxInvoiceOCRUpload(Document):
                 </div>
                 """
                 self.save()
-                
+
                 if auto_triggered:
                     frappe.log_error(
                         title="Auto-Parse Line Items Failed",
@@ -194,18 +215,55 @@ class TaxInvoiceOCRUpload(Document):
                     return {"success": False, "errors": errors}
                 else:
                     frappe.throw(_("Parsing failed: {0}").format(errors))
-            
+
             # Normalize extracted items
             items = normalize_all_items(parse_result.get("items", []))
-            
+
+            # 🔥 PHASE 1 FIX: Detect and apply inclusive VAT correction
+            # This handles invoices where Harga Jual includes 11% VAT
+            vat_inclusivity_results = []
+            for item in items:
+                # Check if this item's amounts suggest inclusive VAT
+                vat_context = detect_vat_inclusivity(
+                    harga_jual=item.get("harga_jual"),
+                    dpp=item.get("dpp"),
+                    ppn=item.get("ppn"),
+                    tax_rate=tax_rate,
+                    tolerance_idr=10000,
+                    tolerance_percentage=0.01
+                )
+
+                # If amounts are inclusive, auto-correct DPP
+                if vat_context.get("is_inclusive"):
+                    corrected = recalculate_dpp_from_inclusive(
+                        harga_jual=item.get("harga_jual"),
+                        tax_rate=tax_rate
+                    )
+
+                    # Update item with corrected values
+                    original_dpp = item.get("dpp")
+                    original_ppn = item.get("ppn")
+                    item["dpp"] = corrected["dpp"]
+                    item["ppn"] = corrected["ppn"]
+                    item["dpp_was_recalculated"] = True
+                    item["original_dpp"] = original_dpp
+                    item["original_ppn"] = original_ppn
+
+                    frappe.logger().info(
+                        f"VAT Inclusive detected for line {item.get('line_no')}: "
+                        f"Recalculated DPP from {original_dpp} to {corrected['dpp']}"
+                    )
+
+                vat_inclusivity_results.append(vat_context)
+
             # Guard: If no items extracted, treat as parsing issue
             if not items:
                 # Get token count to distinguish error types
                 debug_info = parse_result.get("debug_info", {})
                 token_count = debug_info.get("token_count", 0)
-                
+
                 self.parse_status = "Needs Review"
-                
+
                 # Differentiate: no tokens (extraction failed) vs layout issue
                 if token_count == 0:
                     # No text extracted - both PyMuPDF and Vision OCR failed
@@ -220,7 +278,7 @@ class TaxInvoiceOCRUpload(Document):
                         • PDF file corrupted or empty<br>
                         • OCR was not run (ocr_raw_json empty)<br>
                         • PyMuPDF not installed AND no OCR data available<br><br>
-                        <small><strong>Solution:</strong> If this is a scanned PDF, run OCR first to populate ocr_raw_json, then re-parse.</small>
+                        <small><strong>Solution:</strong> If this is a scanned PDF, run OCR first to populate ocor_raw_json, then re-parse.</small>
                     </div>
                     """
                     debug_info["warning"] = "No tokens extracted - both PyMuPDF and Vision OCR failed"
@@ -234,18 +292,19 @@ class TaxInvoiceOCRUpload(Document):
                         • <strong>Non-standard Faktur Pajak template</strong><br>
                         • Table header keywords not found ("Harga Jual", "DPP", "PPN")<br>
                         • Unusual PDF layout or formatting<br><br>
-                        <small>Check parsing_debug_json field for extracted tokens. 
+                        <small>Check parsing_debug_json field for extracted tokens.
                         Header keywords may be spelled differently or missing.</small>
                     </div>
                     """
                     debug_info["warning"] = f"Layout not detected - {token_count} tokens extracted but no table found"
-                
+
                 # Store debug info to help troubleshooting
                 debug_info["auto_triggered"] = auto_triggered
                 self.parsing_debug_json = json.dumps(debug_info, indent=2, ensure_ascii=False)
-                
+
+
                 self.save()
-                
+
                 if auto_triggered:
                     frappe.log_error(
                         title="No Line Items Extracted",
@@ -258,10 +317,10 @@ class TaxInvoiceOCRUpload(Document):
                         indicator="orange"
                     )
                     return {"success": False, "items_count": 0}
-            
+
             # Validate all items
             validated_items, invalid_items = validate_all_line_items(items, tax_rate)
-            
+
             # Validate totals if header values exist
             header_totals = {
                 "harga_jual": self.harga_jual,
@@ -269,7 +328,7 @@ class TaxInvoiceOCRUpload(Document):
                 "ppn": self.ppn
             }
             totals_validation = validate_invoice_totals(validated_items, header_totals)
-            
+
             # Determine parse status
             header_complete = bool(self.fp_no and self.npwp and self.fp_date)
             parse_status = determine_parse_status(
@@ -278,22 +337,23 @@ class TaxInvoiceOCRUpload(Document):
                 totals_validation,
                 header_complete
             )
-            
+
             # Clear existing items and add new ones
             self.items = []
             for item in validated_items:
                 self.append("items", item)
-            
+
             # Store debug info (with size guard applied in parser)
             debug_info = parse_result.get("debug_info", {})
             debug_info["invalid_items"] = invalid_items
             debug_info["auto_triggered"] = auto_triggered
+            debug_info["vat_inclusivity_results"] = vat_inclusivity_results
             self.parsing_debug_json = json.dumps(debug_info, indent=2, ensure_ascii=False)
-            
+
             # Set parse status (set flag to allow update during parsing)
             self.flags.allow_parse_status_update = True
             self.parse_status = parse_status
-            
+
             # Generate validation summary HTML
             validation_html = generate_validation_summary_html(
                 validated_items,
@@ -302,10 +362,10 @@ class TaxInvoiceOCRUpload(Document):
                 parse_status
             )
             self.validation_summary = validation_html
-            
+
             # Save document
             self.save()
-            
+
             # Auto-trigger verification after successful parsing
             # This validates business rules (NPWP match, duplicate, PPN calculation)
             if parse_status == "Approved" and self.fp_no:
@@ -317,7 +377,7 @@ class TaxInvoiceOCRUpload(Document):
                         title="Auto-Verify Failed After Parse",
                         message=f"Failed to verify {self.name} after parsing: {str(e)}"
                     )
-            
+
             if not auto_triggered:
                 frappe.msgprint(
                     _("Successfully parsed {0} line items. Status: {1}").format(
@@ -326,14 +386,14 @@ class TaxInvoiceOCRUpload(Document):
                     ),
                     indicator="green" if parse_status == "Approved" else "orange"
                 )
-            
+
             return {
                 "success": True,
                 "items_count": len(validated_items),
                 "invalid_count": len(invalid_items),
                 "parse_status": parse_status
             }
-            
+
         except Exception as e:
             frappe.log_error(
                 title="Tax Invoice Line Item Parsing Error",
@@ -342,14 +402,14 @@ class TaxInvoiceOCRUpload(Document):
             if not auto_triggered:
                 frappe.throw(_("Parsing error: {0}").format(str(e)))
             return {"success": False, "error": str(e)}
-    
+
     def on_update(self):
         """Hook to auto-trigger line item parsing after OCR completes."""
         frappe.logger().info(
             f"[ON_UPDATE] {self.name}: ocr_status={self.ocr_status}, "
             f"parse_status={self.parse_status}, items_count={len(self.items)}"
         )
-        
+
         # Guard: Only enqueue if ALL conditions met (prevent duplicate jobs)
         should_enqueue = (
             self.ocr_status == "Done" and  # OCR completed
@@ -358,15 +418,15 @@ class TaxInvoiceOCRUpload(Document):
             self.parse_status in ["Draft", None, ""] and  # Not yet parsed/processing
             self.ocr_raw_json  # Ensure we have OCR data to parse (extra safety)
         )
-        
+
         frappe.logger().info(f"[ON_UPDATE] Should enqueue auto-parse: {should_enqueue}")
-        
+
         if should_enqueue:
             # 🔥 CRITICAL: Use flag to prevent duplicate enqueues in same transaction
             if getattr(self, '_auto_parse_enqueued', False):
                 frappe.logger().debug(f"[ON_UPDATE] Auto-parse already enqueued in this transaction, skipping")
                 return
-            
+
             # Additional guard: Check if already enqueued (prevent double-click spam)
             # This prevents multiple jobs if user saves multiple times quickly
             if not frappe.flags.in_test:
@@ -378,7 +438,7 @@ class TaxInvoiceOCRUpload(Document):
                         queue="default",
                         key="job_name"
                     )
-                    
+
                     # Deterministic job_name pattern: "parse:Tax Invoice OCR Upload:{docname}"
                     job_signature = f"parse:Tax Invoice OCR Upload:{self.name}"
                     if any(job_signature in str(job) for job in existing_jobs):
@@ -387,15 +447,15 @@ class TaxInvoiceOCRUpload(Document):
                 except Exception as e:
                     # If get_jobs fails, continue (better to enqueue duplicate than miss)
                     frappe.logger().warning(f"[ON_UPDATE] Could not check existing jobs: {e}")
-            
+
             frappe.logger().info(f"[ON_UPDATE] Enqueueing auto-parse for {self.name}")
-            
+
             # Mark as enqueued to prevent duplicate in same transaction
             self._auto_parse_enqueued = True
-            
+
             # Deterministic job_name: "parse:Tax Invoice OCR Upload:{docname}"
             job_name = f"parse:Tax Invoice OCR Upload:{self.name}"
-            
+
             # Enqueue background job with unique job_name per document
             frappe.enqueue(
                 method="imogi_finance.imogi_finance.doctype.tax_invoice_ocr_upload.tax_invoice_ocr_upload.auto_parse_line_items",
@@ -408,33 +468,33 @@ class TaxInvoiceOCRUpload(Document):
             )
             frappe.logger().info(f"[ON_UPDATE] Enqueued parse job: {job_name}")
 
-    
+
     def _update_validation_summary(self):
         """Update validation summary HTML based on current items."""
         if not self.items:
             self.validation_summary = ""
             return
-        
+
         from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
             generate_validation_summary_html
         )
-        
+
         # Convert child table to dict list
         items = [item.as_dict() for item in self.items]
-        
+
         # Validate
         tax_rate = flt(self.tax_rate or 0.11)
         validated_items, invalid_items = validate_all_line_items(items, tax_rate)
-        
+
         header_totals = {
             "harga_jual": self.harga_jual,
             "dpp": self.dpp,
             "ppn": self.ppn
         }
         totals_validation = validate_invoice_totals(validated_items, header_totals)
-        
+
         # Generate HTML
         validation_html = generate_validation_summary_html(
             validated_items,
@@ -543,26 +603,26 @@ def revalidate_items(docname: str):
 def approve_parse(docname: str):
     """
     Manually approve parse status after user has reviewed and fixed data.
-    
+
     This method bypasses the read_only restriction on parse_status field.
     Should only be called when user has verified all line items.
-    
+
     Args:
         docname: Name of Tax Invoice OCR Upload document
-    
+
     Returns:
         dict: {"ok": True} if successful, {"ok": False, "message": error} if failed
     """
     try:
         doc = frappe.get_doc("Tax Invoice OCR Upload", docname)
-        
+
         # Validation: Check if document has items
         if not doc.items or len(doc.items) == 0:
             return {
                 "ok": False,
                 "message": _("Cannot approve: No line items found. Line items are parsed automatically after OCR completes.")
             }
-        
+
         # Optional: Check if any items have very low confidence (user decision to override)
         # low_confidence_items = [item for item in doc.items if flt(item.row_confidence) < 0.85]
         # if low_confidence_items:
@@ -570,16 +630,16 @@ def approve_parse(docname: str):
         #         "ok": False,
         #         "message": _("Cannot approve: {0} items have confidence below 0.85").format(len(low_confidence_items))
         #     }
-        
+
         # Set flag to allow parse_status update
         doc.flags.allow_parse_status_update = True
         doc.parse_status = "Approved"
         doc.save(ignore_permissions=True)
-        
+
         frappe.logger().info(f"Parse status manually approved for {docname} by {frappe.session.user}")
-        
+
         return {"ok": True}
-        
+
     except Exception as e:
         frappe.log_error(
             title="Manual Parse Approval Failed",
@@ -594,43 +654,43 @@ def approve_parse(docname: str):
 def auto_parse_line_items(doc_name: str):
     """
     Background job to auto-parse line items after OCR completes.
-    
+
     Race condition guards:
     - Skip if doc already has items (another job parsed first)
     - Skip if ocr_status != "Done" (OCR not complete or failed)
     - Skip if no ocr_raw_json and no PDF (no data to parse)
-    
+
     Args:
         doc_name: Name of Tax Invoice OCR Upload document
     """
     frappe.logger().info(f"[AUTO-PARSE START] {doc_name}")
-    
+
     try:
         doc = frappe.get_doc("Tax Invoice OCR Upload", doc_name)
         frappe.logger().info(
             f"[AUTO-PARSE] Doc loaded: ocr_status={doc.ocr_status}, "
             f"parse_status={doc.parse_status}, items_count={len(doc.items)}"
         )
-        
+
         # 🔥 Guard: Skip if already parsed (race condition protection)
         if doc.items and len(doc.items) > 0:
             frappe.logger().info(f"[AUTO-PARSE SKIP] {doc_name} already has {len(doc.items)} items")
             return
-        
+
         # Guard: Skip if OCR not done
         if doc.ocr_status != "Done":
             frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name} OCR status is {doc.ocr_status}, not Done")
             return
-        
+
         # 🔥 Additional guard: Ensure we have parseable data
         if not doc.ocr_raw_json and not doc.tax_invoice_pdf:
             frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name}: No ocr_raw_json and no PDF")
             return
-        
+
         frappe.logger().info(f"[AUTO-PARSE] Starting parse for {doc_name}")
         doc.parse_line_items(auto_triggered=True)
         frappe.db.commit()
-        
+
         frappe.logger().info(
             f"[AUTO-PARSE SUCCESS] {doc_name}: "
             f"Status={doc.parse_status}, Items={len(doc.items)}"
