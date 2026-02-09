@@ -85,7 +85,10 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 		}
 
 		// Run OCR button: Show when OCR not yet run, failed, or pending (works even after autoname save)
-		const ocrNotDone = !frm.doc.ocr_status || frm.doc.ocr_status === 'Failed' || frm.doc.ocr_status === 'Pending';
+		const ocrNotDone = !frm.doc.ocr_status || 
+			frm.doc.ocr_status === 'Not Started' || 
+			frm.doc.ocr_status === 'Failed' || 
+			frm.doc.ocr_status === 'Pending';
 		
 		// Debug: Log conditions for troubleshooting
 		console.log('[Tax Invoice OCR Upload] Run OCR button conditions:', {

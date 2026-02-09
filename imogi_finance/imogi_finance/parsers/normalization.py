@@ -362,8 +362,7 @@ def detect_vat_inclusivity(
 	dpp: Optional[float],
 	ppn: Optional[float],
 	tax_rate: float = 0.11,
-	tolerance_idr: float = 10000,
-	tolerance_percentage: float = 0.01
+	tolerance_percentage: float = 0.02
 ) -> dict:
 	"""
 	Detect if invoice amounts suggest Harga Jual includes VAT (inclusive VAT).
@@ -379,8 +378,7 @@ def detect_vat_inclusivity(
 		dpp: Tax base amount
 		ppn: Tax amount
 		tax_rate: PPN tax rate (default 0.11 = 11%)
-		tolerance_idr: Absolute tolerance in IDR (default 10,000)
-		tolerance_percentage: Percentage tolerance (default 1%)
+		tolerance_percentage: Percentage tolerance (default 0.02 = 2%)
 
 	Returns:
 		Dictionary with:
@@ -417,18 +415,18 @@ def detect_vat_inclusivity(
 
 	# Check INCLUSIVE scenario: Harga_Jual ≈ DPP × (1 + tax_rate)
 	# This is the most common case in Indonesian invoices
-	inclusive_match_dpp = abs(dpp - expected_dpp_inclusive) <= max(tolerance_idr, expected_dpp_inclusive * tolerance_percentage)
-	inclusive_match_ppn = abs(ppn - expected_ppn_inclusive) <= max(tolerance_idr, expected_ppn_inclusive * tolerance_percentage) if expected_ppn_inclusive > 0 else False
+	inclusive_match_dpp = abs(dpp - expected_dpp_inclusive) <= (expected_dpp_inclusive * tolerance_percentage)
+	inclusive_match_ppn = abs(ppn - expected_ppn_inclusive) <= (expected_ppn_inclusive * tolerance_percentage) if expected_ppn_inclusive > 0 else False
 
 	# Check EXCLUSIVE scenario: Harga_Jual ≈ DPP + PPN
-	exclusive_match = abs(harga_jual - expected_harga_jual_exclusive) <= max(tolerance_idr, expected_harga_jual_exclusive * tolerance_percentage)
+	exclusive_match = abs(harga_jual - expected_harga_jual_exclusive) <= (expected_harga_jual_exclusive * tolerance_percentage)
 
 	# Decision logic
 	is_inclusive = (inclusive_match_dpp and inclusive_match_ppn) and not exclusive_match
 
 	if is_inclusive:
 		confidence = 0.95 if (inclusive_match_dpp and inclusive_match_ppn) else 0.80
-		reason = f"Harga Jual ({harga_jual:,.0f}) ≈ DPP ({dpp:,.0f}) × 1.11, indicating inclusive VAT"
+		reason = f"Harga Jual ({harga_jual:,.0f}) ≈ DPP ({dpp:,.0f}) × {1+tax_rate:.4f}, indicating inclusive VAT"
 	else:
 		confidence = 0.85 if exclusive_match else 0.50
 		reason = "Amounts appear to be exclusive (Harga Jual ≈ DPP reported values are not indicative of inclusive VAT)"

@@ -264,9 +264,8 @@ class BranchExpenseRequest(Document):
         # so NPWP validation against supplier is not applicable
         
         # 1. Validate DPP, PPN, PPnBM with tolerance
-        # Get tolerance from settings (both fixed IDR and percentage)
-        tolerance = flt(settings.get("tolerance_idr", 10000))  # Default Rp 10,000
-        tolerance_pct = flt(settings.get("tolerance_percentage", 1.0))  # Default 1%
+        # Get tolerance from settings (percentage-based for fairness across amounts)
+        tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))  # Default 2%
         
         # Get PPN type - only validate amounts for Standard PPN
         ppn_type = getattr(self, "ti_fp_ppn_type", None)
@@ -288,9 +287,9 @@ class BranchExpenseRequest(Document):
         # Calculate expected values from expense request
         expected_dpp = flt(getattr(self, "amount", 0) or 0)  # Total expense as DPP
         
-        # Expected PPN calculation
+        # Expected PPN calculation - try to get rate from template first
         ppn_template = getattr(self, "ppn_template", None)
-        ppn_rate = 11  # Default PPN rate
+        ppn_rate = None
         if ppn_template:
             # Get rate from template
             template = frappe.get_doc("Purchase Taxes and Charges Template", ppn_template)
@@ -298,6 +297,12 @@ class BranchExpenseRequest(Document):
                 if tax.rate:
                     ppn_rate = flt(tax.rate)
                     break
+        
+        # Fallback: use date-based inference if no template rate
+        if ppn_rate is None:
+            from imogi_finance.tax_invoice_ocr import infer_tax_rate
+            fp_date = getattr(self, "ti_fp_date", None)
+            ppn_rate = infer_tax_rate(dpp=expected_dpp, ppn=ocr_ppn, fp_date=fp_date) * 100  # Convert to percentage
         
         expected_ppn = expected_dpp * ppn_rate / 100
         

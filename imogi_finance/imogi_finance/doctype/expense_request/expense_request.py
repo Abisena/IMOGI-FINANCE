@@ -356,21 +356,25 @@ class ExpenseRequest(Document):
         FinanceValidator.validate_tax_fields(self)
 
         # Extra guardrail: jika ada nilai PPN dari OCR dan manual sekaligus,
-        # pastikan keduanya tidak berbeda terlalu jauh (di luar tolerance_idr).
+        # pastikan keduanya tidak berbeda terlalu jauh (di luar tolerance).
         try:
             from imogi_finance.tax_invoice_ocr import get_settings
 
             settings = get_settings()
-            tolerance = flt(settings.get("tolerance_idr", 10))
+            # Use percentage-based tolerance for fairness
+            tolerance_pct = flt(settings.get("tolerance_percentage", 2.0)) / 100  # 2% default
             ti_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
             manual_ppn = flt(getattr(self, "ppn", 0) or 0)
             if ti_ppn and manual_ppn:
+                # Calculate tolerance based on the larger value
+                base = max(ti_ppn, manual_ppn)
+                tolerance = base * tolerance_pct
                 diff = abs(ti_ppn - manual_ppn)
                 if diff > tolerance:
                     frappe.throw(
                         _(
-                            "PPN on Expense Request ({0}) differs from OCR Faktur Pajak ({1}) by more than {2}."
-                        ).format(manual_ppn, ti_ppn, tolerance)
+                            "PPN on Expense Request ({0}) differs from OCR Faktur Pajak ({1}) by more than {2}% tolerance."
+                        ).format(manual_ppn, ti_ppn, tolerance_pct * 100)
                     )
         except Exception:
             # Jangan blokir jika settings tidak bisa di-load; pengecekan utama tetap di modul OCR.
@@ -416,9 +420,8 @@ class ExpenseRequest(Document):
                 self.ti_npwp_match = 1
 
         # 2. Validate DPP, PPN, PPnBM with tolerance
-        # Get tolerance from settings (both fixed IDR and percentage)
-        tolerance = flt(settings.get("tolerance_idr", 10000))  # Default Rp 10,000
-        tolerance_pct = flt(settings.get("tolerance_percentage", 1.0))  # Default 1%
+        # Get tolerance from settings (percentage-based for fairness)
+        tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))  # Default 2%
 
         # Get PPN type - only validate amounts for Standard PPN
         ppn_type = getattr(self, "ti_fp_ppn_type", None)
@@ -440,9 +443,9 @@ class ExpenseRequest(Document):
         # Calculate expected values from expense request
         expected_dpp = flt(getattr(self, "amount", 0) or 0)  # Total expense as DPP
 
-        # Expected PPN calculation
+        # Expected PPN calculation - try to get rate from template first
         ppn_template = getattr(self, "ppn_template", None)
-        ppn_rate = 11  # Default PPN rate
+        ppn_rate = None
         if ppn_template:
             # Get rate from template
             template = frappe.get_doc("Purchase Taxes and Charges Template", ppn_template)
@@ -450,6 +453,12 @@ class ExpenseRequest(Document):
                 if tax.rate:
                     ppn_rate = flt(tax.rate)
                     break
+        
+        # Fallback: use date-based inference if no template rate
+        if ppn_rate is None:
+            from imogi_finance.tax_invoice_ocr import infer_tax_rate
+            fp_date = getattr(self, "ti_fp_date", None)
+            ppn_rate = infer_tax_rate(dpp=expected_dpp, ppn=None, fp_date=fp_date) * 100  # Convert to percentage
 
         expected_ppn = expected_dpp * ppn_rate / 100
 

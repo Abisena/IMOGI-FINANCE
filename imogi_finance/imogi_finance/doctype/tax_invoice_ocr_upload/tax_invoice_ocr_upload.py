@@ -296,8 +296,7 @@ class TaxInvoiceOCRUpload(Document):
                     dpp=item.get("dpp"),
                     ppn=item.get("ppn"),
                     tax_rate=tax_rate,
-                    tolerance_idr=10000,
-                    tolerance_percentage=0.01
+                    tolerance_percentage=0.02  # 2% tolerance
                 )
 
                 # If amounts are inclusive, auto-correct DPP

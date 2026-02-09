@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 import frappe
@@ -156,41 +156,107 @@ INDO_MONTHS = {
 }
 
 
-def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None) -> float:
+def detect_nilai_lain_factor(text: str) -> Optional[float]:
     """
-    Infer effective PPN tax rate based on actual values or document date.
+    Detect "DPP Nilai Lain" pattern (11/12 or 12/11 factor).
+    
+    Common in Indonesian invoices for specific tax calculations where
+    DPP is adjusted using a fraction factor.
+    
+    Args:
+        text: Full invoice text to search for pattern
+        
+    Returns:
+        Factor (0.9167 for 11/12, 1.0909 for 12/11) or None if not detected
+        
+    Example:
+        >>> detect_nilai_lain_factor("DPP Nilai Lain 11/12")
+        0.9167
+        >>> detect_nilai_lain_factor("Nilai Lain: 12 : 11")
+        1.0909
+    """
+    # Regex pattern to match "nilai lain" followed by fraction (11/12, 12/11, 11:12, etc.)
+    NILAI_LAIN_REGEX = re.compile(
+        r"nilai\s*lain.*?(11\s*/\s*12|12\s*/\s*11|11\s*:\s*12|12\s*:\s*11)",
+        re.IGNORECASE
+    )
+    
+    match = NILAI_LAIN_REGEX.search(text or "")
+    if not match:
+        return None
+    
+    factor_str = match.group(1)
+    # Normalize: remove spaces and convert ":" to "/"
+    factor_str_clean = factor_str.replace(" ", "").replace(":", "/")
+    
+    # Determine which fraction (11/12 or 12/11)
+    if factor_str_clean.startswith("11"):
+        # DPP = Harga Jual × 11/12
+        return 11/12  # 0.916666...
+    elif factor_str_clean.startswith("12"):
+        # DPP = Harga Jual × 12/11
+        return 12/11  # 1.090909...
+    
+    return None
+
+
+def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None, docname: str = None) -> float:
+    """
+    Infer effective PPN tax rate from actual values or document date.
+    
+    Returns actual ratio for dynamic rates (1.1%, 2%, etc) instead of forced 11/12%.
     
     Priority:
-        1. Infer from actual ppn/dpp ratio (if both valid and ratio in 8-13% range)
-        2. Based on fp_date: >= 2025-01-01 → 12%, else 11%
-        3. Default: 0.11 (backward compatible)
+        1. Actual ppn/dpp ratio (0.5% - 15% sanity range)
+        2. Date-based fallback: >= 2025-01-01 → 12%, else 11%
     
     Args:
         dpp: Dasar Pengenaan Pajak (tax base)
         ppn: Pajak Pertambahan Nilai (VAT amount)
         fp_date: Faktur Pajak date (ISO format: YYYY-MM-DD)
+        docname: Document name for logging context (optional)
     
     Returns:
-        Tax rate as float (0.11 or 0.12)
+        Tax rate as float (4 decimal precision, e.g., 0.011 for 1.1%)
     
     Example:
         >>> infer_tax_rate(dpp=1010625, ppn=121275, fp_date="2025-12-20")
         0.12
-        >>> infer_tax_rate(dpp=1000000, ppn=110000, fp_date="2024-06-15")
-        0.11
+        >>> infer_tax_rate(dpp=1000000, ppn=11000, fp_date="2024-06-15")
+        0.011  # 1.1% rate
     """
-    # Priority 1: Infer from actual values
+    logger = frappe.logger("tax_invoice_ocr", allow_site=True, file_count=50)
+    context = f"[{docname}]" if docname else ""
+    
+    # Priority 1: Infer from actual PDF values
     if dpp and ppn and dpp > 0:
         ratio = ppn / dpp
-        # Round to 2 decimal places for comparison
-        if 0.10 <= ratio <= 0.13:
-            # Return closest standard rate
-            if abs(ratio - 0.11) < abs(ratio - 0.12):
-                return 0.11
+        
+        # Sanity check: 0.5% - 15% range (covers edge cases like KMS/KSM 1.1%, luxury goods 2-3%)
+        if 0.005 <= ratio <= 0.15:
+            # Round to 4 decimals for precision
+            rate = round(ratio, 4)
+            
+            # ERPNext v15+ Audit: Log non-standard rates for monitoring
+            if rate not in [0.11, 0.12]:
+                logger.warning(
+                    f"{context} Non-standard PPN rate detected: {rate*100:.2f}% "
+                    f"(DPP: {frappe.format(dpp, {'fieldtype': 'Currency'})}, "
+                    f"PPN: {frappe.format(ppn, {'fieldtype': 'Currency'})})"
+                )
             else:
-                return 0.12
+                logger.info(f"{context} Standard PPN rate inferred: {rate*100:.0f}%")
+            
+            return rate
+        else:
+            # Out of sanity range - log error and fallback
+            logger.error(
+                f"{context} Tax rate {ratio*100:.2f}% outside sanity range (0.5%-15%). "
+                f"Falling back to date-based rate. DPP={dpp}, PPN={ppn}"
+            )
     
-    # Priority 2: Based on document date (PPN 12% effective 1 Jan 2025)
+    # Priority 2: Date-based fallback (PPN 12% effective 1 Jan 2025)
+    rate = 0.11  # Default
     if fp_date:
         try:
             from datetime import datetime
@@ -208,12 +274,12 @@ def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None) ->
                 date_obj = fp_date
             
             if date_obj and date_obj.year >= 2025:
-                return 0.12
-        except Exception:
-            pass
+                rate = 0.12
+        except Exception as e:
+            logger.error(f"{context} Date parsing failed for {fp_date}: {str(e)}")
     
-    # Priority 3: Default (backward compatible)
-    return 0.11
+    logger.info(f"{context} Fallback to date-based rate: {rate*100:.0f}%")
+    return rate
 
 
 def _get_fieldname(doctype: str, key: str) -> str:
@@ -1602,6 +1668,31 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     matches["ppn_type"] = ppn_type
 
+    # 🔥 ERPNext v15+ Feature: Detect "DPP Nilai Lain" pattern (11/12 or 12/11)
+    nilai_lain_factor = detect_nilai_lain_factor(text)
+    if nilai_lain_factor:
+        logger.info(f"🔍 DPP Nilai Lain factor detected: {nilai_lain_factor:.4f}")
+        
+        # Apply correction if Harga Jual and DPP both exist
+        if matches.get("harga_jual") and matches.get("dpp"):
+            harga_jual_val = matches["harga_jual"]
+            dpp_current = matches["dpp"]
+            dpp_expected = harga_jual_val * nilai_lain_factor
+            
+            # Verify correction is reasonable (within 5% tolerance)
+            if dpp_current > 0 and abs(dpp_expected - dpp_current) / dpp_current < 0.05:
+                matches["dpp"] = round(dpp_expected, 2)
+                # Append to notes if exists, otherwise create new
+                existing_notes = matches.get("notes", "")
+                correction_note = f"DPP Nilai Lain corrected (factor: {nilai_lain_factor:.4f})"
+                matches["notes"] = (existing_notes + "; " + correction_note).strip("; ") if existing_notes else correction_note
+                logger.info(f"✅ DPP corrected: {dpp_current:,.0f} → {dpp_expected:,.0f}")
+            else:
+                logger.warning(
+                    f"⚠️ DPP Nilai Lain detected but correction skipped "
+                    f"(diff > 5%: expected={dpp_expected:,.0f}, current={dpp_current:,.0f})"
+                )
+
     # � FIX: Set tax_rate from infer_tax_rate() for validation
     # This ensures doctype validation uses the correct rate (11% or 12%)
     dpp_final_for_rate = matches.get("dpp")
@@ -2682,7 +2773,10 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     else:
         expected_ppn = 0
 
-    tolerance = flt(settings.get("tolerance_idr", 10))
+    # Use percentage-based tolerance (2% default)
+    tolerance_pct = flt(settings.get("tolerance_percentage", 2)) / 100
+    tolerance = expected_ppn * tolerance_pct if expected_ppn > 0 else 0
+    
     if expected_ppn is not None:
         actual_ppn = flt(_get_value(doc, doctype, "ppn", 0))
         diff = abs(actual_ppn - expected_ppn)
@@ -2700,9 +2794,11 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     ppn_value = flt(_get_value(doc, doctype, "ppn", 0))
     ppnbm_value = flt(_get_value(doc, doctype, "ppnbm", 0))
     if ppnbm_value > 0 and dpp_value > 0:
-        ppn_rate = (ppn_value / dpp_value) * 100
-        if abs(ppn_rate - 11) > 0.01:
-            notes.append(_("PPN rate must be 11% when PPNBM is present."))
+        ppn_rate_actual = (ppn_value / dpp_value) * 100
+        # PPnBM rule: PPN rate must be 11% (pre-2025 standard rate)
+        # Note: This is a regulatory requirement, not a dynamic rate
+        if abs(ppn_rate_actual - 11) > 0.1:  # Allow 0.1% tolerance
+            notes.append(_("PPN rate must be 11% when PPnBM is present (regulatory requirement)."))
 
     if notes and not force:
         _set_value(doc, doctype, "status", "Needs Review")

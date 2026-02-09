@@ -8,6 +8,7 @@ Validation module for Tax Invoice line items and totals.
 Implements per-row and invoice-level validation with auto-approval logic.
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 import frappe
 from frappe import _
@@ -16,27 +17,27 @@ from frappe.utils import flt
 from .normalization import normalize_indonesian_number
 
 
-def get_tolerance_settings() -> Tuple[float, float]:
+def get_tolerance_settings() -> float:
 	"""
-	Get validation tolerance settings from Tax Invoice OCR Settings.
-
+	Get validation tolerance percentage from Tax Invoice OCR Settings.
+	
+	ERPNext v15+ Best Practice: Single percentage-based tolerance
+	scales fairly for all amount sizes and tax rates (including low-rate PPN like 1.1%).
+	
 	Returns:
-		Tuple of (tolerance_idr, tolerance_percentage)
+		Tolerance as decimal (e.g., 0.02 for 2%)
 	"""
 	try:
 		settings = frappe.get_single("Tax Invoice OCR Settings")
-		tolerance_idr = flt(settings.get("tolerance_idr", 10000))
-		tolerance_percentage = flt(settings.get("tolerance_percentage", 1)) / 100  # Convert to decimal
-		return tolerance_idr, tolerance_percentage
+		tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))
+		return tolerance_pct / 100  # Convert to decimal
 	except Exception:
-		# Default values if settings not found
-		return 10000.0, 0.01  # 10,000 IDR and 1%
+		return 0.02  # 2% default (covers low-rate PPN)
 
 
 def validate_line_item(
 	item: Dict,
 	tax_rate: float = 0.11,
-	tolerance_idr: float = None,
 	tolerance_percentage: float = None,
 	vat_inclusivity_context: Optional[Dict] = None
 ) -> Dict:
@@ -53,15 +54,14 @@ def validate_line_item(
 	Args:
 		item: Line item dictionary with harga_jual, dpp, ppn
 		tax_rate: PPN tax rate (default 0.11 = 11%)
-		tolerance_idr: Absolute tolerance in IDR
-		tolerance_percentage: Relative tolerance as decimal (0.01 = 1%)
+		tolerance_percentage: Relative tolerance as decimal (0.02 = 2%)
 		vat_inclusivity_context: Optional dict with VAT inclusivity detection results
 
 	Returns:
 		Updated item dict with row_confidence, notes, and validation flags
 	"""
-	if tolerance_idr is None or tolerance_percentage is None:
-		tolerance_idr, tolerance_percentage = get_tolerance_settings()
+	if tolerance_percentage is None:
+		tolerance_percentage = get_tolerance_settings()
 
 	harga_jual = flt(item.get("harga_jual"))
 	dpp = flt(item.get("dpp"))
@@ -97,10 +97,8 @@ def validate_line_item(
 	expected_ppn = dpp * tax_rate
 	ppn_diff = abs(ppn - expected_ppn)
 
-	# Calculate tolerance (use maximum of absolute or relative)
-	absolute_tolerance = tolerance_idr
-	relative_tolerance = dpp * tolerance_percentage
-	max_tolerance = max(absolute_tolerance, relative_tolerance)
+	# Calculate tolerance (percentage-based, scales with amount)
+	max_tolerance = dpp * tolerance_percentage
 
 	# Validate PPN
 	if ppn_diff <= max_tolerance:
@@ -166,7 +164,7 @@ def validate_all_line_items(
 	Returns:
 		Tuple of (validated_items, invalid_items_list)
 	"""
-	tolerance_idr, tolerance_percentage = get_tolerance_settings()
+	tolerance_percentage = get_tolerance_settings()
 
 	validated_items = []
 	invalid_items = []
@@ -175,7 +173,6 @@ def validate_all_line_items(
 		validated_item = validate_line_item(
 			item,
 			tax_rate=tax_rate,
-			tolerance_idr=tolerance_idr,
 			tolerance_percentage=tolerance_percentage
 		)
 		validated_items.append(validated_item)
@@ -194,7 +191,6 @@ def validate_all_line_items(
 def validate_invoice_totals(
 	items: List[Dict],
 	header_totals: Dict,
-	tolerance_idr: float = None,
 	tolerance_percentage: float = None
 ) -> Dict:
 	"""
@@ -203,8 +199,7 @@ def validate_invoice_totals(
 	Args:
 		items: List of validated line items
 		header_totals: Dict with harga_jual, dpp, ppn from invoice header
-		tolerance_idr: Absolute tolerance
-		tolerance_percentage: Relative tolerance
+		tolerance_percentage: Relative tolerance as decimal
 
 	Returns:
 		Dictionary with validation results:
@@ -212,8 +207,8 @@ def validate_invoice_totals(
 			- differences: Dict of field -> delta
 			- notes: List of validation messages
 	"""
-	if tolerance_idr is None or tolerance_percentage is None:
-		tolerance_idr, tolerance_percentage = get_tolerance_settings()
+	if tolerance_percentage is None:
+		tolerance_percentage = get_tolerance_settings()
 
 	# Calculate sums
 	sum_harga_jual = sum(flt(item.get("harga_jual", 0)) for item in items)
@@ -242,10 +237,8 @@ def validate_invoice_totals(
 		if header_val == 0:
 			continue  # Skip if header value not provided
 
-		# Calculate tolerance
-		absolute_tolerance = tolerance_idr
-		relative_tolerance = header_val * tolerance_percentage
-		max_tolerance = max(absolute_tolerance, relative_tolerance)
+		# Calculate tolerance (percentage-based)
+		max_tolerance = header_val * tolerance_percentage
 
 		if diff > max_tolerance:
 			match = False
@@ -600,7 +593,6 @@ def validate_invoice_date(
 def validate_line_summation(
 	items: List[Dict],
 	header_totals: Dict,
-	tolerance_idr: float = None,
 	tolerance_percentage: float = None
 ) -> Dict:
 	"""
@@ -613,8 +605,7 @@ def validate_line_summation(
 	Args:
 		items: List of validated line items
 		header_totals: Dict with harga_jual, dpp, ppn from invoice header
-		tolerance_idr: Absolute tolerance
-		tolerance_percentage: Relative tolerance
+		tolerance_percentage: Relative tolerance (default 2%)
 
 	Returns:
 		Dictionary with:
@@ -624,8 +615,8 @@ def validate_line_summation(
 			- summary: Human-readable summary
 			- suggestions: List of recommended actions
 	"""
-	if tolerance_idr is None or tolerance_percentage is None:
-		tolerance_idr, tolerance_percentage = get_tolerance_settings()
+	if tolerance_percentage is None:
+		tolerance_percentage = get_tolerance_settings()
 
 	# Calculate sums
 	sum_harga_jual = sum(flt(item.get("harga_jual", 0)) for item in items)
@@ -655,9 +646,7 @@ def validate_line_summation(
 			continue
 
 		diff = abs(sum_val - header_val)
-		absolute_tolerance = tolerance_idr
-		relative_tolerance = header_val * tolerance_percentage
-		max_tolerance = max(absolute_tolerance, relative_tolerance)
+		max_tolerance = header_val * tolerance_percentage
 
 		discrepancy = {
 			"header_value": header_val,

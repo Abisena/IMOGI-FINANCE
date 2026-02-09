@@ -24,7 +24,6 @@
     "section_verification",
     "require_verification_before_submit_pi",
     "require_verification_before_create_pi_from_expense_request",
-    "tolerance_idr",
     "tolerance_percentage",
     "block_duplicate_fp_no",
     "section_accounts",
@@ -143,15 +142,18 @@
       "default": 10,
       "fieldname": "tolerance_idr",
       "fieldtype": "Currency",
-      "label": "Tolerance (IDR)",
-      "description": "Maximum allowed difference in IDR for DPP and PPN validation"
+      "label": "Tolerance (IDR) [DEPRECATED]",
+      "description": "DEPRECATED: Use Tolerance (%) instead. This field will be removed in future versions.",
+      "hidden": 1,
+      "read_only": 1
     },
     {
-      "default": 1.0,
+      "default": 2.0,
       "fieldname": "tolerance_percentage",
       "fieldtype": "Percent",
-      "label": "Tolerance (%)",
-      "description": "Maximum allowed difference in percentage for DPP and PPN validation (e.g., 1 = 1%)"
+      "label": "Validation Tolerance (%)",
+      "description": "Maximum allowed difference for DPP/PPN validation. Default 2% covers all tax rates including low-rate PPN (1.1%, 2%, etc.). Scales fairly for all invoice amounts.",
+      "precision": 2
     },
     {
       "default": "1",
