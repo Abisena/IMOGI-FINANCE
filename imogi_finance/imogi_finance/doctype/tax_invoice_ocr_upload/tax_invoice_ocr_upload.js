@@ -80,7 +80,9 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			await refreshUploadStatus(frm);
 		}, TAX_INVOICE_OCR_GROUP);
 
-		if (frm.doc.tax_invoice_pdf && providerReady !== false) {
+		// Run OCR button: Only show when OCR not yet run, failed, or pending
+		const ocrNotDone = !frm.doc.ocr_status || frm.doc.ocr_status === 'Failed' || frm.doc.ocr_status === 'Pending';
+		if (frm.doc.tax_invoice_pdf && providerReady !== false && ocrNotDone) {
 			frm.add_custom_button(__('Run OCR'), async () => {
 				await frappe.call({
 					method: 'imogi_finance.api.tax_invoice.run_ocr_for_upload',
@@ -99,6 +101,34 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 				__('⏳ Parsing line items automatically... Refresh halaman dalam beberapa detik untuk melihat hasil.'),
 				'blue'
 			);
+		}
+		
+		// Add Re-Validate button when parse_status is Needs Review (for re-validation after tax_rate change)
+		// This is useful after user manually changes tax_rate field
+		if (frm.doc.items && frm.doc.items.length > 0 && frm.doc.parse_status === 'Needs Review') {
+			frm.add_custom_button(__('🔄 Re-Validate Items'), async () => {
+				await frappe.call({
+					method: 'imogi_finance.imogi_finance.doctype.tax_invoice_ocr_upload.tax_invoice_ocr_upload.revalidate_items',
+					args: { docname: frm.doc.name },
+					freeze: true,
+					freeze_message: __('Re-validating items with tax_rate {0}...', [frm.doc.tax_rate || 0.11]),
+					callback: (r) => {
+						if (r.message && r.message.ok) {
+							frappe.show_alert({
+								message: __('Re-validation selesai. Status: {0} (tax_rate: {1})', 
+									[r.message.parse_status, r.message.tax_rate]),
+								indicator: r.message.parse_status === 'Approved' ? 'green' : 'orange'
+							});
+							frm.reload_doc();
+						} else {
+							frappe.msgprint({
+								message: r.message?.message || __('Re-validation failed'),
+								indicator: 'red'
+							});
+						}
+					}
+				});
+			}, TAX_INVOICE_OCR_GROUP);
 		}
 		
 		// Add Re-Parse button ONLY when items already exist (for manual re-parse)

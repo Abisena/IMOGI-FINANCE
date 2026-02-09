@@ -446,6 +446,100 @@ class TaxInvoiceOCRUpload(Document):
 
 
 @frappe.whitelist()
+def revalidate_items(docname: str):
+    """
+    Re-validate all line items using current tax_rate.
+    
+    This is useful after tax_rate is changed via set_value (which doesn't trigger validate).
+    It recalculates expected PPN for each item and updates validation_summary + parse_status.
+    
+    Args:
+        docname: Name of Tax Invoice OCR Upload document
+    
+    Returns:
+        dict: {"ok": True, "parse_status": str, "items_count": int} or error
+    """
+    try:
+        doc = frappe.get_doc("Tax Invoice OCR Upload", docname)
+        
+        if not doc.items or len(doc.items) == 0:
+            return {
+                "ok": False,
+                "message": _("No line items to validate. Run Parse Line Items first.")
+            }
+        
+        from imogi_finance.imogi_finance.parsers.validation import (
+            validate_all_line_items,
+            validate_invoice_totals,
+            generate_validation_summary_html,
+            determine_parse_status
+        )
+        
+        # Get current tax_rate from doc
+        tax_rate = flt(doc.tax_rate or 0.11)
+        
+        # Convert child table to dict list
+        items = [item.as_dict() for item in doc.items]
+        
+        # Re-validate all items with current tax_rate
+        validated_items, invalid_items = validate_all_line_items(items, tax_rate)
+        
+        # Validate totals
+        header_totals = {
+            "harga_jual": doc.harga_jual,
+            "dpp": doc.dpp,
+            "ppn": doc.ppn
+        }
+        totals_validation = validate_invoice_totals(validated_items, header_totals)
+        
+        # Determine new parse status
+        header_complete = bool(doc.fp_no and doc.npwp and doc.fp_date)
+        new_parse_status = determine_parse_status(
+            validated_items,
+            invalid_items,
+            totals_validation,
+            header_complete
+        )
+        
+        # Generate validation summary HTML
+        validation_html = generate_validation_summary_html(
+            validated_items,
+            invalid_items,
+            totals_validation,
+            new_parse_status
+        )
+        
+        # Update doc
+        doc.flags.allow_parse_status_update = True
+        doc.parse_status = new_parse_status
+        doc.validation_summary = validation_html
+        doc.save()
+        
+        frappe.logger().info(
+            f"[REVALIDATE] {docname}: tax_rate={tax_rate}, "
+            f"parse_status={new_parse_status}, valid={len(validated_items)}, invalid={len(invalid_items)}"
+        )
+        
+        return {
+            "ok": True,
+            "parse_status": new_parse_status,
+            "items_count": len(validated_items),
+            "invalid_count": len(invalid_items),
+            "tax_rate": tax_rate
+        }
+        
+    except Exception as e:
+        frappe.log_error(
+            title="Re-Validate Items Failed",
+            message=f"Failed to re-validate {docname}: {str(e)}\n{frappe.get_traceback()}"
+        )
+        return {
+            "ok": False,
+            "message": str(e)
+        }
+
+
+@frappe.whitelist()
 def approve_parse(docname: str):
     """
     Manually approve parse status after user has reviewed and fixed data.
