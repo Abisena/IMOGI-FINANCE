@@ -2845,6 +2845,58 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                 parsed["fp_no"] = raw_fp_no
                 frappe.logger().info(f"[OCR] Extracted fp_no from JSON: {raw_fp_no}")
 
+        # =====================================================================
+        # 🔥 LAYOUT-AWARE OVERRIDE: Re-extract DPP/PPN/Harga Jual using
+        # coordinate-based parser to prevent the field-swap bug where PPN
+        # gets stored in the DPP field.
+        # =====================================================================
+        if raw_json:
+            try:
+                from imogi_finance.imogi_finance.parsers.layout_aware_parser import (
+                    process_with_layout_parser,
+                )
+                faktur_type = (parsed.get("fp_no") or "")[:3]
+                layout_result = process_with_layout_parser(
+                    vision_json=raw_json,
+                    faktur_no=parsed.get("fp_no", ""),
+                    faktur_type=faktur_type,
+                    ocr_text=text or "",
+                )
+
+                # Override summary values ONLY if layout parser found valid data
+                layout_dpp = layout_result.get("dpp", 0)
+                layout_ppn = layout_result.get("ppn", 0)
+                if layout_dpp > 0 and layout_ppn > 0 and layout_result.get("is_valid"):
+                    old_dpp = parsed.get("dpp")
+                    old_ppn = parsed.get("ppn")
+                    old_hj  = parsed.get("harga_jual")
+
+                    parsed["dpp"] = layout_dpp
+                    parsed["ppn"] = layout_ppn
+                    if layout_result.get("harga_jual", 0) > 0:
+                        parsed["harga_jual"] = layout_result["harga_jual"]
+                    if layout_result.get("detected_tax_rate"):
+                        parsed["tax_rate"] = layout_result["detected_tax_rate"]
+
+                    frappe.logger().info(
+                        f"[OCR] Layout-aware override applied: "
+                        f"DPP {old_dpp} → {layout_dpp}, "
+                        f"PPN {old_ppn} → {layout_ppn}, "
+                        f"Harga Jual {old_hj} → {parsed.get('harga_jual')} "
+                        f"(method={layout_result.get('extraction_method')})"
+                    )
+                else:
+                    frappe.logger().info(
+                        f"[OCR] Layout parser skipped override: "
+                        f"dpp={layout_dpp}, ppn={layout_ppn}, "
+                        f"valid={layout_result.get('is_valid')}, "
+                        f"issues={layout_result.get('validation_issues')}"
+                    )
+            except Exception as layout_err:
+                frappe.logger().warning(
+                    f"[OCR] Layout-aware parser failed (falling back to text parser): {layout_err}"
+                )
+
         # Update doc with OCR results
         frappe.logger().info(f"[OCR] Updating doc with OCR results...")
         _update_doc_after_ocr(

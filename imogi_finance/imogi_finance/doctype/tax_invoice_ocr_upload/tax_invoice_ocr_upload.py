@@ -89,7 +89,7 @@ class TaxInvoiceOCRUpload(Document):
     def after_insert(self):
         """
         Auto-detect scanned PDFs and trigger OCR on new document creation.
-        
+
         Flow:
         1. Try PyMuPDF to check if PDF has text layer
         2. If no text (scanned PDF) → Auto-queue OCR
@@ -97,7 +97,7 @@ class TaxInvoiceOCRUpload(Document):
         """
         if not self.tax_invoice_pdf:
             return
-        
+
         # Check if OCR is enabled
         try:
             from imogi_finance.tax_invoice_ocr import get_settings
@@ -107,32 +107,32 @@ class TaxInvoiceOCRUpload(Document):
                 return
         except Exception:
             return
-        
+
         # Try quick text extraction to detect scanned PDF
         try:
             from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import extract_tokens
-            
+
             # Quick extraction (PyMuPDF only, no vision_json)
             tokens = extract_tokens(file_url_or_path=self.tax_invoice_pdf, vision_json=None)
-            
+
             has_text_layer = bool(tokens and len(tokens) > 10)  # At least 10 tokens = has text
-            
+
             frappe.logger().info(
                 f"[AFTER_INSERT] {self.name}: PDF text detection - "
                 f"tokens={len(tokens) if tokens else 0}, has_text_layer={has_text_layer}"
             )
-            
+
             if not has_text_layer:
                 # Scanned PDF detected - auto-queue OCR
                 frappe.logger().info(f"[AFTER_INSERT] {self.name}: Scanned PDF detected, auto-queueing OCR")
-                
+
                 from imogi_finance.api.tax_invoice import run_ocr_for_upload
                 run_ocr_for_upload(self.name)
-                
+
                 # Update status to show OCR is queued
                 frappe.db.set_value(
-                    "Tax Invoice OCR Upload", 
-                    self.name, 
+                    "Tax Invoice OCR Upload",
+                    self.name,
                     {
                         "ocr_status": "Queued",
                         "validation_summary": """
@@ -146,7 +146,7 @@ class TaxInvoiceOCRUpload(Document):
                     },
                     update_modified=False
                 )
-                
+
         except Exception as e:
             # Don't fail document creation if detection fails
             frappe.logger().warning(
@@ -334,11 +334,11 @@ class TaxInvoiceOCRUpload(Document):
                     # Check if OCR is enabled and provider ready
                     try:
                         from imogi_finance.api.tax_invoice import run_ocr_for_upload
-                        
+
                         frappe.logger().info(
                             f"[AUTO-OCR] {self.name}: No text extracted, auto-triggering OCR"
                         )
-                        
+
                         # Set status to indicate OCR is being queued
                         self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                         self.parse_status = "Needs Review"
@@ -354,18 +354,18 @@ class TaxInvoiceOCRUpload(Document):
                         </div>
                         """
                         self.save()
-                        
+
                         # Queue OCR
                         run_ocr_for_upload(self.name)
-                        
+
                         frappe.db.commit()
-                        
+
                         return {
-                            "success": False, 
+                            "success": False,
                             "auto_ocr_triggered": True,
                             "message": "OCR queued automatically for scanned PDF"
                         }
-                        
+
                     except Exception as ocr_err:
                         frappe.logger().warning(
                             f"[AUTO-OCR FAILED] {self.name}: {str(ocr_err)}"
@@ -405,7 +405,7 @@ class TaxInvoiceOCRUpload(Document):
                         2. Wait for OCR to complete<br>
                         3. Then click <strong>"🔄 Re-Parse Line Items"</strong>
                         """
-                    
+
                     self.validation_summary = f"""
                     <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
                         <strong>⚠️ Table Header Not Found</strong><br>
@@ -444,6 +444,43 @@ class TaxInvoiceOCRUpload(Document):
 
             # Validate all items
             validated_items, invalid_items = validate_all_line_items(items, tax_rate)
+
+            # =================================================================
+            # 🔥 LAYOUT-AWARE SUMMARY RE-EXTRACTION
+            # Re-extract header-level DPP/PPN/Harga Jual from Vision JSON
+            # coordinates to fix the field-swap bug where the regex parser
+            # wrote PPN into the DPP field.
+            # =================================================================
+            if vision_json:
+                try:
+                    from imogi_finance.imogi_finance.parsers.layout_aware_parser import (
+                        process_with_layout_parser,
+                    )
+                    layout_result = process_with_layout_parser(
+                        vision_json=vision_json,
+                        faktur_no=self.fp_no or "",
+                        faktur_type=(self.fp_no or "")[:3],
+                        ocr_text="",  # no plain text needed; Vision JSON is primary
+                    )
+                    layout_dpp = layout_result.get("dpp", 0)
+                    layout_ppn = layout_result.get("ppn", 0)
+                    if layout_dpp > 0 and layout_ppn > 0 and layout_result.get("is_valid"):
+                        if layout_dpp != flt(self.dpp) or layout_ppn != flt(self.ppn):
+                            frappe.logger().info(
+                                f"[PARSE] Layout-aware summary override: "
+                                f"DPP {self.dpp} → {layout_dpp}, "
+                                f"PPN {self.ppn} → {layout_ppn}"
+                            )
+                            self.dpp = layout_dpp
+                            self.ppn = layout_ppn
+                            if layout_result.get("harga_jual", 0) > 0:
+                                self.harga_jual = layout_result["harga_jual"]
+                            if layout_result.get("detected_tax_rate"):
+                                self.tax_rate = layout_result["detected_tax_rate"]
+                except Exception as layout_err:
+                    frappe.logger().warning(
+                        f"[PARSE] Layout-aware summary extraction failed: {layout_err}"
+                    )
 
             # Validate totals if header values exist
             header_totals = {
@@ -633,41 +670,41 @@ class TaxInvoiceOCRUpload(Document):
 def revalidate_items(docname: str):
     """
     Re-validate all line items using current tax_rate.
-    
+
     This is useful after tax_rate is changed via set_value (which doesn't trigger validate).
     It recalculates expected PPN for each item and updates validation_summary + parse_status.
-    
+
     Args:
         docname: Name of Tax Invoice OCR Upload document
-    
+
     Returns:
         dict: {"ok": True, "parse_status": str, "items_count": int} or error
     """
     try:
         doc = frappe.get_doc("Tax Invoice OCR Upload", docname)
-        
+
         if not doc.items or len(doc.items) == 0:
             return {
                 "ok": False,
                 "message": _("No line items to validate. Run Parse Line Items first.")
             }
-        
+
         from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
             generate_validation_summary_html,
             determine_parse_status
         )
-        
+
         # Get current tax_rate from doc
         tax_rate = flt(doc.tax_rate or 0.11)
-        
+
         # Convert child table to dict list
         items = [item.as_dict() for item in doc.items]
-        
+
         # Re-validate all items with current tax_rate
         validated_items, invalid_items = validate_all_line_items(items, tax_rate)
-        
+
         # Validate totals
         header_totals = {
             "harga_jual": doc.harga_jual,
@@ -675,7 +712,7 @@ def revalidate_items(docname: str):
             "ppn": doc.ppn
         }
         totals_validation = validate_invoice_totals(validated_items, header_totals)
-        
+
         # Determine new parse status
         header_complete = bool(doc.fp_no and doc.npwp and doc.fp_date)
         new_parse_status = determine_parse_status(
@@ -684,7 +721,7 @@ def revalidate_items(docname: str):
             totals_validation,
             header_complete
         )
-        
+
         # Generate validation summary HTML
         validation_html = generate_validation_summary_html(
             validated_items,
@@ -692,18 +729,18 @@ def revalidate_items(docname: str):
             totals_validation,
             new_parse_status
         )
-        
+
         # Update doc
         doc.flags.allow_parse_status_update = True
         doc.parse_status = new_parse_status
         doc.validation_summary = validation_html
         doc.save()
-        
+
         frappe.logger().info(
             f"[REVALIDATE] {docname}: tax_rate={tax_rate}, "
             f"parse_status={new_parse_status}, valid={len(validated_items)}, invalid={len(invalid_items)}"
         )
-        
+
         return {
             "ok": True,
             "parse_status": new_parse_status,
@@ -711,7 +748,7 @@ def revalidate_items(docname: str):
             "invalid_count": len(invalid_items),
             "tax_rate": tax_rate
         }
-        
+
     except Exception as e:
         frappe.log_error(
             title="Re-Validate Items Failed",
