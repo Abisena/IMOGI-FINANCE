@@ -801,7 +801,27 @@ class TaxInvoiceOCRUpload(Document):
             # Clear existing items and add new ones
             self.items = []
             for item in validated_items:
-                self.append("items", item)
+                # 🔥 CRITICAL: Ensure all numeric fields are floats, not strings
+                # to prevent "Out of range value" database errors
+                clean_item = {
+                    'line_no': int(item.get('line_no', 0)) if item.get('line_no') else 0,
+                    'description': str(item.get('description', '')),
+                    'harga_jual': flt(item.get('harga_jual', 0)),
+                    'dpp': flt(item.get('dpp', 0)),
+                    'ppn': flt(item.get('ppn', 0)),
+                    'qty': flt(item.get('qty', 0)),
+                    'unit_price': flt(item.get('unit_price', 0)),
+                    'row_confidence': flt(item.get('row_confidence', 1.0)),
+                    'notes': str(item.get('notes', '')),
+                    'page_no': int(item.get('page_no', 1)) if item.get('page_no') else 1,
+                    'source': str(item.get('source', 'parser')),
+                }
+                # Keep any other fields that might exist
+                for key, value in item.items():
+                    if key not in clean_item:
+                        clean_item[key] = value
+                        
+                self.append("items", clean_item)
 
             # Store debug info (with size guard applied in parser)
             debug_info = parse_result.get("debug_info", {})
