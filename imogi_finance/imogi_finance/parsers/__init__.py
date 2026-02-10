@@ -17,13 +17,18 @@ from .layout_aware_parser import (  # noqa: F401
 from .multirow_parser import (  # noqa: F401
     group_multirow_items,
     parse_grouped_item,
-    parse_summary_section as parse_summary_section_blocks,
+    parse_summary_section_from_blocks,
     parse_summary_from_full_text,
     is_summary_row,
-    validate_parsed_data,
+    validate_parsed_data as validate_parsed_data_basic,  # 🔥 RENAMED: Basic validation (multirow)
     parse_indonesian_number,
     parse_tax_invoice_multirow,
     vision_json_to_text_blocks,
     tokens_to_text_blocks,
     _resolve_full_text_annotation,  # 🔥 FIX: Export for Vision JSON unwrapping
 )
+
+from .validation import (  # noqa: F401
+    validate_parsed_data,  # 🔥 MAIN: Full validation with tolerance & flt
+)
+

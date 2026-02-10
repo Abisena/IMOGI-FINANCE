@@ -9,7 +9,7 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, get_site_path
+from frappe.utils import flt
 
 
 def _resolve_tax_invoice_type(fp_no: str | None) -> tuple[str | None, str | None]:
@@ -209,16 +209,12 @@ class TaxInvoiceOCRUpload(Document):
             normalize_all_items,
             detect_vat_inclusivity,
             recalculate_dpp_from_inclusive,
-            validate_number_format
         )
         from imogi_finance.imogi_finance.parsers.validation import (
             validate_all_line_items,
             validate_invoice_totals,
-            validate_line_summation,
             determine_parse_status,
             generate_validation_summary_html,
-            validate_item_code,
-            validate_invoice_date
         )
 
         if not self.tax_invoice_pdf:
@@ -511,7 +507,6 @@ class TaxInvoiceOCRUpload(Document):
                 try:
                     from imogi_finance.imogi_finance.parsers.multirow_parser import (
                         parse_tax_invoice_multirow,
-                        validate_parsed_data as multirow_validate,
                     )
 
                     multirow_result = parse_tax_invoice_multirow(

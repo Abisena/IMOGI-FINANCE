@@ -10,7 +10,6 @@ Handles Indonesian number formats, description cleaning, and OCR corrections.
 
 import re
 from typing import Optional, Tuple, List, Dict
-from functools import lru_cache
 
 import frappe
 

@@ -13,14 +13,11 @@ extraction bugs.
    Works with local files, S3, and remote storage.
 """
 
-import json
 import logging
 import re
-from typing import Dict, List, Tuple, Optional, Any, Union
-from collections import defaultdict
+from typing import Dict, List, Tuple, Optional, Any
 
 import frappe
-from frappe import _
 
 # 🔥 FIX: Import Vision JSON unwrapping helper (relative import for ERPNext v15+ best practice)
 from .multirow_parser import _resolve_full_text_annotation

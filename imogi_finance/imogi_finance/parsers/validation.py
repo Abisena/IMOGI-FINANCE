@@ -11,10 +11,7 @@ Implements per-row and invoice-level validation with auto-approval logic.
 import re
 from typing import Dict, List, Optional, Tuple
 import frappe
-from frappe import _
 from frappe.utils import flt
-
-from .normalization import normalize_indonesian_number
 
 
 def get_tolerance_settings(amount: float = None) -> float:

@@ -27,7 +27,7 @@ Usage::
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -879,13 +879,16 @@ def is_summary_row(text: str, context: Optional[Dict] = None) -> bool:
 # FIX #3: SUMMARY SECTION PARSER
 # =============================================================================
 
-def parse_summary_section(
+def parse_summary_section_from_blocks(
     text_blocks: List[Dict],
     page_height: float = 800.0,
 ) -> Dict[str, float]:
     """
     Parse the summary section of an Indonesian tax invoice using text blocks
     with spatial coordinates.
+
+    🔥 NOTE: This is a text-block based parser. For more sophisticated bbox-aware
+    parsing with better spatial reasoning, use LayoutAwareParser.parse_summary_section().
 
     The summary section is located in the bottom portion of the invoice
     (typically y >= 60% of page height) and contains label-value pairs:
@@ -935,7 +938,7 @@ def parse_summary_section(
         ...     {'text': 'Dasar Pengenaan Pajak', 'x': 50, 'y': 650},
         ...     {'text': '1.010.625,00', 'x': 450, 'y': 650},
         ... ]
-        >>> result = parse_summary_section(blocks, page_height=800)
+        >>> result = parse_summary_section_from_blocks(blocks, page_height=800)
         >>> result['harga_jual']
         1102500.0
         >>> result['dpp']
@@ -1033,17 +1036,21 @@ def parse_summary_from_full_text(ocr_text: str) -> Dict[str, float]:
 
 
 # =============================================================================
-# BONUS: VALIDATION FUNCTION
+# BONUS: VALIDATION FUNCTION (BASIC)
 # =============================================================================
 
-def validate_parsed_data(
+def validate_parsed_data_basic(
     items: List[Dict],
     summary: Dict,
     tax_rate: float = 0.12,
     tolerance_pct: float = 0.01,
 ) -> Dict[str, Any]:
     """
-    Cross-check parsed item data against summary totals for consistency.
+    Basic cross-check of parsed item data against summary totals (no Frappe dependency).
+
+    This is a lightweight validation function that doesn't require frappe.utils.flt.
+    For production use, prefer validation.validate_parsed_data() which has more robust
+    tolerance handling.
 
     Validates that:
         1. At least 1 item was parsed.
@@ -1082,7 +1089,7 @@ def validate_parsed_data(
         ...     {'harga_jual': 80000},
         ... ]
         >>> summary = {'harga_jual': 1102500, 'dpp': 1010625, 'ppn': 121275}
-        >>> result = validate_parsed_data(items, summary)
+        >>> result = validate_parsed_data_basic(items, summary)
         >>> result['is_valid']
         True
     """
@@ -1520,7 +1527,7 @@ def parse_tax_invoice_multirow(
         )
 
         # Step 3: Parse summary section with regex (Fix #1)
-        summary = parse_summary_section(text_blocks, page_height)
+        summary = parse_summary_section_from_blocks(text_blocks, page_height)
 
         logger.info(
             f"Multirow pipeline: summary harga_jual={summary.get('harga_jual', 0):,.0f}, "
@@ -1550,3 +1557,13 @@ def parse_tax_invoice_multirow(
         logger.error(error_msg)
 
     return result
+
+
+# =============================================================================
+# BACKWARD COMPATIBILITY ALIASES
+# =============================================================================
+# For code that imports directly from this module (not via __init__.py)
+validate_parsed_data = validate_parsed_data_basic
+
+# Alias for old name (use parse_summary_from_text_blocks or parse_summary_section_from_blocks instead)
+parse_summary_section = parse_summary_section_from_blocks

@@ -34,10 +34,8 @@ Indonesian Tax Invoice Layout (normalized 0.0–1.0 coordinates):
 """
 
 import re
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict, Any
-from collections import defaultdict
 
 import frappe
 from frappe import _
@@ -419,26 +417,6 @@ class LayoutAwareParser:
             f"{len(pages)} page(s)"
         )
         return tokens
-
-    # 🔥 DEPRECATED: Use shared _resolve_full_text_annotation from multirow_parser instead
-    # Kept for backward compatibility but delegates to shared implementation
-    def _resolve_full_text_annotation(
-        self, data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """
-        DEPRECATED: Use shared _resolve_full_text_annotation from multirow_parser.
-        
-        Navigate through potentially nested responses to find
-        ``fullTextAnnotation``.
-
-        Handles:
-          1. ``data["fullTextAnnotation"]``
-          2. ``data["responses"][0]["fullTextAnnotation"]``
-          3. ``data["responses"][0]["responses"][0]["fullTextAnnotation"]``
-        """
-        # Delegate to shared implementation
-        return _resolve_full_text_annotation(data)
-
     def _extract_bbox(
         self,
         word: Dict[str, Any],
@@ -912,7 +890,10 @@ class LayoutAwareParser:
 
     def parse_summary_section(self) -> Dict[str, Optional[float]]:
         """
-        Extract all summary fields from the invoice.
+        Extract all summary fields from the invoice using spatial/bbox-aware parsing.
+
+        🔥 NOTE: This is a sophisticated bbox-aware parser. For simpler text-block
+        based parsing, use parse_summary_section_from_blocks() from multirow_parser.
 
         Two-pass approach:
           **Pass 1** — Find all label rows first, so we know which rows
