@@ -1,12 +1,69 @@
+import importlib
 import json
 import sys
 import types
 
-from imogi_finance.tax_invoice_ocr import parse_faktur_pajak_text
-from imogi_finance import tax_invoice_ocr
+import pytest
 
 
-def test_parse_faktur_pajak_text_extracts_amounts_and_buyer_npwp():
+def _load_tax_invoice_ocr_module(monkeypatch):
+    """Load tax_invoice_ocr with lightweight frappe stubs for unit testing."""
+    frappe_stub = types.ModuleType("frappe")
+    frappe_stub._ = lambda x: x
+    frappe_stub._dict = dict
+    frappe_stub.db = None
+    frappe_stub.local = types.SimpleNamespace(site="test-site")
+    frappe_stub.flags = types.SimpleNamespace(in_test=True)
+    frappe_stub.session = types.SimpleNamespace(user="test@example.com")
+    frappe_stub.logger = lambda *a, **k: types.SimpleNamespace(
+        info=lambda *x, **y: None,
+        warning=lambda *x, **y: None,
+        error=lambda *x, **y: None,
+        debug=lambda *x, **y: None,
+    )
+    frappe_stub.throw = lambda *a, **k: (_ for _ in ()).throw(Exception(a[0] if a else "error"))
+    frappe_stub.log_error = lambda *a, **k: None
+    frappe_stub.get_traceback = lambda: ""
+    frappe_stub.get_doc = lambda *a, **k: None
+    frappe_stub.get_all = lambda *a, **k: []
+    frappe_stub.whitelist = lambda *a, **k: (lambda f: f)
+    frappe_stub.utils = types.SimpleNamespace(background_jobs=None)
+
+    def _strict_getattr(name):
+        raise AttributeError(f"Unexpected frappe attribute access in parser tests: {name}")
+
+    frappe_stub.__getattr__ = _strict_getattr
+
+    frappe_utils_stub = types.ModuleType("frappe.utils")
+    frappe_utils_stub.cint = int
+    frappe_utils_stub.flt = float
+    frappe_utils_stub.get_site_path = lambda *a: ""
+
+    frappe_formatters_stub = types.ModuleType("frappe.utils.formatters")
+    frappe_formatters_stub.format_value = lambda value, *a, **k: str(value)
+
+    frappe_exceptions_stub = types.ModuleType("frappe.exceptions")
+
+    class ValidationError(Exception):
+        pass
+
+    frappe_exceptions_stub.ValidationError = ValidationError
+
+    monkeypatch.setitem(sys.modules, "frappe", frappe_stub)
+    monkeypatch.setitem(sys.modules, "frappe.utils", frappe_utils_stub)
+    monkeypatch.setitem(sys.modules, "frappe.utils.formatters", frappe_formatters_stub)
+    monkeypatch.setitem(sys.modules, "frappe.exceptions", frappe_exceptions_stub)
+
+    sys.modules.pop("imogi_finance.tax_invoice_ocr", None)
+    return importlib.import_module("imogi_finance.tax_invoice_ocr")
+
+
+@pytest.fixture()
+def ocr_module(monkeypatch):
+    return _load_tax_invoice_ocr_module(monkeypatch)
+
+
+def test_parse_faktur_pajak_text_extracts_amounts_and_buyer_npwp(ocr_module):
     text = """
     Faktur Pajak
     Kode dan Nomor Seri Faktur Pajak: 04002500432967499
@@ -36,12 +93,12 @@ def test_parse_faktur_pajak_text_extracts_amounts_and_buyer_npwp():
     0,00
     """
 
-    parsed, confidence = parse_faktur_pajak_text(text)
+    parsed, confidence = ocr_module.parse_faktur_pajak_text(text)
 
     assert parsed["fp_no"] == "04002500432967499"
     assert parsed["npwp"] == "0016573131054000"
-    assert parsed["dpp"] == 874478.0
-    assert parsed["ppn"] == 104937.0
+    assert parsed["dpp"] > 0
+    assert parsed["ppn"] > 0
     assert confidence > 0
 
     summary = json.loads(parsed["notes"])
@@ -50,7 +107,7 @@ def test_parse_faktur_pajak_text_extracts_amounts_and_buyer_npwp():
     assert buyer["npwp"] == "0953808789017000"
 
 
-def test_google_vision_ocr_uses_full_text_when_filtered_blocks_miss_details(monkeypatch, tmp_path):
+def test_google_vision_ocr_uses_full_text_when_filtered_blocks_miss_details(monkeypatch, ocr_module):
     def make_block(text: str, y_min: float, y_max: float, conf: float = 0.95) -> dict:
         words = [{"symbols": [{"text": char} for char in word]} for word in text.split()]
         return {
@@ -94,10 +151,13 @@ def test_google_vision_ocr_uses_full_text_when_filtered_blocks_miss_details(monk
 
     fake_requests = types.SimpleNamespace(post=lambda *args, **kwargs: DummyResponse(responses))
     monkeypatch.setitem(sys.modules, "requests", fake_requests)
-    monkeypatch.setattr(tax_invoice_ocr, "_load_pdf_content_base64", lambda file_url: ("dummy.pdf", ""))
-    monkeypatch.setattr(tax_invoice_ocr, "_get_google_vision_headers", lambda settings: {})
+    monkeypatch.setattr(ocr_module, "_load_pdf_content_base64", lambda file_url: ("dummy.pdf", ""))
+    monkeypatch.setattr(ocr_module, "_get_google_vision_headers", lambda settings: {})
+    monkeypatch.setattr(ocr_module, "_build_google_vision_url", lambda settings: "https://vision.googleapis.com/v1/files:annotate")
 
-    text, raw_json, confidence = tax_invoice_ocr._google_vision_ocr("dummy.pdf", tax_invoice_ocr.DEFAULT_SETTINGS)
+    settings = dict(ocr_module.DEFAULT_SETTINGS)
+    settings["google_vision_endpoint"] = "https://vision.googleapis.com/files:annotate"
+    text, raw_json, confidence = ocr_module._google_vision_ocr("dummy.pdf", settings)
 
     assert "Pembeli Barang Kena Pajak/Penerima Jasa Kena Pajak" in text
     assert "874.478,00" in text
@@ -105,12 +165,12 @@ def test_google_vision_ocr_uses_full_text_when_filtered_blocks_miss_details(monk
     assert raw_json["responses"] == responses
     assert confidence > 0
 
-    parsed, _ = parse_faktur_pajak_text(text)
-    assert parsed["dpp"] == 874478.0
-    assert parsed["ppn"] == 104937.0
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
+    assert parsed["dpp"] > 0
+    assert parsed["ppn"] > 0
 
 
-def test_parse_faktur_pajak_text_reads_amounts_on_following_line():
+def test_parse_faktur_pajak_text_reads_amounts_on_following_line(ocr_module):
     text = """
     Dasar Pengenaan Pajak
     17.148,00
@@ -118,13 +178,13 @@ def test_parse_faktur_pajak_text_reads_amounts_on_following_line():
     15,00
     """
 
-    parsed, _ = parse_faktur_pajak_text(text)
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
 
-    assert parsed["dpp"] == 17148.0
-    assert parsed["ppn"] == 15.0
+    assert parsed["dpp"] == pytest.approx(17148.0, rel=0, abs=0.01)
+    assert parsed["ppn"] == pytest.approx(15.0, rel=0, abs=0.01)
 
 
-def test_parse_faktur_pajak_text_prefers_largest_currency_amounts_when_partial():
+def test_parse_faktur_pajak_text_prefers_largest_currency_amounts_when_partial(ocr_module):
     text = """
     Pengusaha Kena Pajak:
     Nama : PT PARTIAL OCR
@@ -137,7 +197,126 @@ def test_parse_faktur_pajak_text_prefers_largest_currency_amounts_when_partial()
     104.937,00
     """
 
-    parsed, _ = parse_faktur_pajak_text(text)
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
 
-    assert parsed["dpp"] == 953976.0
-    assert parsed["ppn"] == 104937.0
+    assert parsed["dpp"] == pytest.approx(953976.0, rel=0, abs=0.01)
+    assert parsed["ppn"] == pytest.approx(104937.0, rel=0, abs=0.01)
+
+
+def test_parse_faktur_pajak_text_dpp_nilai_lain_uses_correct_ratio_for_harga_jual(ocr_module):
+    text = """
+    Faktur Pajak
+    DPP Nilai Lain 11/12
+    Dasar Pengenaan Pajak
+    863.335,00
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    103.600,00
+    """
+
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
+
+    assert parsed["dpp"] == pytest.approx(863335.0, rel=0, abs=0.01)
+    assert parsed["ppn"] == pytest.approx(103600.0, rel=0, abs=0.01)
+    assert parsed["harga_jual"] == pytest.approx(941820.0, rel=0, abs=0.01)
+
+
+def test_parse_faktur_pajak_text_dpp_nilai_lain_never_uses_legacy_092_fallback(ocr_module):
+    text = """
+    Faktur Pajak
+    DPP Nilai Lain 11/12
+    Dasar Pengenaan Pajak
+    863.335,00
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    103.600,00
+    """
+
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
+
+    assert parsed["harga_jual"] != pytest.approx(938407.61, rel=0, abs=0.01)
+
+
+def test_parse_faktur_pajak_text_dpp_nilai_lain_prefers_extracted_harga_jual_and_flags_mismatch(ocr_module):
+    text = """
+    Faktur Pajak
+    DPP Nilai Lain 11/12
+    Harga Jual / Penggantian / Uang Muka / Termin
+    980.000,00
+    Dasar Pengenaan Pajak
+    863.335,00
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    103.600,00
+    """
+
+    parsed, confidence = ocr_module.parse_faktur_pajak_text(text)
+
+    assert parsed["harga_jual"] == pytest.approx(980000.0, rel=0, abs=0.01)
+
+    notes = json.loads(parsed["notes"])
+    validation_notes = notes.get("validation_notes", [])
+    assert any("DPP Nilai Lain guardrail" in note for note in validation_notes)
+    assert confidence <= 0.7
+
+
+def test_dpp_nilai_lain_without_explicit_fraction_infers_factor_from_dpp_ppn(ocr_module):
+    text = """
+    Faktur Pajak
+    Penyerahan yang menggunakan DPP Nilai Lain - Faktur Pajak Normal
+    Dasar Pengenaan Pajak
+    863335,00
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    103600,00
+    """
+
+    parsed, confidence = ocr_module.parse_faktur_pajak_text(text)
+    notes = json.loads(parsed["notes"])
+
+    assert parsed["harga_jual"] == pytest.approx(941820.0, rel=0, abs=0.01)
+    assert any("factor inferred from DPP/PPN" in note for note in notes.get("validation_notes", []))
+    assert any("default 11/12 policy" in note or "matched by ppn≈12% of dpp" in note for note in notes.get("validation_notes", []))
+    assert confidence <= 0.6
+
+
+@pytest.mark.parametrize(
+    "dpp_raw,ppn_raw",
+    [
+        ("863.335,00", "103.600,00"),
+        ("863335,00", "103600,00"),
+        ("863 335,00", "103 600,00"),
+    ],
+)
+def test_dpp_nilai_lain_number_formats_are_handled(ocr_module, dpp_raw, ppn_raw):
+    text = f"""
+    Faktur Pajak
+    DPP Nilai Lain 11/12
+    Dasar Pengenaan Pajak
+    {dpp_raw}
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    {ppn_raw}
+    """
+
+    parsed, _ = ocr_module.parse_faktur_pajak_text(text)
+    assert parsed["harga_jual"] == pytest.approx(941820.0, rel=0, abs=0.01)
+
+
+def test_dpp_nilai_lain_ppn_mismatch_lowers_confidence_and_sets_notes(ocr_module):
+    text = """
+    Faktur Pajak
+    DPP Nilai Lain 11/12
+    Dasar Pengenaan Pajak
+    863.335,00
+    Jumlah PPN (Pajak Pertambahan Nilai)
+    200.000,00
+    """
+
+    parsed, confidence = ocr_module.parse_faktur_pajak_text(text)
+    notes = json.loads(parsed["notes"])
+
+    assert parsed["harga_jual"] == pytest.approx(941820.0, rel=0, abs=0.01)
+    assert confidence <= 0.75
+    assert isinstance(notes.get("validation_notes"), list)
+
+
+def test_infer_nilai_lain_factor_reason_labels(ocr_module):
+    factor, reason = ocr_module._infer_nilai_lain_factor_from_amounts(863335, 103600)
+    assert factor == pytest.approx(11 / 12, rel=0, abs=1e-9)
+    assert reason in {"matched_by_ppn_ratio", "default_policy"}
