@@ -25,5 +25,4 @@ from .multirow_parser import (  # noqa: F401
     parse_tax_invoice_multirow,
     vision_json_to_text_blocks,
     tokens_to_text_blocks,
-    _resolve_full_text_annotation,  # 🔥 FIX: Export for Vision JSON unwrapping
-)
+    _resolve_full_text_annotation,
