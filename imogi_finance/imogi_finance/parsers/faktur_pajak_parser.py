@@ -14,12 +14,19 @@ extraction bugs.
 """
 
 import json
+import logging
 import re
 from typing import Dict, List, Tuple, Optional, Any, Union
 from collections import defaultdict
 
 import frappe
 from frappe import _
+
+_logger = logging.getLogger(__name__)
+try:
+    _logger = frappe.logger()
+except Exception:
+    pass
 
 # Try importing PyMuPDF (fitz)
 try:
@@ -968,7 +975,7 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 				prev_desc = current_row.get("description", "")
 				new_desc = row.get("description", "")
 				current_row["description"] = f"{prev_desc} {new_desc}".strip()
-				frappe.logger().debug(
+				_logger.debug(
 					f"Merge P1 (fwd): '{new_desc[:50]}' into previous row"
 				)
 
@@ -1000,7 +1007,7 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 				if combined_desc:
 					row_desc = row.get("description", "")
 					row["description"] = f"{combined_desc} {row_desc}".strip()
-					frappe.logger().debug(
+					_logger.debug(
 						f"Merge P2 (bwd): {len(pending_no_value)} no-value rows "
 						f"merged into value row"
 					)
@@ -1039,7 +1046,7 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 			curr_desc = row.get("description", "")
 			row["description"] = f"{prev_desc} {curr_desc}".strip()
 			pass3[-1] = row  # replace with merged
-			frappe.logger().debug(
+			_logger.debug(
 				f"Merge P3 (dedup): rows with same harga_jual={curr_hj}"
 			)
 		else:

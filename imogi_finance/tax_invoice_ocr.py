@@ -3149,8 +3149,19 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
 
                             parsed["dpp"] = mr_dpp
                             parsed["ppn"] = mr_ppn
-                            if mr_hj > 0:
-                                parsed["harga_jual"] = mr_hj
+
+                            # Compute harga_jual: prefer summary, then
+                            # items sum, then DPP + PPN approximation.
+                            effective_hj = mr_hj
+                            if effective_hj <= 0 and multirow_result.get("items"):
+                                effective_hj = sum(
+                                    float(i.get("harga_jual", 0) or 0)
+                                    for i in multirow_result["items"]
+                                )
+                            if effective_hj <= 0 and mr_dpp > 0:
+                                effective_hj = mr_dpp + mr_ppn
+                            if effective_hj > 0:
+                                parsed["harga_jual"] = effective_hj
 
                             # Rebuild notes JSON with corrected ringkasan_pajak
                             if parsed.get("notes"):
@@ -3166,7 +3177,7 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                                         f"Multirow parser corrected summary values: "
                                         f"DPP {old_dpp} → {mr_dpp}, "
                                         f"PPN {old_ppn} → {mr_ppn}, "
-                                        f"HJ {old_hj} → {mr_hj}"
+                                        f"HJ {old_hj} → {parsed.get('harga_jual')}"
                                     )
                                     notes_obj["validation_notes"] = validation_notes
                                     parsed["notes"] = json.dumps(notes_obj, ensure_ascii=False, indent=2)

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 try:
     import frappe
     logger = frappe.logger()
-except ImportError:
+except Exception:
     pass
 
 
@@ -81,6 +81,7 @@ SUMMARY_LABELS = {
         re.compile(r'Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin', re.I),
         re.compile(r'Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka', re.I),
         re.compile(r'Harga\s+Jual\s*/\s*Penggantian', re.I),
+        re.compile(r'Harga\s+Jual', re.I),  # broad fallback
     ],
     'potongan': [
         re.compile(r'Dikurangi\s+Potongan\s+Harga', re.I),
@@ -977,8 +978,13 @@ def parse_summary_section(
             result[result_key] = value
 
     # ---- Step 4: Fallback — reconstruct text and use regex ----
-    if result['dpp'] == 0.0 and result['ppn'] == 0.0:
-        logger.debug("Coordinate-based extraction found no DPP/PPN, trying text fallback")
+    missing_fields = [
+        k for k in ('harga_jual', 'dpp', 'ppn') if result.get(k, 0.0) == 0.0
+    ]
+    if missing_fields:
+        logger.debug(
+            f"Coordinate-based extraction missing {missing_fields}, trying text fallback"
+        )
         full_text = _reconstruct_text_from_blocks(summary_blocks)
         fallback = _parse_summary_from_text(full_text)
         for key, value in fallback.items():

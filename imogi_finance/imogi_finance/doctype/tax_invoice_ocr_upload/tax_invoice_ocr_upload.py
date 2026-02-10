@@ -579,8 +579,19 @@ class TaxInvoiceOCRUpload(Document):
                                 )
                                 self.dpp = mr_dpp
                                 self.ppn = mr_ppn
-                                if mr_hj > 0:
-                                    self.harga_jual = mr_hj
+
+                                # Compute harga_jual: prefer summary, then
+                                # items sum, then DPP + PPN approximation.
+                                effective_hj = mr_hj
+                                if effective_hj <= 0 and mr_items:
+                                    effective_hj = sum(
+                                        flt(i.get('harga_jual', 0))
+                                        for i in mr_items
+                                    )
+                                if effective_hj <= 0 and mr_dpp > 0:
+                                    effective_hj = mr_dpp + mr_ppn
+                                if effective_hj > 0:
+                                    self.harga_jual = effective_hj
 
                                 # Also update notes JSON with corrected values
                                 try:
