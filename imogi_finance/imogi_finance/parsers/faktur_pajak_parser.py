@@ -654,20 +654,48 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 	rows = cluster_tokens_by_row(tokens, y_tolerance=5)
 
 	# Keywords to identify header row - Multi-column format
+	# More variations to handle OCR errors, spacing variations, and partial matches
 	multi_col_keywords = {
-		"harga_jual": ["harga jual", "harga", "jual"],
-		"dpp": ["dpp", "dasar pengenaan", "dasar"],
-		"ppn": ["ppn", "pajak pertambahan"]
+		"harga_jual": [
+			"harga jual", "harga", "jual", "hrg jual", "hrg", 
+			"selling price", "price", "nilai", "jumlah",
+			"hargajual",  # No space variant
+			"(rp)", "rp", "rupiah"  # Amount column indicators
+		],
+		"dpp": [
+			"dpp", "dasar pengenaan", "dasar", "pengenaan",
+			"dpP", "dPp", "d.p.p", "d.p.p.",  # OCR variations
+			"dasarpengenaan", "dasarpengeneanpajak",  # No space variants
+			"base", "tax base"
+		],
+		"ppn": [
+			"ppn", "pajak pertambahan", "pajak", "pertambahan",
+			"pPn", "PpN", "p.p.n", "p.p.n.",  # OCR variations
+			"pajakpertambahan", "pjkpertambahan",  # No space variants
+			"vat", "value added tax"
+		]
 	}
 
 	# Keywords for single-column format header
 	# Standard DJP format: "Harga Jual / Penggantian / Uang Muka / Termin"
+	# Extended with more format variations
 	single_col_keywords = [
 		"harga jual / penggantian",
 		"harga jual/penggantian",
+		"hargajual/penggantian",  # No space
+		"harga jual penggantian",  # No slash
 		"uang muka / termin",
 		"uang muka/termin",
-		"harga jual"
+		"uangmuka/termin",  # No space
+		"uang muka termin",  # No slash
+		"penggantian",
+		"termin",
+		"harga jual",
+		"hargajual",  # No space
+		"nilai barang",
+		"uraian",  # Description column often near value column
+		"nama barang",
+		"jumlah harga"  # Alternative phrasing
 	]
 
 	column_ranges = {}
@@ -676,29 +704,44 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 
 	for y_pos, row_tokens in rows:
 		# Combine tokens in row for keyword matching
+		# Also create a version with minimal spaces for better OCR error tolerance
 		row_text = " ".join([t.text.lower() for t in row_tokens])
+		row_text_compact = row_text.replace(" ", "")  # For no-space variants
 
 		# First, check for multi-column format (all 3 separate columns)
 		found_columns = {}
 		for col_name, keywords in multi_col_keywords.items():
 			for keyword in keywords:
-				if keyword in row_text:
-					matching_tokens = [t for t in row_tokens if keyword in t.text.lower()]
+				# Check both normal and compact text
+				if keyword in row_text or keyword.replace(" ", "") in row_text_compact:
+					# Find matching tokens (look for any part of keyword)
+					keyword_parts = keyword.split()
+					matching_tokens = [
+						t for t in row_tokens 
+						if any(part in t.text.lower() for part in keyword_parts) or
+						   keyword.replace(" ", "") in t.text.lower().replace(" ", "")
+					]
 					if matching_tokens:
 						x_min = min(t.x0 for t in matching_tokens)
 						x_max = max(t.x1 for t in matching_tokens)
 						found_columns[col_name] = (x_min, x_max)
 						break
 
-		# If we found all 3 columns, this is multi-column format
-		if len(found_columns) >= 3:
+		# If we found at least 2 columns, this is likely multi-column format
+		# We can infer the missing column position from the found ones
+		if len(found_columns) >= 2:
 			header_y = y_pos
 			format_type = "multi_column"
 
+			# Create ColumnRange objects for found columns
 			for col_name, (x_min, x_max) in found_columns.items():
 				col_range = ColumnRange(col_name, x_min, x_max)
 				col_range.expand()
 				column_ranges[col_name] = col_range
+
+			# 🔧 FIX: If only 2 columns found, try to infer the third
+			if len(found_columns) == 2:
+				_infer_missing_column(column_ranges, row_tokens, found_columns)
 
 			frappe.logger().info(
 				f"Found MULTI-COLUMN header at Y={header_y:.1f} with columns: "
@@ -708,14 +751,29 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 
 		# Check for single-column format (Harga Jual only)
 		for keyword in single_col_keywords:
-			if keyword in row_text:
-				# Find the Harga Jual column header token
-				matching_tokens = [t for t in row_tokens if any(kw in t.text.lower() for kw in ["harga", "jual", "termin", "(rp)"])]
+			if keyword in row_text or keyword.replace(" ", "") in row_text_compact:
+				# Find tokens that might be part of the header
+				# Look for keywords or currency indicators or numeric patterns
+				keyword_parts = keyword.split()
+				matching_tokens = [
+					t for t in row_tokens 
+					if any(kw in t.text.lower() for kw in 
+						   ["harga", "jual", "termin", "penggantian", "(rp)", "rp", "nilai", "jumlah"]) or
+					   any(part in t.text.lower() for part in keyword_parts)
+				]
 				if matching_tokens:
-					# Use rightmost token as the value column
-					rightmost = max(matching_tokens, key=lambda t: t.x1)
-					x_min = rightmost.x0
-					x_max = rightmost.x1
+					# Find rightmost numeric/value column
+					# Look for tokens on right side that could be value columns
+					value_tokens = [t for t in row_tokens if t.x0 > 300]  # Heuristic: value columns usually on right
+					if value_tokens:
+						rightmost = max(value_tokens, key=lambda t: t.x1)
+						x_min = rightmost.x0
+						x_max = rightmost.x1
+					else:
+						# Fallback to rightmost matching token
+						rightmost = max(matching_tokens, key=lambda t: t.x1)
+						x_min = rightmost.x0
+						x_max = rightmost.x1
 
 					header_y = y_pos
 					format_type = "single_column"
@@ -735,15 +793,21 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 			break
 
 	if not column_ranges:
-		frappe.log_error(
-			title="Table Header Not Found",
-			message="Could not detect table header row with Harga Jual/DPP/PPN columns"
-		)
 		# Try fallback: look for rightmost numeric columns
 		header_y, column_ranges = _fallback_column_detection(rows)
 		if column_ranges:
 			format_type = "multi_column"  # Fallback assumes multi-column
-			frappe.logger().info("Used fallback column detection")
+			frappe.logger().warning(
+				"Used fallback column detection. "
+				"This may be less accurate than keyword-based detection."
+			)
+		else:
+			# Log diagnostic information to help troubleshoot
+			_log_header_detection_failure(rows, tokens)
+			frappe.log_error(
+				title="Table Header Not Found",
+				message="Could not detect table header row with Harga Jual/DPP/PPN columns"
+			)
 
 	return header_y, column_ranges, format_type
 
@@ -752,8 +816,10 @@ def _fallback_column_detection(rows: List[Tuple[float, List[Token]]]) -> Tuple[O
 	"""
 	Fallback column detection when header keywords not found.
 
-	Heuristic: Find rows with 3+ numeric tokens on the right side,
-	assume rightmost 3 are Harga Jual, DPP, PPN in order.
+	Strategy:
+	1. Look for rows with 3+ well-separated numeric columns (multi-column format)
+	2. Look for rows with 1 numeric column on right (single-column format)
+	3. Analyze column alignment across multiple rows
 
 	Args:
 		rows: List of (y_position, tokens) tuples
@@ -761,36 +827,136 @@ def _fallback_column_detection(rows: List[Tuple[float, List[Token]]]) -> Tuple[O
 	Returns:
 		Tuple of (header_y, column_ranges) or (None, {})
 	"""
-	numeric_pattern = re.compile(r'[\d\.\,]+')
+	numeric_pattern = re.compile(r'^[\d\.\,]+$')  # Strict: ONLY numeric
+	amount_pattern = re.compile(r'[\d\.]{1,}\,\d{2}$')  # Indonesian currency format
 
-	for y_pos, row_tokens in rows:
-		# Find tokens that look numeric
-		numeric_tokens = [t for t in row_tokens if numeric_pattern.search(t.text)]
+	# Strategy 1: Look for clear multi-column headers
+	for y_pos, row_tokens in rows[:20]:  # Check first 20 rows only
+		# Find tokens that look like currency amounts (more specific than just numeric)
+		amount_tokens = [t for t in row_tokens if amount_pattern.search(t.text.strip())]
+		
+		if len(amount_tokens) >= 3:
+			# Check if they're well-separated (proper columns)
+			amount_tokens.sort(key=lambda t: t.x0)
+			
+			# Calculate gaps between tokens
+			gaps = []
+			for i in range(len(amount_tokens) - 1):
+				gaps.append(amount_tokens[i+1].x0 - amount_tokens[i].x1)
+			
+			# If we have reasonable gaps (at least 20 pixels), likely columns
+			if all(gap > 20 for gap in gaps[:3]):
+				rightmost_3 = amount_tokens[-3:]
+				
+				# Assume order: Harga Jual, DPP, PPN
+				column_ranges = {
+					"harga_jual": ColumnRange("harga_jual", rightmost_3[0].x0, rightmost_3[0].x1),
+					"dpp": ColumnRange("dpp", rightmost_3[1].x0, rightmost_3[1].x1),
+					"ppn": ColumnRange("ppn", rightmost_3[2].x0, rightmost_3[2].x1)
+				}
+				
+				# Expand ranges
+				for col in column_ranges.values():
+					col.expand()
+				
+				frappe.logger().warning(
+					f"Fallback multi-column detection at Y={y_pos:.1f} "
+					f"(found {len(amount_tokens)} amount tokens)"
+				)
+				
+				return y_pos, column_ranges
 
-		if len(numeric_tokens) >= 3:
-			# Sort by X position, take rightmost 3
-			numeric_tokens.sort(key=lambda t: t.x0)
-			rightmost_3 = numeric_tokens[-3:]
-
-			# Assume order: Harga Jual, DPP, PPN
+	# Strategy 2: Single-column format - find rightmost amount column
+	for y_pos, row_tokens in rows[:20]:
+		# Look for tokens on the right side that could be amounts
+		right_tokens = [t for t in row_tokens if t.x0 > 350]  # Right half of page
+		amount_tokens = [t for t in right_tokens if amount_pattern.search(t.text.strip())]
+		
+		if amount_tokens:
+			# Use rightmost amount token as the value column
+			rightmost = max(amount_tokens, key=lambda t: t.x1)
+			
 			column_ranges = {
-				"harga_jual": ColumnRange("harga_jual", rightmost_3[0].x0, rightmost_3[0].x1),
-				"dpp": ColumnRange("dpp", rightmost_3[1].x0, rightmost_3[1].x1),
-				"ppn": ColumnRange("ppn", rightmost_3[2].x0, rightmost_3[2].x1)
+				"harga_jual": ColumnRange("harga_jual", rightmost.x0, rightmost.x1)
 			}
-
-			# Expand ranges
-			for col in column_ranges.values():
-				col.expand()
-
+			column_ranges["harga_jual"].expand(pixels=40)
+			
 			frappe.logger().warning(
-				f"Fallback column detection at Y={y_pos:.1f}. "
-				"This may be less accurate than keyword-based detection."
+				f"Fallback single-column detection at Y={y_pos:.1f}"
 			)
-
+			
 			return y_pos, column_ranges
 
 	return None, {}
+
+
+def _infer_missing_column(
+	column_ranges: Dict[str, ColumnRange],
+	row_tokens: List[Token],
+	found_columns: Dict[str, Tuple[float, float]]
+) -> None:
+	"""
+	Try to infer the position of a missing third column when only 2 are found.
+	
+	Args:
+		column_ranges: Dict to update with inferred column
+		row_tokens: Tokens in the header row
+		found_columns: Dict of found column positions
+	"""
+	# Determine which column is missing
+	all_cols = {"harga_jual", "dpp", "ppn"}
+	missing_col = (all_cols - set(found_columns.keys())).pop()
+	
+	# Get rightmost numeric tokens that aren't already assigned
+	assigned_x_ranges = [(x0, x1) for x0, x1 in found_columns.values()]
+	
+	# Find tokens that might be the missing column
+	# Look for numeric-like tokens that are well-separated from found columns
+	numeric_pattern = re.compile(r'[\d\.\,\(\)]')
+	candidate_tokens = [
+		t for t in row_tokens
+		if numeric_pattern.search(t.text) and
+		not any(x0 - 10 <= t.x0 <= x1 + 10 for x0, x1 in assigned_x_ranges)
+	]
+	
+	if candidate_tokens:
+		# Use rightmost unassigned numeric token
+		rightmost = max(candidate_tokens, key=lambda t: t.x1)
+		col_range = ColumnRange(missing_col, rightmost.x0, rightmost.x1)
+		col_range.expand()
+		column_ranges[missing_col] = col_range
+		
+		frappe.logger().info(
+			f"Inferred missing column '{missing_col}' at X={rightmost.x0:.1f}"
+		)
+
+
+def _log_header_detection_failure(rows: List[Tuple[float, List[Token]]], tokens: List[Token]) -> None:
+	"""
+	Log diagnostic information when header detection fails.
+	Helps troubleshooting by showing what text was actually found.
+	
+	Args:
+		rows: Grouped tokens by row
+		tokens: All tokens
+	"""
+	try:
+		# Log first 10 rows of text to see what's in the document
+		sample_rows = []
+		for i, (y_pos, row_tokens) in enumerate(rows[:10]):
+			row_text = " ".join(t.text for t in row_tokens)
+			sample_rows.append(f"Row {i+1} (Y={y_pos:.1f}): {row_text[:100]}")
+		
+		diagnostic_msg = (
+			"Failed to detect table header. First 10 rows:\n" +
+			"\n".join(sample_rows) +
+			f"\n\nTotal tokens: {len(tokens)}, Total rows: {len(rows)}"
+		)
+		
+		frappe.logger().error(diagnostic_msg)
+		
+	except Exception as e:
+		frappe.logger().error(f"Error logging header detection failure: {str(e)}")
 
 
 def find_table_end(tokens: List[Token], header_y: float) -> Optional[float]:
@@ -1545,9 +1711,11 @@ def _parse_page(
 	# These distinguish summary-level labels from item detail text containing the
 	# same words (e.g., "Potongan Harga = Rp 0,00" inside an item vs
 	# "Dikurangi Potongan Harga" as a standalone summary label).
+	# CRITICAL: "potongan harga" removed because it appears in item details as
+	# "Potongan Harga = Rp 0,00" which should NOT be filtered!
 	SUMMARY_START_KEYWORDS = [
-		"dikurangi potongan harga",
-		"potongan harga",
+		"dikurangi potongan harga",  # Summary-level discount row (KEEP)
+		# "potongan harga",  # ❌ REMOVED - conflicts with item details
 		"harga jual",
 		"dasar pengenaan",
 		"jumlah ppn",
@@ -1770,12 +1938,158 @@ def _parse_page(
 			f"zero_suspect={filter_stats['filtered_zero_suspect_count']}"
 		)
 
+	# 🔥 MULTIROW GROUPING: Detect and merge multirow items
+	# Pattern: Items spanning multiple rows in format:
+	#   Row 1: "1 000000" (item number + code)
+	#   Row 2: "HYDRO CARBON TREATMENT" (description)
+	#   Row 3: "Rp 360.500,00 x 1,00 Lainnya" (price × qty)
+	#   Row 4: "Potongan Harga = Rp 0,00" (discount detail)
+	#   Row 5: "PPnBM (0,00%) = Rp 0,00" (luxury tax detail)
+	#   Row 6: Final amount with harga_jual value
+	
+	# Detect multirow pattern by checking for characteristic markers
+	import re as _re_multirow
+	
+	has_multirow_pattern = False
+	item_number_pattern = _re_multirow.compile(r'^\d+\s+\d{4,6}')
+	
+	for row in filtered_rows:
+		desc = (row.get("description", "") or "").lower()
+		# Check for multirow markers
+		if (item_number_pattern.match(row.get("description", "")) or
+		    "potongan harga =" in desc or 
+		    "ppnbm (" in desc or
+		    (_re_multirow.search(r'rp\s*[\d.,]+\s*x\s*[\d.,]+', desc))):
+			has_multirow_pattern = True
+			break
+	
+	if has_multirow_pattern and len(filtered_rows) > 1:
+		frappe.logger().info(
+			f"[MULTIROW] Page {page_no}: Detected multirow pattern, merging rows"
+		)
+		
+		grouped_items = []
+		current_item = None
+		item_start_index = -1
+		
+		for idx, row in enumerate(filtered_rows):
+			desc = row.get("description", "") or ""
+			desc_lower = desc.lower()
+			
+			# Check if this row starts a new item (has item number pattern)
+			is_item_start = bool(item_number_pattern.match(desc))
+			
+			# Check if this is a continuation row (detail lines)
+			is_continuation = (
+				"potongan harga =" in desc_lower or
+				"ppnbm (" in desc_lower or
+				_re_multirow.search(r'rp\s*[\d.,]+\s*x\s*[\d.,]+', desc_lower) or
+				(not row.get("harga_jual") and not row.get("dpp") and 
+				 not is_item_start and current_item is not None)
+			)
+			
+			if is_item_start:
+				# Save previous item if exists
+				if current_item:
+					grouped_items.append(current_item)
+				
+				# Start new item
+				current_item = {
+					'descriptions': [desc],
+					'rows': [row],
+					'start_index': idx,
+					'has_values': bool(row.get("harga_jual") or row.get("dpp") or row.get("ppn"))
+				}
+				item_start_index = idx
+				
+			elif is_continuation and current_item is not None:
+				# Add to current item as continuation
+				current_item['descriptions'].append(desc)
+				current_item['rows'].append(row)
+				# Update has_values if this row has them
+				if row.get("harga_jual") or row.get("dpp") or row.get("ppn"):
+					current_item['has_values'] = True
+					
+			elif current_item is None:
+				# No current item, treat as standalone (shouldn't happen after filtering)
+				grouped_items.append({
+					'descriptions': [desc],
+					'rows': [row],
+					'start_index': idx,
+					'has_values': bool(row.get("harga_jual") or row.get("dpp") or row.get("ppn"))
+				})
+			else:
+				# Next item without clear marker - save current and start new
+				if current_item:
+					grouped_items.append(current_item)
+				
+				current_item = {
+					'descriptions': [desc],
+					'rows': [row],
+					'start_index': idx,
+					'has_values': bool(row.get("harga_jual") or row.get("dpp") or row.get("ppn"))
+				}
+		
+		# Don't forget last item
+		if current_item:
+			grouped_items.append(current_item)
+		
+		frappe.logger().info(
+			f"[MULTIROW] Grouped {len(filtered_rows)} rows into {len(grouped_items)} items"
+		)
+		
+		# Merge each group into single item
+		merged_items = []
+		for group in grouped_items:
+			# Find row with actual values (harga_jual/dpp/ppn)
+			value_row = None
+			for row in group['rows']:
+				if row.get("harga_jual") or row.get("dpp") or row.get("ppn"):
+					value_row = row
+					break
+			
+			# Use first row as base if no value row found
+			if not value_row:
+				value_row = group['rows'][0] if group['rows'] else {}
+			
+			# Build merged description
+			# Remove item number from description if it's there
+			clean_descriptions = []
+			for desc in group['descriptions']:
+				# Remove item number pattern from start
+				clean_desc = item_number_pattern.sub('', desc).strip()
+				# Skip empty or pure detail lines
+				if clean_desc and not clean_desc.lower().startswith(('potongan harga =', 'ppnbm (')):
+					# Also skip price x qty lines
+					if not _re_multirow.match(r'^\s*rp\s*[\d.,]+\s*x\s*[\d.,]+', clean_desc, _re_multirow.IGNORECASE):
+						clean_descriptions.append(clean_desc)
+			
+			# Merge into single description
+			merged_desc = ' '.join(clean_descriptions) if clean_descriptions else group['descriptions'][0]
+			
+			# Create merged item
+			merged_item = {
+				**value_row,
+				'description': merged_desc,
+				'line_no': group['start_index'] + 1,  # Will be reassigned later
+			}
+			
+			merged_items.append(merged_item)
+		
+		filtered_rows = merged_items
+		filter_stats["final_items_count"] = len(filtered_rows)
+		
+		frappe.logger().info(
+			f"[MULTIROW] Merged into {len(merged_items)} final items"
+		)
+
 	# Assign global line numbers
 	for row in filtered_rows:
-		row["line_no"] = global_line_no
-		row["raw_harga_jual"] = row.get("harga_jual", "") or ""
-		row["raw_dpp"] = row.get("dpp", "") or ""
-		row["raw_ppn"] = row.get("ppn", "") or ""
+		if 'line_no' not in row or row.get('line_no', 0) <= 0:
+			row["line_no"] = global_line_no
+		row["raw_harga_jual"] = row.get("raw_harga_jual", "") or row.get("harga_jual", "") or ""
+		row["raw_dpp"] = row.get("raw_dpp", "") or row.get("dpp", "") or ""
+		row["raw_ppn"] = row.get("raw_ppn", "") or row.get("ppn", "") or ""
 		global_line_no += 1
 
 	page_result["items"] = filtered_rows

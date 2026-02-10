@@ -346,8 +346,8 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 
 	Uses a three-tier approach:
 	1. PRIMARY: Calculate from actual DPP and PPN values
-	2. SECONDARY: Use faktur type prefix (040/010 → 11%)
-	3. FALLBACK: Default to 11% (current standard PPN rate)
+	2. SECONDARY: Use faktur type prefix (040/010 → current default rate)
+	3. FALLBACK: Default to 12% (current standard PPN rate since Jan 2025)
 
 	Args:
 		dpp: Dasar Pengenaan Pajak (tax base) amount
@@ -355,7 +355,7 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 		faktur_type: Invoice type code (e.g., "040.000-26.12345678", "010.000-16.12345678")
 
 	Returns:
-		Tax rate as decimal (0.11 or 0.12)
+		Tax rate as decimal (0.12 or 0.11 for older invoices)
 
 	Examples:
 		>>> detect_tax_rate(4313371.0, 517605.0, "040.000-26.12345678")
@@ -365,10 +365,10 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 		0.11  # Calculated: 110000/1000000 = 0.11 (11%)
 
 		>>> detect_tax_rate(0, 0, "040.000-26.12345678")
-		0.11  # Fallback from faktur type 040 → 11%
+		0.12  # Fallback to default 12% (current rate since Jan 2025)
 
 		>>> detect_tax_rate(0, 0, "030.000-16.12345678")
-		0.11  # Fallback to default 11%
+		0.12  # Fallback to default 12%
 	"""
 	import frappe
 	logger = frappe.logger()
@@ -422,15 +422,17 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 		)
 
 	# METHOD 2: Use faktur type prefix (SECONDARY)
+	# NOTE: Since January 2025, standard PPN rate is 12% (not 11%)
+	# Only use faktur type if DPP/PPN calculation failed
 	if faktur_type:
 		# Extract first 3 digits from faktur type (e.g., "040.000-26.12345678" → "040")
 		faktur_prefix = faktur_type[:3]
 
-		# Faktur type 040: DPP Nilai Lain (typically 11%)
-		# Faktur type 010: Normal invoice (typically 11%)
+		# Faktur type 040: DPP Nilai Lain (use current default rate)
+		# Faktur type 010: Normal invoice (use current default rate)
 		if faktur_prefix in ["040", "010"]:
-			logger.info(f"✅ Tax rate detected from faktur type {faktur_prefix}: 11%")
-			return 0.11
+			logger.info(f"✅ Tax rate detected from faktur type {faktur_prefix}: {DEFAULT_RATE*100:.0f}%")
+			return DEFAULT_RATE
 
 		# Other faktur types: use default
 		logger.debug(f"Faktur type {faktur_prefix} doesn't match known patterns, using default rate")
