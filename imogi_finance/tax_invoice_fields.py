@@ -21,6 +21,7 @@ DEFAULT_STANDARD_FIELD_MAP = {
     "ocr_status": "ti_ocr_status",
     "ocr_started_at": "ti_ocr_started_at",
     "ocr_confidence": "ti_ocr_confidence",
+    "ocr_text": "ti_ocr_text",
     "ocr_raw_json": "ti_ocr_raw_json",
     "tax_invoice_pdf": "ti_tax_invoice_pdf",
 }
@@ -45,6 +46,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
         "ocr_status": "out_fp_ocr_status",
         "ocr_started_at": "out_fp_ocr_started_at",
         "ocr_confidence": "out_fp_ocr_confidence",
+        "ocr_text": "out_fp_ocr_text",
         "ocr_raw_json": "out_fp_ocr_raw_json",
         "tax_invoice_pdf": "out_fp_tax_invoice_pdf",
     },
@@ -65,6 +67,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
         "ocr_status": "ocr_status",
         "ocr_started_at": "ocr_started_at",
         "ocr_confidence": "ocr_confidence",
+        "ocr_text": "ocr_text",
         "ocr_raw_json": "ocr_raw_json",
         "tax_invoice_pdf": "tax_invoice_pdf",
     },

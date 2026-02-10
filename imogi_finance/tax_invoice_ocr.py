@@ -2903,6 +2903,13 @@ def _update_doc_after_ocr(
     setattr(doc, status_field, "Needs Review")
     setattr(doc, confidence_field, confidence)
 
+    # 🔥 FIX: Save ocr_text from parsed data
+    ocr_text = parsed.get("_ocr_text_raw")
+    if ocr_text:
+        ocr_text_field = _get_fieldname(doctype, "ocr_text")
+        if hasattr(doc, ocr_text_field) or frappe.db.has_column(doctype, ocr_text_field):
+            setattr(doc, ocr_text_field, ocr_text)
+
     # Update parsed fields
     for key, value in parsed.items():
         if key not in allowed_keys:
@@ -2925,9 +2932,11 @@ def _update_doc_after_ocr(
         combined += "\n".join(extra_notes)
         setattr(doc, notes_field, combined)
 
-    # Update raw JSON
+    # 🔥 FIX: Save ocr_raw_json (Vision API response for line items parsing)
     if raw_json is not None:
-        setattr(doc, _get_fieldname(doctype, "ocr_raw_json"), json.dumps(raw_json, indent=2))
+        ocr_raw_json_field = _get_fieldname(doctype, "ocr_raw_json")
+        if hasattr(doc, ocr_raw_json_field) or frappe.db.has_column(doctype, ocr_raw_json_field):
+            setattr(doc, ocr_raw_json_field, json.dumps(raw_json, indent=2))
 
     # 🔥 CRITICAL: Use save() to trigger hooks properly
     # This ensures on_update() is called automatically with correct state
@@ -2936,6 +2945,7 @@ def _update_doc_after_ocr(
     doc.save()
 
     frappe.logger().info(f"[OCR] Doc saved with ocr_status=Done, modified={doc.modified}")
+
 
 
 def _run_ocr_job(name: str, target_doctype: str, provider: str):
@@ -2986,6 +2996,9 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         frappe.logger().info(f"[OCR] Parsing faktur pajak text...")
         parsed, estimated_confidence = parse_faktur_pajak_text(text or "")
         frappe.logger().info(f"[OCR] Parse complete | Found fp_no: {parsed.get('fp_no')}")
+
+        # 🔥 FIX: Store raw OCR text in parsed dict for saving
+        parsed["_ocr_text_raw"] = text or ""
 
         if not parsed.get("fp_no"):
             raw_fp_no = _extract_faktur_number_from_json(raw_json)

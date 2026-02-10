@@ -42,6 +42,7 @@
     "ocr_started_at",
     "ocr_confidence",
     "column_break_ocr",
+    "ocr_text",
     "ocr_raw_json",
     "parsing_debug_json",
     "created_by_user",
@@ -262,11 +263,19 @@
       "fieldtype": "Column Break"
     },
     {
+      "fieldname": "ocr_text",
+      "fieldtype": "Long Text",
+      "label": "OCR Text (Raw)",
+      "read_only": 1,
+      "description": "Hasil ekstraksi text mentah dari OCR"
+    },
+    {
       "fieldname": "ocr_raw_json",
       "fieldtype": "Code",
-      "label": "Data OCR Lengkap (JSON)",
+      "label": "Vision API Response / OCR Raw Data (JSON)",
       "options": "JSON",
-      "read_only": 1
+      "read_only": 1,
+      "description": "Complete Vision API response dengan text blocks dan coordinates untuk line items parsing"
     },
     {
       "fieldname": "parsing_debug_json",
