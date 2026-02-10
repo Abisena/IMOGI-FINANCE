@@ -2940,6 +2940,107 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                     f"[OCR] Layout-aware parser failed (falling back to text parser): {layout_err}"
                 )
 
+        # =====================================================================
+        # 🔥 MULTIROW PIPELINE: Cross-validate summary values
+        # Uses regex + coordinate-based extraction on text blocks to prevent
+        # the item-vs-summary field swap bug on multi-item invoices.
+        # This is the LAST override before values are committed to the DB.
+        # =====================================================================
+        if raw_json:
+            try:
+                from imogi_finance.imogi_finance.parsers.multirow_parser import (
+                    parse_tax_invoice_multirow,
+                )
+
+                multirow_result = parse_tax_invoice_multirow(
+                    vision_json=raw_json,
+                    tax_rate=0.12,
+                )
+
+                if multirow_result.get("success"):
+                    mr_summary = multirow_result["summary"]
+                    mr_validation = multirow_result["validation"]
+                    mr_dpp = mr_summary.get("dpp", 0) or 0
+                    mr_ppn = mr_summary.get("ppn", 0) or 0
+                    mr_hj = mr_summary.get("harga_jual", 0) or 0
+                    current_dpp = parsed.get("dpp") or 0
+
+                    if mr_dpp > 0 and mr_ppn > 0 and mr_validation.get("is_valid"):
+                        should_override = False
+
+                        # Override if multirow values are significantly larger
+                        # (primary parser picked up item-level values instead
+                        # of summary totals)
+                        if current_dpp > 0 and mr_dpp > current_dpp * 2:
+                            should_override = True
+                        elif current_dpp == 0 and mr_dpp > 0:
+                            should_override = True
+                        # Also override when PPN ratio is wrong (current PPN is
+                        # not ~10-12% of current DPP but multirow is correct)
+                        elif (
+                            current_dpp > 0
+                            and (parsed.get("ppn") or 0) > 0
+                            and mr_dpp > current_dpp * 1.5
+                        ):
+                            should_override = True
+
+                        if should_override:
+                            old_dpp = parsed.get("dpp")
+                            old_ppn = parsed.get("ppn")
+                            old_hj = parsed.get("harga_jual")
+
+                            parsed["dpp"] = mr_dpp
+                            parsed["ppn"] = mr_ppn
+                            if mr_hj > 0:
+                                parsed["harga_jual"] = mr_hj
+
+                            # Rebuild notes JSON with corrected ringkasan_pajak
+                            if parsed.get("notes"):
+                                try:
+                                    notes_obj = json.loads(parsed["notes"])
+                                    notes_obj["ringkasan_pajak"] = {
+                                        "harga_jual": parsed.get("harga_jual"),
+                                        "dasar_pengenaan_pajak": parsed["dpp"],
+                                        "jumlah_ppn": parsed["ppn"],
+                                    }
+                                    validation_notes = notes_obj.get("validation_notes", [])
+                                    validation_notes.append(
+                                        f"Multirow parser corrected summary values: "
+                                        f"DPP {old_dpp} → {mr_dpp}, "
+                                        f"PPN {old_ppn} → {mr_ppn}, "
+                                        f"HJ {old_hj} → {mr_hj}"
+                                    )
+                                    notes_obj["validation_notes"] = validation_notes
+                                    parsed["notes"] = json.dumps(notes_obj, ensure_ascii=False, indent=2)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+
+                            frappe.logger().info(
+                                f"[OCR] Multirow pipeline override: "
+                                f"DPP {old_dpp} → {mr_dpp}, "
+                                f"PPN {old_ppn} → {mr_ppn}, "
+                                f"HJ {old_hj} → {mr_hj}"
+                            )
+                        else:
+                            frappe.logger().info(
+                                f"[OCR] Multirow pipeline: values consistent "
+                                f"(current DPP={current_dpp}, multirow DPP={mr_dpp})"
+                            )
+                    else:
+                        frappe.logger().info(
+                            f"[OCR] Multirow pipeline: no valid override "
+                            f"(mr_dpp={mr_dpp}, mr_ppn={mr_ppn}, "
+                            f"valid={mr_validation.get('is_valid')})"
+                        )
+                else:
+                    frappe.logger().info(
+                        f"[OCR] Multirow pipeline: extraction unsuccessful"
+                    )
+            except Exception as mr_err:
+                frappe.logger().warning(
+                    f"[OCR] Multirow pipeline failed (non-fatal): {mr_err}"
+                )
+
         # Update doc with OCR results
         frappe.logger().info(f"[OCR] Updating doc with OCR results...")
         _update_doc_after_ocr(

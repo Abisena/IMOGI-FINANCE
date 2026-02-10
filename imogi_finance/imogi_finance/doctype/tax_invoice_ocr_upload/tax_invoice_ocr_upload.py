@@ -548,6 +548,17 @@ class TaxInvoiceOCRUpload(Document):
                                 )
                             elif current_dpp == 0 and mr_dpp > 0:
                                 should_override = True
+                            # Also override when PPN ratio is clearly wrong
+                            elif (
+                                current_dpp > 0
+                                and current_ppn > 0
+                                and mr_dpp > current_dpp * 1.5
+                            ):
+                                should_override = True
+                                frappe.logger().warning(
+                                    f"[MULTIROW] DPP cross-validation (1.5x): multirow "
+                                    f"{mr_dpp:,.0f} > current {current_dpp:,.0f}"
+                                )
 
                             if should_override:
                                 frappe.logger().info(
@@ -561,9 +572,27 @@ class TaxInvoiceOCRUpload(Document):
                                 if mr_hj > 0:
                                     self.harga_jual = mr_hj
 
+                                # Also update notes JSON with corrected values
+                                try:
+                                    if self.notes:
+                                        notes_obj = json.loads(self.notes)
+                                        notes_obj["ringkasan_pajak"] = {
+                                            "harga_jual": float(self.harga_jual or 0),
+                                            "dasar_pengenaan_pajak": float(self.dpp or 0),
+                                            "jumlah_ppn": float(self.ppn or 0),
+                                        }
+                                        notes_obj.setdefault("validation_notes", []).append(
+                                            f"Multirow parser corrected summary: "
+                                            f"DPP {current_dpp:,.0f} → {mr_dpp:,.0f}, "
+                                            f"PPN {current_ppn:,.0f} → {mr_ppn:,.0f}"
+                                        )
+                                        self.notes = json.dumps(notes_obj, ensure_ascii=False, indent=2)
+                                except (json.JSONDecodeError, TypeError, ValueError):
+                                    pass
+
                         # -- Line items cross-validation --
-                        # If primary items fail validation against summary but
-                        # multirow items pass, use multirow items instead.
+                        # If primary items fail validation against summary
+                        # OR show signs of mangled parsing, use multirow items.
                         primary_sum = sum(
                             flt(i.get('harga_jual') or i.get('raw_harga_jual'))
                             for i in validated_items
@@ -575,15 +604,41 @@ class TaxInvoiceOCRUpload(Document):
                             and abs(primary_sum - summary_hj) <= summary_hj * 0.05
                         )
 
-                        if (
-                            not primary_sum_ok
-                            and mr_validation.get('is_valid')
+                        # Detect signs of mangled items even if sum matches:
+                        # - Zero-value items (parsing error)
+                        # - Descriptions with "000000" (item code leaked into desc)
+                        # - More items than multirow found (rows not grouped)
+                        has_zero_items = any(
+                            flt(i.get('harga_jual') or i.get('raw_harga_jual')) == 0
+                            for i in validated_items
+                        )
+                        has_mangled_desc = any(
+                            '000000' in str(i.get('description', ''))
+                            for i in validated_items
+                        )
+                        item_count_mismatch = (
+                            len(mr_items) > 0
+                            and len(validated_items) > len(mr_items)
+                        )
+                        primary_items_suspect = (
+                            has_zero_items or has_mangled_desc or item_count_mismatch
+                        )
+
+                        use_multirow_items = (
+                            mr_validation.get('is_valid')
                             and len(mr_items) > 0
-                        ):
+                            and (not primary_sum_ok or primary_items_suspect)
+                        )
+
+                        if use_multirow_items:
                             frappe.logger().info(
-                                f"[MULTIROW] Line items fallback: primary sum "
-                                f"{primary_sum:,.0f} != summary {summary_hj:,.0f}. "
-                                f"Using {len(mr_items)} multirow items instead."
+                                f"[MULTIROW] Line items fallback: "
+                                f"primary_sum_ok={primary_sum_ok}, "
+                                f"zero_items={has_zero_items}, "
+                                f"mangled={has_mangled_desc}, "
+                                f"count_mismatch={item_count_mismatch} "
+                                f"({len(validated_items)} vs {len(mr_items)}). "
+                                f"Using {len(mr_items)} multirow items."
                             )
 
                             # Convert multirow items to the expected format
