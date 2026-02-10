@@ -800,32 +800,64 @@ class TaxInvoiceOCRUpload(Document):
 
             # Clear existing items and add new ones
             self.items = []
+            
+            # 🔥 DEBUG: Log ALL validated items BEFORE processing
+            frappe.log_error(
+                title="Parse Debug - ALL Validated Items",
+                message=f"Total items: {len(validated_items)}\n\n" +
+                        json.dumps(validated_items, indent=2, default=str, ensure_ascii=False)
+            )
+            
+            skipped_items = []
             for idx, item in enumerate(validated_items, 1):
                 # 🔥 CRITICAL: Only use explicitly validated fields
                 # to prevent "Out of range value" database errors from malformed data
                 try:
+                    harga_jual_val = flt(item.get('harga_jual', 0))
+                    description_val = str(item.get('description', '')).strip()
+                    row_confidence = flt(item.get('row_confidence', 1.0))
+                    
+                    # 🔥 FILTER INVALID ITEMS: Skip items that are clearly wrong
+                    # 1. Empty description AND low value (< 1000) = likely header junk
+                    # 2. Confidence < 0.4 AND harga_jual < 10000 = unreliable parse
+                    # 3. Description contains header keywords (Nama:, NPWP:, Alamat:)
+                    is_header_junk = any(keyword in description_val for keyword in [
+                        'Nama:', 'NPWP:', 'Alamat:', 'Pengusaha Kena Pajak', 
+                        'Pembeli Barang', 'Faktur Pajak', 'Kode dan Nomor'
+                    ])
+                    is_low_confidence_junk = (row_confidence < 0.4 and harga_jual_val < 10000)
+                    is_empty_desc_junk = (not description_val and harga_jual_val < 1000)
+                    
+                    if is_header_junk or is_low_confidence_junk or is_empty_desc_junk:
+                        skipped_items.append({
+                            'idx': idx,
+                            'reason': 'header_junk' if is_header_junk else 
+                                     'low_confidence' if is_low_confidence_junk else 'empty_desc',
+                            'description': description_val[:100],
+                            'harga_jual': harga_jual_val,
+                            'confidence': row_confidence
+                        })
+                        frappe.logger().warning(
+                            f"[PARSE] Skipping item {idx}: likely header junk "
+                            f"(desc='{description_val[:50]}', hj={harga_jual_val}, conf={row_confidence})"
+                        )
+                        continue
+                    
                     clean_item = {
                         'line_no': int(item.get('line_no', 0)) if item.get('line_no') else 0,
-                        'description': str(item.get('description', '')),
-                        'harga_jual': flt(item.get('harga_jual', 0)),
+                        'description': description_val,
+                        'harga_jual': harga_jual_val,
                         'dpp': flt(item.get('dpp', 0)),
                         'ppn': flt(item.get('ppn', 0)),
                         'qty': flt(item.get('qty', 0)),
                         'unit_price': flt(item.get('unit_price', 0)),
-                        'row_confidence': flt(item.get('row_confidence', 1.0)),
+                        'row_confidence': row_confidence,
                         'notes': str(item.get('notes', '')),
                         'page_no': int(item.get('page_no', 1)) if item.get('page_no') else 1,
                         'source': str(item.get('source', 'parser')),
                     }
                     
-                    # Debug log for first item to verify values
-                    if idx == 1:
-                        frappe.log_error(
-                            title=f"Parse Debug - Item {idx}",
-                            message=f"Raw item: {json.dumps(item, indent=2, default=str)}\n\n"
-                                    f"Clean item: {json.dumps(clean_item, indent=2, default=str)}"
-                        )
-                    
+                    frappe.logger().info(f"[PARSE] Item {idx}: {clean_item['description'][:50]} = {clean_item['harga_jual']}")
                     self.append("items", clean_item)
                     
                 except Exception as item_err:
@@ -835,6 +867,12 @@ class TaxInvoiceOCRUpload(Document):
                                 f"Raw item: {json.dumps(item, indent=2, default=str)}"
                     )
                     raise
+            
+            # Log skipped items summary
+            if skipped_items:
+                frappe.logger().info(
+                    f"[PARSE] Skipped {len(skipped_items)} invalid items: {skipped_items}"
+                )
 
             # Store debug info (with size guard applied in parser)
             debug_info = parse_result.get("debug_info", {})
