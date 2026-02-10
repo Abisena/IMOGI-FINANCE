@@ -446,6 +446,11 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 	- boundingBox.vertices = [{x, y}, {x, y}, {x, y}, {x, y}]
 	  (4 corners: top-left, top-right, bottom-right, bottom-left)
 
+	Handles multiple Vision JSON nesting variants:
+	- {"responses": [{"responses": [{"fullTextAnnotation": ...}]}]}
+	- {"responses": [{"fullTextAnnotation": ...}]}
+	- {"fullTextAnnotation": ...}
+
 	Args:
 		vision_json: Parsed JSON from Google Vision API response
 
@@ -454,8 +459,14 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 	"""
 	tokens = []
 
-	# Navigate to pages array
-	full_text = vision_json.get("fullTextAnnotation", {})
+	# 🔥 FIX: Unwrap nested responses to reach fullTextAnnotation
+	# Import unwrapping helper from multirow_parser
+	from imogi_finance.imogi_finance.parsers.multirow_parser import _resolve_full_text_annotation
+	
+	full_text = _resolve_full_text_annotation(vision_json)
+	if not full_text:
+		frappe.logger().warning("No fullTextAnnotation found in Vision JSON (after unwrapping)")
+		return tokens
 	pages = full_text.get("pages", [])
 
 	if not pages:
