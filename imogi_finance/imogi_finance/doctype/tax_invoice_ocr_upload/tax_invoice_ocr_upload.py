@@ -264,6 +264,7 @@ class TaxInvoiceOCRUpload(Document):
                 errors = "; ".join(parse_result.get("errors", []))
 
                 # Set status to Needs Review with clear error message
+                self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                 self.parse_status = "Needs Review"
                 self.validation_summary = f"""
                 <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
@@ -339,6 +340,7 @@ class TaxInvoiceOCRUpload(Document):
                         )
                         
                         # Set status to indicate OCR is being queued
+                        self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                         self.parse_status = "Needs Review"
                         self.validation_summary = """
                         <div style="padding: 10px; background: #d1ecf1; border-left: 4px solid #0c5460;">
@@ -370,6 +372,7 @@ class TaxInvoiceOCRUpload(Document):
                         )
                         # Continue with normal error handling below
 
+                self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                 self.parse_status = "Needs Review"
 
                 # Differentiate: no tokens (extraction failed) vs layout issue
@@ -806,6 +809,14 @@ def auto_parse_line_items(doc_name: str):
         # 🔥 Additional guard: Ensure we have parseable data
         if not doc.ocr_raw_json and not doc.tax_invoice_pdf:
             frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name}: No ocr_raw_json and no PDF")
+            return
+
+        # 🔥 NEW: Reload document to ensure we have latest version (race condition mitigation)
+        doc.reload()
+
+        # Re-check items after reload (another job might have parsed while we were loading)
+        if doc.items and len(doc.items) > 0:
+            frappe.logger().info(f"[AUTO-PARSE SKIP] {doc_name} has items after reload (race condition detected)")
             return
 
         frappe.logger().info(f"[AUTO-PARSE] Starting parse for {doc_name}")
