@@ -635,8 +635,12 @@ class LayoutAwareParser:
         """
         Find the row containing a label that matches one of the patterns.
 
-        Searches the concatenated text of each row against each pattern
-        (in priority order). Returns the first match.
+        🔧 FIX: Searches BOTTOM-UP (reverse row order) so that summary
+        section labels at the bottom of the page are matched before the
+        identically-worded table column headers near the top.
+        E.g., "Harga Jual / Penggantian / Uang Muka / Termin" appears
+        both as a column header and as the summary total label — we want
+        the summary copy.
 
         Args:
             patterns: Compiled regex patterns, ordered most-specific first.
@@ -649,7 +653,9 @@ class LayoutAwareParser:
         row_index = self._build_row_text_index()
 
         for pattern in patterns:
-            for idx, (row_y, row_text, row_tokens) in enumerate(row_index):
+            # 🔧 Iterate rows bottom-up so summary labels win over table headers
+            for idx in range(len(row_index) - 1, -1, -1):
+                row_y, row_text, row_tokens = row_index[idx]
                 if pattern.search(row_text):
                     # Return the leftmost token in the matched row as the
                     # label anchor (tokens are already sorted left→right)

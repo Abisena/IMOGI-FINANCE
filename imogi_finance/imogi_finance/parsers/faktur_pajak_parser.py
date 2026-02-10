@@ -923,14 +923,19 @@ def get_rightmost_value(tokens: List[Token]) -> Optional[str]:
 
 def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 	"""
-	Merge rows without numeric values into previous row's description.
+	Merge multi-row OCR items into single items.
 
-	Handles wrapped description lines in multi-line items.
+	🔧 REWRITTEN: Uses a three-pass strategy to handle the multi-line
+	item format in Indonesian Faktur Pajak where each item spans 4-5
+	visual rows in the OCR output.
 
-	Special handling:
-		- Rows with "PPnBM", "Potongan", "x 1,00" etc. in description
-		  but no values in Harga Jual/DPP/PPN columns are merged
-		- Preserves data rows with valid numeric columns
+	Pass 1 (forward): Merge any row WITHOUT column values into the
+	         previous row. Rows with harga_jual/dpp/ppn values stay separate.
+	Pass 2 (backward): Merge leading no-value rows INTO the next value
+	         row below them (handles description preceding its value).
+	Pass 3 (dedup): When consecutive rows share the same harga_jual
+	         from fallback extraction, keep only the last one (the one
+	         with the real column-assigned value) and merge descriptions.
 
 	Args:
 		rows: List of parsed row dictionaries
@@ -941,54 +946,106 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 	if not rows:
 		return []
 
-	merged = []
+	# === Pass 1: Forward merge — no-value rows merge into preceding row ===
+	pass1 = []
 	current_row = None
 
 	for row in rows:
-		# Check if row has numeric values in the CORRECT columns
-		# (not just any numeric text in description)
 		has_numbers = any([
 			row.get("harga_jual"),
 			row.get("dpp"),
 			row.get("ppn")
 		])
 
-		# Additional check: description-only keywords that should merge
-		# 🔧 FIX: These keywords only trigger merge when the row has NO numeric
-		# column values. Rows with actual harga_jual/dpp/ppn values are ALWAYS
-		# kept as data rows, even if description contains these keywords.
-		description_only_keywords = [
-			"ppnbm", "potongan", "diskon", "discount",
-			"x 1,00", "x 1.00", "lainnya"
-		]
-		desc_text = (row.get("description", "") or "").lower()
-		is_description_only = (
-			not has_numbers
-			and any(keyword in desc_text for keyword in description_only_keywords)
-		)
-
-		if (has_numbers or not is_description_only) or current_row is None:
-			# This is a data row or first row
+		if has_numbers or current_row is None:
+			# Data row or very first row
 			if current_row:
-				merged.append(current_row)
-			current_row = row
+				pass1.append(current_row)
+			current_row = dict(row)  # shallow copy
 		else:
-			# This is a continuation row (description wraparound)
+			# No column values → merge into current_row as description continuation
 			if current_row and row.get("description"):
-				# Append to previous description with space
 				prev_desc = current_row.get("description", "")
 				new_desc = row.get("description", "")
 				current_row["description"] = f"{prev_desc} {new_desc}".strip()
-
 				frappe.logger().debug(
-					f"Merged wraparound: '{new_desc[:50]}...' into previous row"
+					f"Merge P1 (fwd): '{new_desc[:50]}' into previous row"
 				)
 
-	# Add last row
 	if current_row:
-		merged.append(current_row)
+		pass1.append(current_row)
 
-	return merged
+	# === Pass 2: Backward merge — leading no-value rows merge forward ===
+	# If the first N rows have no value but the (N+1)th does, merge them
+	# into the (N+1)th row. This handles: desc row → desc row → value row.
+	pass2 = []
+	pending_no_value: List[Dict] = []
+
+	for row in pass1:
+		has_numbers = any([
+			row.get("harga_jual"),
+			row.get("dpp"),
+			row.get("ppn")
+		])
+
+		if not has_numbers:
+			pending_no_value.append(row)
+		else:
+			# Merge any pending no-value rows into this value row
+			if pending_no_value:
+				combined_desc = " ".join(
+					r.get("description", "") for r in pending_no_value
+					if r.get("description")
+				)
+				if combined_desc:
+					row_desc = row.get("description", "")
+					row["description"] = f"{combined_desc} {row_desc}".strip()
+					frappe.logger().debug(
+						f"Merge P2 (bwd): {len(pending_no_value)} no-value rows "
+						f"merged into value row"
+					)
+				pending_no_value = []
+
+			pass2.append(row)
+
+	# If there are trailing no-value rows after the last value row,
+	# append them to the last value row (or keep them as-is if no value rows exist)
+	if pending_no_value:
+		if pass2:
+			last_row = pass2[-1]
+			for nv_row in pending_no_value:
+				if nv_row.get("description"):
+					prev_desc = last_row.get("description", "")
+					last_row["description"] = f"{prev_desc} {nv_row['description']}".strip()
+		else:
+			# All rows are no-value → just return them as-is
+			pass2 = pending_no_value
+
+	# === Pass 3: Deduplication — merge consecutive rows with same harga_jual ===
+	# The single-column fallback sometimes extracts the same price from the
+	# description text AND the column token, creating duplicate value rows.
+	if len(pass2) <= 1:
+		return pass2
+
+	pass3 = [pass2[0]]
+	for row in pass2[1:]:
+		prev = pass3[-1]
+		prev_hj = str(prev.get("harga_jual", "") or "").strip()
+		curr_hj = str(row.get("harga_jual", "") or "").strip()
+
+		if prev_hj and curr_hj and prev_hj == curr_hj:
+			# Same harga_jual → merge descriptions, keep later row's value
+			prev_desc = prev.get("description", "")
+			curr_desc = row.get("description", "")
+			row["description"] = f"{prev_desc} {curr_desc}".strip()
+			pass3[-1] = row  # replace with merged
+			frappe.logger().debug(
+				f"Merge P3 (dedup): rows with same harga_jual={curr_hj}"
+			)
+		else:
+			pass3.append(row)
+
+	return pass3
 
 
 def parse_invoice(
@@ -1298,6 +1355,24 @@ def _parse_page(
 		header_y = _find_first_non_header_row(page_tokens, header_skip_keywords)
 		page_result["used_sticky_columns"] = True
 
+		# 🔧 FIX: On continuation pages with sticky columns, check if the page
+		# actually has table content. If it's just the signature/footer section
+		# (which is common for page 2 of Faktur Pajak), skip parsing entirely.
+		page_text = " ".join(t.text.lower() for t in page_tokens)
+		has_signature = any(kw in page_text for kw in SIGNATURE_STOP_KEYWORDS)
+		# Count tokens that look like IDR amounts (at least 5 digits with separators)
+		import re as _re_page
+		amount_token_count = sum(
+			1 for t in page_tokens
+			if _re_page.match(r'^[\d\.]{5,}[,]\d{2}$', t.text.strip())
+		)
+		if has_signature and amount_token_count < 3:
+			frappe.logger().info(
+				f"Page {page_no}: Sticky columns but signature detected with "
+				f"only {amount_token_count} amount tokens — skipping page"
+			)
+			return page_result
+
 	if not column_ranges:
 		frappe.logger().warning(f"Page {page_no}: No columns detected, skipping page")
 		return page_result
@@ -1354,48 +1429,63 @@ def _parse_page(
 
 		# 🔥 FIX: Fallback harga_jual extraction for single-column format
 		# If harga_jual is empty/junk, extract last valid amount from description
+		# 🔧 TIGHTENED: Skip extraction for rows that are clearly price-detail
+		# continuation lines (contain "x 1,00", "x 1.00", "Lainnya",
+		# "Potongan Harga", "PPnBM"). These describe item pricing breakdown,
+		# not standalone line-item values.
 		if format_type != "multi_column":
 			hj_value = row_data.get("harga_jual")
 			# Check if harga_jual is missing or junk (like "(Rp)" or empty)
 			is_junk = not hj_value or hj_value in {"(Rp)", "Rp", "-", "0", "0,00"}
 
 			if is_junk and row_data.get("description"):
-				# Extract amounts with thousand separator (to avoid qty like "1,00")
-				# Pattern: 1-3 digits, then groups of .XXX, optionally ending with ,XX
-				amount_pattern = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)')
 				desc_text = row_data["description"]
-				amount_matches = amount_pattern.findall(desc_text)
+				desc_lower = desc_text.lower()
 
-				if amount_matches:
-					# Take the LAST amount (usually the total for the line)
-					last_amount_str = amount_matches[-1]
-					# Parse Indonesian format: 360.500,00 -> 360500.00
-					try:
-						parsed_amount = float(
-							last_amount_str.replace(".", "").replace(",", ".")
-						)
-						# 🔥 ENHANCED VALIDATION: Prevent qty extraction
-						# - Must be >= 10,000 IDR (valid item price)
-						# - Must NOT look like qty (1.000, 2.000, 100.000, etc.)
-						# - Must have reasonable decimal part (not .000,00 which suggests qty×1000)
-						is_valid_price = (
-							parsed_amount >= 10000 and  # Minimum reasonable price
-							not (parsed_amount % 1000 == 0 and parsed_amount < 1_000_000)  # Avoid 1000, 2000, etc.
-						)
+				# 🔧 FIX: Don't extract from price-detail/continuation lines
+				# These contain the per-unit amount which will be duplicated
+				is_price_detail = any(marker in desc_lower for marker in [
+					" x 1,", " x 1.", " x 2,", " x 2.", " x 3,", " x 3.", " x 4,", " x 4.",
+					" x 5,", " x 5.",
+					"lainnya", "potongan harga", "ppnbm",
+				])
 
-						if is_valid_price:
-							row_data["harga_jual"] = last_amount_str
-							frappe.logger().debug(
-								f"Single-column fallback: extracted harga_jual={last_amount_str} "
-								f"(parsed: {parsed_amount:,.0f}) from description"
+				if not is_price_detail:
+					# Extract amounts with thousand separator (to avoid qty like "1,00")
+					# Pattern: 1-3 digits, then groups of .XXX, optionally ending with ,XX
+					amount_pattern = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)')
+					amount_matches = amount_pattern.findall(desc_text)
+
+					if amount_matches:
+						# Take the LAST amount (usually the total for the line)
+						last_amount_str = amount_matches[-1]
+						# Parse Indonesian format: 360.500,00 -> 360500.00
+						try:
+							parsed_amount = float(
+								last_amount_str.replace(".", "").replace(",", ".")
 							)
-						else:
-							frappe.logger().warning(
-								f"Single-column fallback: rejected amount {last_amount_str} "
-								f"(parsed: {parsed_amount:,.0f}) - looks like qty, not price"
+							# 🔥 ENHANCED VALIDATION: Prevent qty extraction
+							# - Must be >= 10,000 IDR (valid item price)
+							# - Must NOT look like qty (1.000, 2.000, 100.000, etc.)
+							# - Must have reasonable decimal part (not .000,00 which suggests qty×1000)
+							is_valid_price = (
+								parsed_amount >= 10000 and  # Minimum reasonable price
+								not (parsed_amount % 1000 == 0 and parsed_amount < 1_000_000)  # Avoid 1000, 2000, etc.
 							)
-					except (ValueError, TypeError):
-						pass
+
+							if is_valid_price:
+								row_data["harga_jual"] = last_amount_str
+								frappe.logger().debug(
+									f"Single-column fallback: extracted harga_jual={last_amount_str} "
+									f"(parsed: {parsed_amount:,.0f}) from description"
+								)
+							else:
+								frappe.logger().warning(
+									f"Single-column fallback: rejected amount {last_amount_str} "
+									f"(parsed: {parsed_amount:,.0f}) - looks like qty, not price"
+								)
+						except (ValueError, TypeError):
+							pass
 
 		parsed_rows.append(row_data)
 
@@ -1454,6 +1544,9 @@ def _parse_page(
 		"kode barang",
 		"harga satuan",
 		"jumlah barang",
+		# 🔧 FIX: Catch wrapped header text from "Nama Barang / Jasa Kena Pajak"
+		"jasa kena pajak",
+		"barang kena pajak",
 	}
 
 	# Keywords for the extra zero-value rule
@@ -1479,7 +1572,7 @@ def _parse_page(
 		Detection strategy:
 		  1. Substring match against SUMMARY_ROW_KEYWORDS (broad match)
 		  2. Start-of-description match against SUMMARY_START_KEYWORDS (precise)
-		  3. Item number pattern override: if description starts with "\d+ \d{6}"
+		  3. Item number pattern override: if description starts with ``\\d+ \\d{6}``
 		     (e.g., "1 000000"), it's ALWAYS a line item, never a summary row.
 
 		Whitespace normalization: Collapses multiple spaces, strips, lowercases
@@ -1595,7 +1688,55 @@ def _parse_page(
 			continue
 		filtered_rows.append(row)
 
-	# Final count
+	# 🔧 FIX: Second-pass garbage filter — remove footer/signature rows that
+	# leak through when table_end_y detection fails (e.g., page 2 content).
+	# These are: bare years ("2025"), single names ("APRIANI"), rows with only
+	# tiny junk values (< 100 IDR) and no description.
+	clean_rows = []
+	import re as _re2
+	for row in filtered_rows:
+		desc = (row.get("description", "") or "").strip()
+		hj_raw = str(row.get("harga_jual", "") or "").strip()
+
+		# Filter: bare 4-digit year with no meaningful value
+		if _re2.match(r'^(19|20)\d{2}$', desc) and not hj_raw:
+			filter_stats["filtered_summary_count"] += 1
+			if len(filter_stats["first_10_filtered_descriptions"]) < 10:
+				filter_stats["first_10_filtered_descriptions"].append(
+					f"'{desc}' (bare year)"
+				)
+			continue
+
+		# Filter: empty description with tiny junk values (< 100 IDR)
+		if not desc and hj_raw:
+			try:
+				hj_val = float(hj_raw.replace(".", "").replace(",", "."))
+				if hj_val < 100:
+					filter_stats["filtered_summary_count"] += 1
+					if len(filter_stats["first_10_filtered_descriptions"]) < 10:
+						filter_stats["first_10_filtered_descriptions"].append(
+							f"'(empty desc, hj={hj_raw})' (junk value)"
+						)
+					continue
+			except (ValueError, TypeError):
+				pass
+
+		# Filter: single short word (≤12 chars), no values — likely signer name
+		if desc and len(desc) <= 12 and " " not in desc and not hj_raw:
+			# Only filter if it's ALL CAPS or titlecase (name-like), not an item code
+			if desc.isupper() or desc.istitle():
+				# Extra: don't filter if it looks like an item code (digits/special chars)
+				if not _re2.search(r'\d', desc):
+					filter_stats["filtered_summary_count"] += 1
+					if len(filter_stats["first_10_filtered_descriptions"]) < 10:
+						filter_stats["first_10_filtered_descriptions"].append(
+							f"'{desc}' (signer name)"
+						)
+					continue
+
+		clean_rows.append(row)
+
+	filtered_rows = clean_rows
 	filter_stats["final_items_count"] = len(filtered_rows)
 
 	# Store filter stats in page_result for aggregation
@@ -1647,6 +1788,12 @@ def _find_table_end_strong(
 	Find table end with strong detection (requires 2+ keywords).
 
 	Prevents early termination on ambiguous single keywords like "Total" in descriptions.
+
+	🔧 FIX: Added single-keyword strong signals for summary section labels
+	that unambiguously mark the end of the line-item table:
+	- "Harga Jual / Penggantian" (start of summary totals)
+	- "Dikurangi Potongan Harga" (only appears in summary section)
+	- "Dasar Pengenaan Pajak" (already existed)
 	"""
 	below_header = [t for t in tokens if t.y0 > header_y]
 	rows = cluster_tokens_by_row(below_header, y_tolerance=5)
@@ -1660,8 +1807,21 @@ def _find_table_end_strong(
 			frappe.logger().info(f"Strong totals block at Y={y_pos:.1f} ({keyword_count} keywords)")
 			return y_pos
 
-		# Special case: "Dasar Pengenaan Pajak" alone is strong signal
+		# Special case: single phrases that unambiguously end the item table
 		if "dasar pengenaan pajak" in row_text:
+			return y_pos
+		if "harga jual / penggantian" in row_text or "harga jual/penggantian" in row_text:
+			# Only if this is NOT the table column header (which is at header_y).
+			# Since we already filter `t.y0 > header_y`, any "Harga Jual / Penggantian"
+			# row here is the summary label, not the column header.
+			frappe.logger().info(
+				f"Summary 'Harga Jual / Penggantian' row at Y={y_pos:.1f} → table end"
+			)
+			return y_pos
+		if "dikurangi potongan harga" in row_text:
+			frappe.logger().info(
+				f"Summary 'Dikurangi Potongan Harga' row at Y={y_pos:.1f} → table end"
+			)
 			return y_pos
 
 	return None

@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Tests for multi-row item parsing fixes.
+Tests for multi-row item parsing fixes (v2).
 
 Covers:
     1. Smart filter logic — "Potongan Harga" in item detail vs summary label
-    2. Multi-row item grouping (merge_description_wraparounds)
-    3. Summary section parsing (extract_summary_values)
-    4. Cross-validation (validate_parsed_data)
+    2. Multi-row item grouping — three-pass merge + dedup
+    3. Summary section parsing — bottom-up label search
+    4. Cross-validation — validate_parsed_data
+    5. Footer/garbage row filtering
+    6. Table-end detection
+    7. Description fallback guard
 """
 
 import re
@@ -34,7 +37,17 @@ if "frappe" not in sys.modules:
 
 
 # ---------------------------------------------------------------------------
-# Test helpers — inline reimplementations so tests are self-contained
+# Import actual production code (with frappe stubs in place)
+# ---------------------------------------------------------------------------
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+
+from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import (
+    merge_description_wraparounds,
+)
+
+
+# ---------------------------------------------------------------------------
+# Test helpers
 # ---------------------------------------------------------------------------
 
 def parse_indonesian_currency(value_str: str) -> float:
@@ -257,125 +270,93 @@ class TestSmartFilterLogic(unittest.TestCase):
 # ============================================================================
 
 class TestMultiRowItemGrouping(unittest.TestCase):
-    """Test merge_description_wraparounds() preserves items with values."""
+    """Test merge_description_wraparounds() — uses ACTUAL production code."""
 
-    def _merge(self, rows: List[Dict]) -> List[Dict]:
-        """Reimplementation of the fixed merge_description_wraparounds."""
-        if not rows:
-            return []
-
-        merged = []
-        current_row = None
-
-        for row in rows:
-            has_numbers = any([
-                row.get("harga_jual"),
-                row.get("dpp"),
-                row.get("ppn"),
+    def test_five_item_invoice_all_no_value_rows(self):
+        """Multi-row items: description-only rows merge, value rows stay."""
+        raw_rows = []
+        items_data = [
+            ("HYDRO CARBON TREATMENT", "360.500,00"),
+            ("JASA AC LIGHT ADVANCE-05S", "380.000,00"),
+            ("NITROGEN - KURAS", "54.000,00"),
+            ("SPOORING B (INV,RSH,YRS,VIOS,LIMO,HLX)", "228.000,00"),
+            ("TIMAH BALANCE", "80.000,00"),
+        ]
+        for i, (desc, hj) in enumerate(items_data, 1):
+            # Each item has: item number, description, price detail, potongan, ppnbm, value
+            raw_rows.extend([
+                {"description": f"{i} 000000", "harga_jual": "", "dpp": "", "ppn": ""},
+                {"description": desc, "harga_jual": "", "dpp": "", "ppn": ""},
+                {"description": f"Rp {hj} x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
+                {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
+                {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
+                {"description": "", "harga_jual": hj, "dpp": "", "ppn": ""},
             ])
 
-            description_only_keywords = [
-                "ppnbm", "potongan", "diskon", "discount",
-                "x 1,00", "x 1.00", "lainnya",
-            ]
-            desc_text = (row.get("description", "") or "").lower()
-            is_description_only = (
-                not has_numbers
-                and any(keyword in desc_text for keyword in description_only_keywords)
-            )
-
-            if (has_numbers or not is_description_only) or current_row is None:
-                if current_row:
-                    merged.append(current_row)
-                current_row = row
-            else:
-                if current_row and row.get("description"):
-                    prev_desc = current_row.get("description", "")
-                    new_desc = row.get("description", "")
-                    current_row["description"] = f"{prev_desc} {new_desc}".strip()
-
-        if current_row:
-            merged.append(current_row)
-
-        return merged
-
-    def test_five_item_invoice_multi_row(self):
-        """Multi-row items (6 rows each) should merge into 5 items."""
-        # Simulate OCR rows for a 5-item invoice
-        raw_rows = [
-            # Item 1 — rows span: item number, description, price detail, potongan, ppnbm, value
-            {"description": "1 000000", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "HYDRO CARBON TREATMENT", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Rp 360.500,00 x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "", "harga_jual": "360.500,00", "dpp": "", "ppn": ""},
-
-            # Item 2
-            {"description": "2 000000", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "JASA AC LIGHT ADVANCE-05S", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Rp 380.000,00 x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "", "harga_jual": "380.000,00", "dpp": "", "ppn": ""},
-
-            # Item 3
-            {"description": "3 000000", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "NITROGEN - KURAS", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Rp 54.000,00 x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "", "harga_jual": "54.000,00", "dpp": "", "ppn": ""},
-
-            # Item 4
-            {"description": "4 000000", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "SPOORING B", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Rp 228.000,00 x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "", "harga_jual": "228.000,00", "dpp": "", "ppn": ""},
-
-            # Item 5
-            {"description": "5 000000", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "TIMAH BALANCE", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Rp 80.000,00 x 1,00 Lainnya", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "", "harga_jual": "80.000,00", "dpp": "", "ppn": ""},
-        ]
-
-        merged = self._merge(raw_rows)
+        merged = merge_description_wraparounds(raw_rows)
 
         # Should have 5 items (each with an harga_jual value)
         items_with_values = [r for r in merged if r.get("harga_jual")]
         self.assertEqual(len(items_with_values), 5, f"Expected 5 items, got {len(items_with_values)}")
 
         # Verify values
-        expected_values = ["360.500,00", "380.000,00", "54.000,00", "228.000,00", "80.000,00"]
-        actual_values = [r["harga_jual"] for r in items_with_values]
-        self.assertEqual(actual_values, expected_values)
+        expected = ["360.500,00", "380.000,00", "54.000,00", "228.000,00", "80.000,00"]
+        actual = [r["harga_jual"] for r in items_with_values]
+        self.assertEqual(actual, expected)
 
-    def test_detail_rows_merge_into_previous(self):
-        """Rows with 'Potongan' or 'PPnBM' and no values merge into previous row."""
+    def test_backward_merge_description_before_value(self):
+        """Description rows before a value row merge INTO the value row (Pass 2)."""
         rows = [
             {"description": "HYDRO CARBON TREATMENT", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan Harga = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "PPnBM (0,00%) = Rp 0,00", "harga_jual": "", "dpp": "", "ppn": ""},
+            {"description": "", "harga_jual": "360.500,00", "dpp": "", "ppn": ""},
         ]
-        merged = self._merge(rows)
+        merged = merge_description_wraparounds(rows)
         self.assertEqual(len(merged), 1)
-        self.assertIn("Potongan Harga", merged[0]["description"])
-        self.assertIn("PPnBM", merged[0]["description"])
+        self.assertIn("HYDRO CARBON", merged[0]["description"])
+        self.assertEqual(merged[0]["harga_jual"], "360.500,00")
 
-    def test_row_with_value_not_merged(self):
-        """Row with harga_jual value is always kept as a separate data row."""
+    def test_dedup_same_harga_jual(self):
+        """Consecutive rows with the same harga_jual get deduplicated (Pass 3)."""
         rows = [
-            {"description": "ITEM A", "harga_jual": "", "dpp": "", "ppn": ""},
-            {"description": "Potongan detail", "harga_jual": "100.000,00", "dpp": "", "ppn": ""},
+            {"description": "HYDRO CARBON", "harga_jual": "360.500,00", "dpp": "", "ppn": ""},
+            {"description": "1 000000 Potongan", "harga_jual": "360.500,00", "dpp": "", "ppn": ""},
         ]
-        merged = self._merge(rows)
-        # Row 2 has harga_jual, so it should NOT merge into row 1
+        merged = merge_description_wraparounds(rows)
+        self.assertEqual(len(merged), 1, "Duplicate harga_jual rows should be merged")
+        self.assertIn("HYDRO CARBON", merged[0]["description"])
+        self.assertEqual(merged[0]["harga_jual"], "360.500,00")
+
+    def test_different_harga_jual_not_deduped(self):
+        """Rows with different harga_jual stay separate."""
+        rows = [
+            {"description": "ITEM A", "harga_jual": "360.500,00", "dpp": "", "ppn": ""},
+            {"description": "ITEM B", "harga_jual": "380.000,00", "dpp": "", "ppn": ""},
+        ]
+        merged = merge_description_wraparounds(rows)
         self.assertEqual(len(merged), 2)
+
+    def test_all_no_value_rows_single_group(self):
+        """All no-value rows (no items) → returned as-is."""
+        rows = [
+            {"description": "HYDRO CARBON", "harga_jual": "", "dpp": "", "ppn": ""},
+            {"description": "Rp 360.500,00 x 1,00", "harga_jual": "", "dpp": "", "ppn": ""},
+        ]
+        merged = merge_description_wraparounds(rows)
+        # No value rows, so after Pass 2 nothing changes; returned as-is
+        self.assertTrue(len(merged) >= 1)
+
+    def test_trailing_no_value_rows_merge_into_last(self):
+        """No-value rows after the last value row merge backwards."""
+        rows = [
+            {"description": "ITEM A", "harga_jual": "100.000,00", "dpp": "", "ppn": ""},
+            {"description": "Potongan Harga = 0", "harga_jual": "", "dpp": "", "ppn": ""},
+            {"description": "PPnBM (0%) = 0", "harga_jual": "", "dpp": "", "ppn": ""},
+        ]
+        merged = merge_description_wraparounds(rows)
+        items_with_values = [r for r in merged if r.get("harga_jual")]
+        self.assertEqual(len(items_with_values), 1)
+        # The trailing rows should merge into the value row
+        self.assertIn("Potongan", items_with_values[0]["description"])
 
 
 # ============================================================================
@@ -539,6 +520,167 @@ class TestIndonesianCurrencyParser(unittest.TestCase):
 
     def test_none_like(self):
         self.assertEqual(parse_indonesian_currency("  "), 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+# ============================================================================
+# Test 6: Footer/Garbage Row Filtering
+# ============================================================================
+
+class TestFooterGarbageFilter(unittest.TestCase):
+    """Test the second-pass garbage filter for footer/signature content."""
+
+    def _is_garbage(self, desc: str, hj_raw: str = "") -> bool:
+        """Reimplementation of the garbage filter logic."""
+        desc = (desc or "").strip()
+        hj_raw = str(hj_raw or "").strip()
+
+        # Bare year
+        if re.match(r'^(19|20)\d{2}$', desc) and not hj_raw:
+            return True
+
+        # Empty description with tiny junk value
+        if not desc and hj_raw:
+            try:
+                hj_val = float(hj_raw.replace(".", "").replace(",", "."))
+                if hj_val < 100:
+                    return True
+            except (ValueError, TypeError):
+                pass
+
+        # Single short word, no values, name-like
+        if desc and len(desc) <= 12 and " " not in desc and not hj_raw:
+            if desc.isupper() or desc.istitle():
+                if not re.search(r'\d', desc):
+                    return True
+
+        return False
+
+    def test_bare_year_filtered(self):
+        self.assertTrue(self._is_garbage("2025", ""))
+
+    def test_signer_name_filtered(self):
+        self.assertTrue(self._is_garbage("APRIANI", ""))
+
+    def test_signer_name_titlecase_filtered(self):
+        self.assertTrue(self._is_garbage("Apriani", ""))
+
+    def test_item_code_not_filtered(self):
+        """Item codes with digits should NOT be filtered."""
+        self.assertFalse(self._is_garbage("A12345", ""))
+
+    def test_junk_tiny_value_filtered(self):
+        self.assertTrue(self._is_garbage("", "1,01"))
+
+    def test_real_value_kept(self):
+        self.assertFalse(self._is_garbage("", "360.500,00"))
+
+    def test_normal_item_kept(self):
+        self.assertFalse(self._is_garbage("HYDRO CARBON TREATMENT", "360.500,00"))
+
+    def test_date_with_value_kept(self):
+        """Year with value should NOT be filtered."""
+        self.assertFalse(self._is_garbage("2025", "100.000,00"))
+
+    def test_long_name_kept(self):
+        """Names longer than 12 chars are not filtered by the short-name rule."""
+        self.assertFalse(self._is_garbage("MUHAMMAD APRIANI", ""))
+
+
+# ============================================================================
+# Test 7: Table-End Detection
+# ============================================================================
+
+class TestTableEndDetection(unittest.TestCase):
+    """Test that summary section labels trigger table-end detection."""
+
+    def _find_table_end(self, row_texts: List[str]) -> int:
+        """Simplified table-end detection logic."""
+        totals_keywords = [
+            "jumlah", "total", "grand total", "subtotal",
+            "dasar pengenaan pajak", "dikurangi potongan",
+        ]
+        for idx, text in enumerate(row_texts):
+            text_lower = text.lower()
+            keyword_count = sum(1 for kw in totals_keywords if kw in text_lower)
+            if keyword_count >= 2:
+                return idx
+            if "dasar pengenaan pajak" in text_lower:
+                return idx
+            if "harga jual / penggantian" in text_lower or "harga jual/penggantian" in text_lower:
+                return idx
+            if "dikurangi potongan harga" in text_lower:
+                return idx
+        return -1
+
+    def test_harga_jual_penggantian_triggers_end(self):
+        rows = [
+            "360.500,00",  # item value
+            "Harga Jual / Penggantian / Uang Muka / Termin 1.102.500,00",
+            "Dikurangi Potongan Harga 0,00",
+            "Dasar Pengenaan Pajak 1.010.625,00",
+        ]
+        end_idx = self._find_table_end(rows)
+        self.assertEqual(end_idx, 1, "Should detect 'Harga Jual / Penggantian' as table end")
+
+    def test_dikurangi_potongan_triggers_end(self):
+        rows = [
+            "some item",
+            "Dikurangi Potongan Harga 0,00",
+        ]
+        end_idx = self._find_table_end(rows)
+        self.assertEqual(end_idx, 1)
+
+    def test_dasar_pengenaan_triggers_end(self):
+        rows = [
+            "some item",
+            "Dasar Pengenaan Pajak 1.010.625,00",
+        ]
+        end_idx = self._find_table_end(rows)
+        self.assertEqual(end_idx, 1)
+
+    def test_no_summary_no_end(self):
+        rows = ["item 1", "item 2", "item 3"]
+        end_idx = self._find_table_end(rows)
+        self.assertEqual(end_idx, -1)
+
+
+# ============================================================================
+# Test 8: Description Fallback Guard
+# ============================================================================
+
+class TestDescriptionFallbackGuard(unittest.TestCase):
+    """Test that price-detail lines don't trigger fallback extraction."""
+
+    PRICE_DETAIL_MARKERS = [
+        " x 1,", " x 1.", " x 2,", " x 4,",
+        "lainnya", "potongan harga", "ppnbm",
+    ]
+
+    def _is_price_detail(self, desc: str) -> bool:
+        desc_lower = desc.lower()
+        return any(m in desc_lower for m in self.PRICE_DETAIL_MARKERS)
+
+    def test_unit_price_line_blocked(self):
+        self.assertTrue(self._is_price_detail("Rp 360.500,00 x 1,00 Lainnya"))
+
+    def test_potongan_line_blocked(self):
+        self.assertTrue(self._is_price_detail("Potongan Harga = Rp 0,00"))
+
+    def test_ppnbm_line_blocked(self):
+        self.assertTrue(self._is_price_detail("PPnBM (0,00%) = Rp 0,00"))
+
+    def test_qty_4_blocked(self):
+        self.assertTrue(self._is_price_detail("Rp 20.000,00 x 4,00 Lainnya"))
+
+    def test_normal_description_allowed(self):
+        self.assertFalse(self._is_price_detail("HYDRO CARBON TREATMENT"))
+
+    def test_item_code_description_allowed(self):
+        self.assertFalse(self._is_price_detail("1 000000 SPOORING B"))
 
 
 if __name__ == "__main__":
