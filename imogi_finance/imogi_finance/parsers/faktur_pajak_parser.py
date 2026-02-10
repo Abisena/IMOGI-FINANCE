@@ -1235,8 +1235,11 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		"ppn = ",
 		"ppnbm = ",
 		"grand total",
-		"potongan harga",
-		"uang muka",
+		# 🔧 FIX: Removed "potongan harga" — it appears inside multi-row item
+		#   details (e.g., "Potongan Harga = Rp 0,00") and was causing valid line
+		#   items to be filtered out. Summary-level "Dikurangi Potongan Harga"
+		#   is caught by SUMMARY_START_KEYWORDS instead.
+		"uang muka yang telah diterima",
 		"nilai lain",
 		# 🔥 FIX: Include signature/footer patterns
 		*SIGNATURE_STOP_KEYWORDS,
