@@ -27,7 +27,7 @@ Usage::
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,267 @@ HEADER_ROW_KEYWORDS = {
     "jasa kena pajak",
     "barang kena pajak",
 }
+
+
+# =============================================================================
+# VISION JSON → TEXT BLOCKS CONVERSION
+# =============================================================================
+
+def vision_json_to_text_blocks(
+    vision_json: Dict[str, Any],
+    y_tolerance: float = 8.0,
+    x_gap_threshold: float = 50.0,
+) -> Tuple[List[Dict], float]:
+    """
+    Convert Google Vision OCR JSON into text blocks for multirow parsing.
+
+    Groups word-level OCR tokens into line/phrase-level text blocks
+    suitable for :func:`group_multirow_items` and :func:`parse_summary_section`.
+
+    The Google Vision API returns word-level bounding boxes. This function:
+
+    1. Extracts all words with pixel coordinates from ``fullTextAnnotation``.
+    2. Groups words into visual rows by Y-coordinate proximity.
+    3. Within each row, groups nearby words into phrases by X-gap.
+    4. Returns phrase-level text blocks with ``text``, ``x``, ``y`` keys.
+
+    Handles multiple Vision JSON nesting variants:
+      - ``{"responses": [{"responses": [{"fullTextAnnotation": ...}]}]}``
+      - ``{"responses": [{"fullTextAnnotation": ...}]}``
+      - ``{"fullTextAnnotation": ...}``
+
+    Args:
+        vision_json: Google Vision API response dictionary.
+        y_tolerance: Maximum Y pixel distance to consider words on same row.
+        x_gap_threshold: Minimum X pixel gap to split words into separate
+                         text blocks. Words closer than this are joined.
+
+    Returns:
+        Tuple of ``(text_blocks, page_height)``:
+          - ``text_blocks``: List of ``{'text': str, 'x': float, 'y': float}``
+          - ``page_height``: Height of first page in pixels.
+
+    Example::
+
+        >>> vj = {"fullTextAnnotation": {"pages": [{"height": 842, ...}]}}
+        >>> blocks, ph = vision_json_to_text_blocks(vj)
+        >>> blocks[0]
+        {'text': '1 000000', 'x': 50.0, 'y': 100.0}
+    """
+    # --- Unwrap nested responses to reach fullTextAnnotation ---
+    fta = _resolve_full_text_annotation(vision_json)
+    if fta is None:
+        logger.warning("No fullTextAnnotation found in Vision JSON")
+        return [], 800.0
+
+    pages = fta.get('pages', [])
+    if not pages:
+        logger.warning("No pages in fullTextAnnotation")
+        return [], 800.0
+
+    page = pages[0]
+    page_height = float(page.get('height', 800))
+    page_width = float(page.get('width', 600))
+
+    # --- Extract all word tokens with pixel coordinates ---
+    word_tokens: List[Dict] = []
+
+    for block in page.get('blocks', []):
+        for para in block.get('paragraphs', []):
+            for word in para.get('words', []):
+                symbols = word.get('symbols', [])
+                if not symbols:
+                    continue
+
+                text = ''.join(s.get('text', '') for s in symbols)
+                if not text.strip():
+                    continue
+
+                bbox = word.get('boundingBox', {})
+                # Prefer raw vertices; fall back to normalizedVertices × page size
+                vertices = bbox.get('vertices', [])
+                use_normalized = False
+                if not vertices or not any('x' in v for v in vertices):
+                    vertices = bbox.get('normalizedVertices', [])
+                    use_normalized = True
+
+                if len(vertices) < 4:
+                    continue
+
+                xs = [v.get('x', 0) for v in vertices]
+                ys = [v.get('y', 0) for v in vertices]
+
+                if use_normalized:
+                    xs = [x * page_width for x in xs]
+                    ys = [y * page_height for y in ys]
+
+                x0, x1 = min(xs), max(xs)
+                y0, y1 = min(ys), max(ys)
+
+                word_tokens.append({
+                    'text': text.strip(),
+                    'x0': x0, 'y0': y0,
+                    'x1': x1, 'y1': y1,
+                })
+
+    if not word_tokens:
+        logger.warning("No word tokens extracted from Vision JSON")
+        return [], page_height
+
+    # --- Group into visual rows by Y proximity ---
+    sorted_tokens = sorted(word_tokens, key=lambda t: (t['y0'], t['x0']))
+    rows: List[List[Dict]] = []
+    current_row: List[Dict] = [sorted_tokens[0]]
+    current_y = sorted_tokens[0]['y0']
+
+    for tok in sorted_tokens[1:]:
+        if abs(tok['y0'] - current_y) <= y_tolerance:
+            current_row.append(tok)
+        else:
+            rows.append(current_row)
+            current_row = [tok]
+            current_y = tok['y0']
+    if current_row:
+        rows.append(current_row)
+
+    # --- Within each row, group words into phrases by X gap ---
+    text_blocks: List[Dict] = []
+
+    for row in rows:
+        sorted_row = sorted(row, key=lambda t: t['x0'])
+
+        phrases: List[List[Dict]] = [[sorted_row[0]]]
+        for tok in sorted_row[1:]:
+            gap = tok['x0'] - phrases[-1][-1]['x1']
+            if gap > x_gap_threshold:
+                phrases.append([tok])
+            else:
+                phrases[-1].append(tok)
+
+        for phrase in phrases:
+            text = ' '.join(t['text'] for t in phrase)
+            x = phrase[0]['x0']
+            avg_y = sum(t['y0'] for t in phrase) / len(phrase)
+            text_blocks.append({'text': text, 'x': x, 'y': avg_y})
+
+    logger.debug(
+        f"Converted Vision JSON to {len(text_blocks)} text blocks "
+        f"(from {len(word_tokens)} words, page_height={page_height:.0f})"
+    )
+    return text_blocks, page_height
+
+
+def _resolve_full_text_annotation(vision_json: Dict[str, Any]) -> Optional[Dict]:
+    """
+    Unwrap nested Google Vision JSON to reach ``fullTextAnnotation``.
+
+    Handles variants:
+      - ``{"responses": [{"responses": [{"fullTextAnnotation": ...}]}]}``
+      - ``{"responses": [{"fullTextAnnotation": ...}]}``
+      - ``{"fullTextAnnotation": ...}``
+
+    Returns:
+        The ``fullTextAnnotation`` dict, or None if not found.
+    """
+    if not vision_json or not isinstance(vision_json, dict):
+        return None
+
+    # Direct
+    if 'fullTextAnnotation' in vision_json:
+        return vision_json['fullTextAnnotation']
+
+    # Single-nested responses
+    responses = vision_json.get('responses', [])
+    if not responses or not isinstance(responses, list):
+        return None
+
+    first = responses[0]
+    if isinstance(first, dict):
+        if 'fullTextAnnotation' in first:
+            return first['fullTextAnnotation']
+
+        # Double-nested responses
+        inner = first.get('responses', [])
+        if inner and isinstance(inner, list) and isinstance(inner[0], dict):
+            return inner[0].get('fullTextAnnotation')
+
+    return None
+
+
+def tokens_to_text_blocks(
+    tokens: List[Any],
+    y_tolerance: float = 5.0,
+    x_gap_threshold: float = 50.0,
+) -> Tuple[List[Dict], float]:
+    """
+    Convert word-level Token objects to text blocks for multirow parsing.
+
+    Accepts Token objects from ``faktur_pajak_parser.vision_to_tokens()``
+    or ``extract_text_with_bbox()``. Each Token must have attributes:
+    ``text``, ``x0``, ``y0``, ``x1``, ``y1``.
+
+    Args:
+        tokens: List of Token objects (with x0, y0, x1, y1, text).
+        y_tolerance: Y distance for same-row grouping.
+        x_gap_threshold: X gap for phrase splitting.
+
+    Returns:
+        Tuple of ``(text_blocks, page_height)``.
+    """
+    if not tokens:
+        return [], 800.0
+
+    # Estimate page height from max y1
+    page_height = max(getattr(t, 'y1', 0) or 0 for t in tokens) * 1.1
+    page_height = max(page_height, 800.0)
+
+    # Convert to dicts
+    word_dicts = []
+    for t in tokens:
+        word_dicts.append({
+            'text': str(getattr(t, 'text', '')).strip(),
+            'x0': float(getattr(t, 'x0', 0)),
+            'y0': float(getattr(t, 'y0', 0)),
+            'x1': float(getattr(t, 'x1', 0)),
+            'y1': float(getattr(t, 'y1', 0)),
+        })
+
+    # Group into rows
+    sorted_tokens = sorted(word_dicts, key=lambda t: (t['y0'], t['x0']))
+    rows: List[List[Dict]] = []
+    current_row: List[Dict] = [sorted_tokens[0]]
+    current_y = sorted_tokens[0]['y0']
+
+    for tok in sorted_tokens[1:]:
+        if abs(tok['y0'] - current_y) <= y_tolerance:
+            current_row.append(tok)
+        else:
+            rows.append(current_row)
+            current_row = [tok]
+            current_y = tok['y0']
+    if current_row:
+        rows.append(current_row)
+
+    # Group into phrases
+    text_blocks: List[Dict] = []
+    for row in rows:
+        sorted_row = sorted(row, key=lambda t: t['x0'])
+        phrases: List[List[Dict]] = [[sorted_row[0]]]
+        for tok in sorted_row[1:]:
+            gap = tok['x0'] - phrases[-1][-1]['x1']
+            if gap > x_gap_threshold:
+                phrases.append([tok])
+            else:
+                phrases[-1].append(tok)
+
+        for phrase in phrases:
+            text = ' '.join(t['text'] for t in phrase if t['text'])
+            if text.strip():
+                x = phrase[0]['x0']
+                avg_y = sum(t['y0'] for t in phrase) / len(phrase)
+                text_blocks.append({'text': text, 'x': x, 'y': avg_y})
+
+    return text_blocks, page_height
 
 
 # =============================================================================
@@ -843,8 +1104,9 @@ def validate_parsed_data(
         if float(item.get('harga_jual', 0) or 0) == 0
     ]
     if zero_items:
-        errors.append(
-            f"Items with zero harga_jual: line(s) {zero_items}"
+        # Zero harga_jual is a warning (possible qty=0), not a fatal error
+        warnings.append(
+            f"{len(zero_items)} item(s) with zero harga_jual: line(s) {zero_items}"
         )
     else:
         checks['no_zero_values'] = True
@@ -1151,5 +1413,134 @@ def _parse_summary_from_text(ocr_text: str) -> Dict[str, float]:
                     break
             if found:
                 break
+
+    return result
+
+
+# =============================================================================
+# INTEGRATED PIPELINE: FULL MULTIROW PARSING
+# =============================================================================
+
+def parse_tax_invoice_multirow(
+    vision_json: Optional[Dict] = None,
+    text_blocks: Optional[List[Dict]] = None,
+    page_height: float = 800.0,
+    tax_rate: float = 0.12,
+) -> Dict[str, Any]:
+    """
+    Full multirow parsing pipeline for Indonesian tax invoices (Faktur Pajak).
+
+    Chains the 3 critical fixes into a complete pipeline:
+
+    1. Convert Vision JSON to text blocks (if not provided directly).
+    2. Group multi-row OCR lines into single items (**Fix #2**).
+    3. Parse summary section with regex (**Fix #1**).
+    4. Cross-validate items vs summary (**Fix #3**).
+
+    This function can be used as:
+      - A **standalone parser** for Vision JSON OCR data.
+      - A **fallback pipeline** when the primary token-based parser
+        (``faktur_pajak_parser.parse_invoice()``) produces invalid results.
+      - A **cross-validation tool** to verify primary parser output.
+
+    Args:
+        vision_json: Google Vision API response dict. Either this or
+                     ``text_blocks`` must be provided.
+        text_blocks: Pre-built text blocks with ``text``, ``x``, ``y`` keys.
+                     If provided, ``vision_json`` is ignored.
+        page_height: Page height in pixels (used for summary area detection).
+                     Auto-detected from Vision JSON if not provided.
+        tax_rate: Expected PPN tax rate (default 0.12 = 12% for 2025+).
+
+    Returns:
+        Dictionary with::
+
+            {
+                'items': List[Dict],          # Parsed line items
+                'summary': Dict[str, float],  # Summary values (harga_jual, dpp, ppn, ...)
+                'validation': Dict,           # Validation result
+                'success': bool,              # True if pipeline completed
+                'errors': List[str],          # Any errors encountered
+            }
+
+    Example::
+
+        >>> result = parse_tax_invoice_multirow(vision_json=vj)
+        >>> result['summary']['harga_jual']
+        1102500.0
+        >>> result['validation']['is_valid']
+        True
+        >>> len(result['items'])
+        5
+    """
+    result: Dict[str, Any] = {
+        'items': [],
+        'summary': {},
+        'validation': {},
+        'success': False,
+        'errors': [],
+    }
+
+    try:
+        # Step 1: Get text blocks
+        if text_blocks is None and vision_json is not None:
+            text_blocks, page_height = vision_json_to_text_blocks(vision_json)
+        elif text_blocks is None:
+            result['errors'].append('No input data: provide vision_json or text_blocks')
+            return result
+
+        if not text_blocks:
+            result['errors'].append('No text blocks extracted from input')
+            return result
+
+        logger.info(
+            f"Multirow pipeline: {len(text_blocks)} text blocks, "
+            f"page_height={page_height:.0f}"
+        )
+
+        # Step 2: Group multi-row items and parse them (Fix #2)
+        grouped_items = group_multirow_items(text_blocks)
+        items = [parse_grouped_item(group) for group in grouped_items]
+
+        # Filter items with no description and no value (noise)
+        items = [
+            item for item in items
+            if item.get('description') or item.get('harga_jual', 0) > 0
+        ]
+
+        logger.info(
+            f"Multirow pipeline: {len(grouped_items)} groups → "
+            f"{len(items)} valid items"
+        )
+
+        # Step 3: Parse summary section with regex (Fix #1)
+        summary = parse_summary_section(text_blocks, page_height)
+
+        logger.info(
+            f"Multirow pipeline: summary harga_jual={summary.get('harga_jual', 0):,.0f}, "
+            f"dpp={summary.get('dpp', 0):,.0f}, ppn={summary.get('ppn', 0):,.0f}"
+        )
+
+        # Step 4: Cross-validate (Fix #3)
+        validation = validate_parsed_data(items, summary, tax_rate=tax_rate)
+
+        result['items'] = items
+        result['summary'] = summary
+        result['validation'] = validation
+        result['success'] = True
+
+        if not validation['is_valid']:
+            for error in validation['errors']:
+                logger.warning(f"Multirow validation issue: {error}")
+        else:
+            logger.info(
+                f"Multirow pipeline: VALIDATED OK — "
+                f"{len(items)} items, sum={sum(i.get('harga_jual', 0) for i in items):,.0f}"
+            )
+
+    except Exception as e:
+        error_msg = f'Multirow parsing failed: {str(e)}'
+        result['errors'].append(error_msg)
+        logger.error(error_msg)
 
     return result

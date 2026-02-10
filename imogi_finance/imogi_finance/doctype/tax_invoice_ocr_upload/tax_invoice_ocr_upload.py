@@ -502,6 +502,127 @@ class TaxInvoiceOCRUpload(Document):
                         f"[PARSE] Layout-aware summary extraction failed: {layout_err}"
                     )
 
+            # =================================================================
+            # 🔥 MULTIROW PIPELINE: Cross-Validation & Fallback
+            # Uses regex-based summary extraction and multi-row item grouping
+            # to validate / correct the primary parser output (Fixes #1–#3).
+            # =================================================================
+            if vision_json:
+                try:
+                    from imogi_finance.imogi_finance.parsers.multirow_parser import (
+                        parse_tax_invoice_multirow,
+                        validate_parsed_data as multirow_validate,
+                    )
+
+                    multirow_result = parse_tax_invoice_multirow(
+                        vision_json=vision_json,
+                        tax_rate=flt(self.tax_rate or 0.12),
+                    )
+
+                    if multirow_result.get('success'):
+                        mr_summary = multirow_result['summary']
+                        mr_items = multirow_result['items']
+                        mr_validation = multirow_result['validation']
+
+                        # -- Summary cross-validation --
+                        # If multirow summary has DPP/PPN and passes validation,
+                        # check if current values are suspiciously different.
+                        mr_dpp = flt(mr_summary.get('dpp', 0))
+                        mr_ppn = flt(mr_summary.get('ppn', 0))
+                        mr_hj = flt(mr_summary.get('harga_jual', 0))
+                        current_dpp = flt(self.dpp)
+                        current_ppn = flt(self.ppn)
+                        current_hj = flt(self.harga_jual)
+
+                        if mr_dpp > 0 and mr_ppn > 0 and mr_validation.get('is_valid'):
+                            # Override if multirow values are significantly larger
+                            # (primary parser may have picked up item-level values
+                            # instead of summary totals)
+                            should_override = False
+
+                            if current_dpp > 0 and mr_dpp > current_dpp * 2:
+                                should_override = True
+                                frappe.logger().warning(
+                                    f"[MULTIROW] DPP cross-validation: multirow "
+                                    f"{mr_dpp:,.0f} >> current {current_dpp:,.0f}"
+                                )
+                            elif current_dpp == 0 and mr_dpp > 0:
+                                should_override = True
+
+                            if should_override:
+                                frappe.logger().info(
+                                    f"[MULTIROW] Summary override: "
+                                    f"DPP {current_dpp:,.0f} → {mr_dpp:,.0f}, "
+                                    f"PPN {current_ppn:,.0f} → {mr_ppn:,.0f}, "
+                                    f"HJ {current_hj:,.0f} → {mr_hj:,.0f}"
+                                )
+                                self.dpp = mr_dpp
+                                self.ppn = mr_ppn
+                                if mr_hj > 0:
+                                    self.harga_jual = mr_hj
+
+                        # -- Line items cross-validation --
+                        # If primary items fail validation against summary but
+                        # multirow items pass, use multirow items instead.
+                        primary_sum = sum(
+                            flt(i.get('harga_jual') or i.get('raw_harga_jual'))
+                            for i in validated_items
+                        )
+                        summary_hj = flt(self.harga_jual)
+
+                        primary_sum_ok = (
+                            summary_hj > 0
+                            and abs(primary_sum - summary_hj) <= summary_hj * 0.05
+                        )
+
+                        if (
+                            not primary_sum_ok
+                            and mr_validation.get('is_valid')
+                            and len(mr_items) > 0
+                        ):
+                            frappe.logger().info(
+                                f"[MULTIROW] Line items fallback: primary sum "
+                                f"{primary_sum:,.0f} != summary {summary_hj:,.0f}. "
+                                f"Using {len(mr_items)} multirow items instead."
+                            )
+
+                            # Convert multirow items to the expected format
+                            validated_items = []
+                            for mr_item in mr_items:
+                                validated_items.append({
+                                    'line_no': mr_item.get('line_no', 0),
+                                    'description': mr_item.get('description', ''),
+                                    'harga_jual': str(mr_item.get('harga_jual', 0)),
+                                    'dpp': str(mr_item.get('dpp', 0)),
+                                    'ppn': str(mr_item.get('ppn', 0)),
+                                    'qty': mr_item.get('qty', 0),
+                                    'unit_price': mr_item.get('unit_price', 0),
+                                    'page_no': 1,
+                                    'source': 'multirow_fallback',
+                                })
+
+                            # Re-normalize the replacement items
+                            validated_items = normalize_all_items(validated_items)
+                            validated_items, invalid_items = validate_all_line_items(
+                                validated_items, tax_rate
+                            )
+
+                        # Store multirow debug info
+                        debug_info = parse_result.get("debug_info", {})
+                        debug_info["multirow_validation"] = {
+                            "is_valid": mr_validation.get('is_valid'),
+                            "items_count": len(mr_items),
+                            "summary": mr_summary,
+                            "checks": mr_validation.get('checks', {}),
+                            "errors": mr_validation.get('errors', []),
+                            "warnings": mr_validation.get('warnings', []),
+                        }
+
+                except Exception as mr_err:
+                    frappe.logger().warning(
+                        f"[MULTIROW] Cross-validation failed: {mr_err}"
+                    )
+
             # Validate totals if header values exist
             header_totals = {
                 "harga_jual": self.harga_jual,

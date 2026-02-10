@@ -576,7 +576,8 @@ class TestValidateParsedData(unittest.TestCase):
         self.assertFalse(result['checks']['items_count_ok'])
         self.assertIn("No line items", result['errors'][0])
 
-    def test_zero_harga_jual_item_is_invalid(self):
+    def test_zero_harga_jual_item_is_warning(self):
+        """Zero harga_jual items are warnings, not fatal errors."""
         items = [
             {'harga_jual': 360500},
             {'harga_jual': 0},  # Zero value!
@@ -584,8 +585,12 @@ class TestValidateParsedData(unittest.TestCase):
         summary = {'harga_jual': 360500, 'dpp': 330000, 'ppn': 39600}
 
         result = validate_parsed_data(items, summary)
-        self.assertFalse(result['is_valid'])
+        # Zero items are now a WARNING — is_valid depends only on real errors
         self.assertFalse(result['checks']['no_zero_values'])
+        self.assertTrue(
+            any('zero' in w.lower() for w in result['warnings']),
+            "Zero items should appear in warnings"
+        )
 
     def test_sum_mismatch_is_invalid(self):
         items = [{'harga_jual': 100000}]
