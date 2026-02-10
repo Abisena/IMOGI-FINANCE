@@ -264,6 +264,7 @@ class TaxInvoiceOCRUpload(Document):
                 errors = "; ".join(parse_result.get("errors", []))
 
                 # Set status to Needs Review with clear error message
+                self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                 self.parse_status = "Needs Review"
                 self.validation_summary = f"""
                 <div style="padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
@@ -339,6 +340,7 @@ class TaxInvoiceOCRUpload(Document):
                         )
                         
                         # Set status to indicate OCR is being queued
+                        self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                         self.parse_status = "Needs Review"
                         self.validation_summary = """
                         <div style="padding: 10px; background: #d1ecf1; border-left: 4px solid #0c5460;">
@@ -370,6 +372,7 @@ class TaxInvoiceOCRUpload(Document):
                         )
                         # Continue with normal error handling below
 
+                self.flags.allow_parse_status_update = True  # Allow system to update parse_status
                 self.parse_status = "Needs Review"
 
                 # Differentiate: no tokens (extraction failed) vs layout issue
