@@ -810,6 +810,14 @@ def auto_parse_line_items(doc_name: str):
         if not doc.ocr_raw_json and not doc.tax_invoice_pdf:
             frappe.logger().warning(f"[AUTO-PARSE SKIP] {doc_name}: No ocr_raw_json and no PDF")
             return
+        
+        # 🔥 NEW: Reload document to ensure we have latest version (race condition mitigation)
+        doc.reload()
+        
+        # Re-check items after reload (another job might have parsed while we were loading)
+        if doc.items and len(doc.items) > 0:
+            frappe.logger().info(f"[AUTO-PARSE SKIP] {doc_name} has items after reload (race condition detected)")
+            return
 
         frappe.logger().info(f"[AUTO-PARSE] Starting parse for {doc_name}")
         doc.parse_line_items(auto_triggered=True)
