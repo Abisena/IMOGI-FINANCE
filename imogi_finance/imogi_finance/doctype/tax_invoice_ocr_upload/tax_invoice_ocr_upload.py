@@ -607,11 +607,30 @@ class TaxInvoiceOCRUpload(Document):
                                     pass
 
                         # -- Line items cross-validation --
-                        # If primary items fail validation against summary
-                        # OR show signs of mangled parsing, use multirow items.
+                        # 🔥 PRE-FILTER: Remove obvious junk items before multirow check
+                        # This ensures multirow triggers when primary parser returns garbage
+                        filtered_items = []
+                        for item in validated_items:
+                            hj = flt(item.get('harga_jual') or item.get('raw_harga_jual'))
+                            desc = str(item.get('description', '')).strip()
+                            conf = flt(item.get('row_confidence', 1.0))
+                            
+                            # Skip obvious junk (same logic as later filter)
+                            is_junk = (
+                                hj > 100000000 or  # > 100 million
+                                (conf < 0.4 and hj < 10000) or  # Low confidence + small value
+                                (not desc and hj < 1000) or  # Empty desc + small value
+                                any(kw in desc for kw in ['Nama:', 'NPWP:', 'Pengusaha Kena Pajak', 
+                                                           'Faktur Pajak', 'Potongan Harga', 
+                                                           'Sesuai dengan ketentuan'])
+                            )
+                            if not is_junk:
+                                filtered_items.append(item)
+                        
+                        # Use filtered items for comparison
                         primary_sum = sum(
                             flt(i.get('harga_jual') or i.get('raw_harga_jual'))
-                            for i in validated_items
+                            for i in filtered_items
                         )
                         summary_hj = flt(self.harga_jual)
 
@@ -627,6 +646,9 @@ class TaxInvoiceOCRUpload(Document):
                             and primary_sum > 0
                             and primary_sum < summary_hj * 0.5
                         )
+                        
+                        # 🔥 NEW: Check if all primary items were filtered as junk
+                        primary_all_junk = (len(validated_items) > 0 and len(filtered_items) == 0)
 
                         # Detect signs of mangled items even if sum matches:
                         # - Zero-value items (parsing error)
@@ -634,15 +656,15 @@ class TaxInvoiceOCRUpload(Document):
                         # - More items than multirow found (rows not grouped)
                         has_zero_items = any(
                             flt(i.get('harga_jual') or i.get('raw_harga_jual')) == 0
-                            for i in validated_items
+                            for i in filtered_items
                         )
                         has_mangled_desc = any(
                             '000000' in str(i.get('description', ''))
-                            for i in validated_items
+                            for i in filtered_items
                         )
                         item_count_mismatch = (
                             len(mr_items) > 0
-                            and len(validated_items) > len(mr_items)
+                            and len(filtered_items) > len(mr_items)
                         )
                         primary_items_suspect = (
                             has_zero_items or has_mangled_desc or item_count_mismatch
@@ -650,14 +672,16 @@ class TaxInvoiceOCRUpload(Document):
 
                         # 🔥 RELAXED CONDITION: Use multirow items if:
                         # 1. We have multirow items AND
-                        # 2. (multirow validation passes OR primary is severely incomplete)
+                        # 2. (multirow validation passes OR primary is severely incomplete OR all junk)
                         use_multirow_items = (
                             len(mr_items) > 0
                             and (
                                 # Original condition: multirow valid + primary bad
                                 (mr_validation.get('is_valid') and (not primary_sum_ok or primary_items_suspect))
-                                # NEW: Or primary is severely incomplete (even if multirow validation not perfect)
+                                # NEW: Or primary is severely incomplete
                                 or primary_severely_incomplete
+                                # NEW: Or all primary items are junk
+                                or primary_all_junk
                             )
                         )
 
@@ -667,8 +691,9 @@ class TaxInvoiceOCRUpload(Document):
                                 f"primary_sum_ok={primary_sum_ok}, "
                                 f"zero_items={has_zero_items}, "
                                 f"mangled={has_mangled_desc}, "
-                                f"count_mismatch={item_count_mismatch} "
-                                f"({len(validated_items)} vs {len(mr_items)}). "
+                                f"count_mismatch={item_count_mismatch}, "
+                                f"all_junk={primary_all_junk} "
+                                f"({len(validated_items)} → {len(filtered_items)} after filter vs {len(mr_items)} multirow). "
                                 f"Using {len(mr_items)} multirow items."
                             )
 
@@ -821,24 +846,33 @@ class TaxInvoiceOCRUpload(Document):
                     # 1. Empty description AND low value (< 1000) = likely header junk
                     # 2. Confidence < 0.4 AND harga_jual < 10000 = unreliable parse
                     # 3. Description contains header keywords (Nama:, NPWP:, Alamat:)
+                    # 4. 🆕 Value too large (> 100 million) = likely parsing error from NPWP/FP number
                     is_header_junk = any(keyword in description_val for keyword in [
                         'Nama:', 'NPWP:', 'Alamat:', 'Pengusaha Kena Pajak', 
-                        'Pembeli Barang', 'Faktur Pajak', 'Kode dan Nomor'
+                        'Pembeli Barang', 'Faktur Pajak', 'Kode dan Nomor',
+                        'Potongan Harga', 'PPnBM', 'Jumlah PPN', 'Dasar Pengenaan',
+                        'Sesuai dengan ketentuan', 'secara elektronik', 'PERINGATAN'
                     ])
                     is_low_confidence_junk = (row_confidence < 0.4 and harga_jual_val < 10000)
                     is_empty_desc_junk = (not description_val and harga_jual_val < 1000)
+                    is_value_too_large = (harga_jual_val > 100000000)  # > 100 juta = definitely wrong
                     
-                    if is_header_junk or is_low_confidence_junk or is_empty_desc_junk:
+                    if is_header_junk or is_low_confidence_junk or is_empty_desc_junk or is_value_too_large:
+                        skip_reason = (
+                            'header_junk' if is_header_junk else 
+                            'low_confidence' if is_low_confidence_junk else 
+                            'empty_desc' if is_empty_desc_junk else
+                            'value_too_large'
+                        )
                         skipped_items.append({
                             'idx': idx,
-                            'reason': 'header_junk' if is_header_junk else 
-                                     'low_confidence' if is_low_confidence_junk else 'empty_desc',
+                            'reason': skip_reason,
                             'description': description_val[:100],
                             'harga_jual': harga_jual_val,
                             'confidence': row_confidence
                         })
                         frappe.logger().warning(
-                            f"[PARSE] Skipping item {idx}: likely header junk "
+                            f"[PARSE] Skipping item {idx}: {skip_reason} "
                             f"(desc='{description_val[:50]}', hj={harga_jual_val}, conf={row_confidence})"
                         )
                         continue
@@ -897,17 +931,84 @@ class TaxInvoiceOCRUpload(Document):
             # Save document
             self.save()
 
-            # Auto-trigger verification after successful parsing
-            # This validates business rules (NPWP match, duplicate, PPN calculation)
+            # 🔥 CUSTOM VALIDATION: Verify doc.name matches fp_no (OCR result)
+            # Since autoname = field:fp_no, they should always match
             if parse_status == "Approved" and self.fp_no:
-                try:
-                    from imogi_finance.tax_invoice_ocr import verify_tax_invoice
-                    verify_tax_invoice(self, doctype="Tax Invoice OCR Upload", force=False)
-                except Exception as e:
-                    frappe.log_error(
-                        title="Auto-Verify Failed After Parse",
-                        message=f"Failed to verify {self.name} after parsing: {str(e)}"
+                validation_passed = True
+                validation_checks = []
+                
+                # 1. Check if autoname matches OCR result
+                if self.name != self.fp_no:
+                    validation_passed = False
+                    validation_checks.append(
+                        f"❌ Nomor Dokumen Tidak Konsisten\n"
+                        f"   • Document Name: {self.name}\n"
+                        f"   • FP dari OCR: {self.fp_no}\n"
+                        f"   • Kemungkinan ada masalah data integrity"
                     )
+                    frappe.logger().warning(
+                        f"[VALIDATION] Name mismatch: doc.name={self.name} vs fp_no={self.fp_no}"
+                    )
+                else:
+                    validation_checks.append(
+                        f"✅ Nomor Dokumen Konsisten: {self.name}"
+                    )
+                
+                # 2. Validate FP number format (16 digits)
+                fp_digits = re.sub(r'\D', '', self.fp_no or '')
+                if len(fp_digits) != 16:
+                    validation_passed = False
+                    validation_checks.append(
+                        f"❌ Format Nomor Faktur Salah\n"
+                        f"   • Harus 16 digit, ditemukan: {len(fp_digits)} digit\n"
+                        f"   • Nomor: {self.fp_no}"
+                    )
+                else:
+                    validation_checks.append(
+                        f"✅ Format Nomor Faktur Valid (16 digit)"
+                    )
+                
+                # 3. Validate required fields from OCR
+                if not self.dpp or self.dpp <= 0:
+                    validation_passed = False
+                    validation_checks.append(
+                        f"❌ DPP (Dasar Pengenaan Pajak) Kosong atau Nol"
+                    )
+                else:
+                    validation_checks.append(
+                        f"✅ DPP Valid: Rp {self.dpp:,.2f}"
+                    )
+                
+                if not self.ppn or self.ppn <= 0:
+                    validation_passed = False
+                    validation_checks.append(
+                        f"❌ PPN Kosong atau Nol"
+                    )
+                else:
+                    validation_checks.append(
+                        f"✅ PPN Valid: Rp {self.ppn:,.2f}"
+                    )
+                
+                # Update verification status based on validation
+                if validation_passed:
+                    self.verification_status = "Verified"
+                    summary_header = "✅ SEMUA VALIDASI LOLOS\n" + "="*50 + "\n\n"
+                    self.verification_notes = summary_header + "\n\n".join(validation_checks) + "\n\n✅ Siap untuk di-link ke Purchase Invoice"
+                else:
+                    self.verification_status = "Needs Review"
+                    summary_header = "⚠️ PERLU REVIEW - ADA ISSUE YANG DITEMUKAN\n" + "="*50 + "\n\n"
+                    self.verification_notes = summary_header + "\n\n".join(validation_checks) + "\n\n⚠️ Periksa dan perbaiki issue di atas sebelum menggunakan faktur ini"
+                
+                # Update fields without triggering save loop
+                frappe.db.set_value(
+                    self.doctype,
+                    self.name,
+                    {
+                        "verification_status": self.verification_status,
+                        "verification_notes": self.verification_notes,
+                    },
+                    update_modified=False
+                )
 
             if not auto_triggered:
                 frappe.msgprint(

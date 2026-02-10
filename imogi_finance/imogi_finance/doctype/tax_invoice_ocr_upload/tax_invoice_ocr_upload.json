@@ -32,9 +32,6 @@
     "validation_summary",
     "section_verification",
     "verification_status",
-    "column_break_verification",
-    "npwp_match",
-    "duplicate_flag",
     "section_verification_notes",
     "verification_notes",
     "section_ocr",
@@ -198,23 +195,8 @@
       "label": "Status Verifikasi",
       "options": "Needs Review\nVerified\nRejected",
       "read_only": 1,
-      "bold": 1
-    },
-    {
-      "fieldname": "column_break_verification",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "npwp_match",
-      "fieldtype": "Check",
-      "label": "✓ NPWP Sesuai",
-      "read_only": 1
-    },
-    {
-      "fieldname": "duplicate_flag",
-      "fieldtype": "Check",
-      "label": "⚠️ Faktur Duplikat",
-      "read_only": 1
+      "bold": 1,
+      "description": "Auto-calculated: Verified jika nomor faktur valid dan data lengkap"
     },
     {
       "fieldname": "section_verification_notes",
@@ -224,7 +206,8 @@
       "fieldname": "verification_notes",
       "fieldtype": "Small Text",
       "label": "Catatan Verifikasi",
-      "description": "Tambahkan catatan jika ada hal yang perlu diperhatikan"
+      "read_only": 1,
+      "description": "Hasil validasi otomatis: nomor faktur, format, dan kelengkapan data"
     },
     {
       "collapsible": 1,
