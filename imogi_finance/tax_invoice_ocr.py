@@ -2885,6 +2885,28 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                         f"Harga Jual {old_hj} → {parsed.get('harga_jual')} "
                         f"(method={layout_result.get('extraction_method')})"
                     )
+
+                    # 🔥 Rebuild the notes JSON so ringkasan_pajak reflects
+                    # the corrected values instead of the old regex results
+                    if parsed.get("notes"):
+                        try:
+                            notes_obj = json.loads(parsed["notes"])
+                            notes_obj["ringkasan_pajak"] = {
+                                "harga_jual": parsed.get("harga_jual"),
+                                "dasar_pengenaan_pajak": parsed["dpp"],
+                                "jumlah_ppn": parsed["ppn"],
+                            }
+                            # Add layout parser audit trail
+                            validation_notes = notes_obj.get("validation_notes", [])
+                            validation_notes.append(
+                                f"Layout-aware parser corrected summary values: "
+                                f"DPP {old_dpp} → {layout_dpp}, "
+                                f"PPN {old_ppn} → {layout_ppn}"
+                            )
+                            notes_obj["validation_notes"] = validation_notes
+                            parsed["notes"] = json.dumps(notes_obj, ensure_ascii=False, indent=2)
+                        except (json.JSONDecodeError, TypeError):
+                            pass  # keep original notes if rebuild fails
                 else:
                     frappe.logger().info(
                         f"[OCR] Layout parser skipped override: "
