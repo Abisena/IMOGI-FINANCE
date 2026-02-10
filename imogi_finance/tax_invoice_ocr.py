@@ -26,7 +26,7 @@ DEFAULT_SETTINGS = {
     "enable_tax_invoice_ocr": 0,
     "ocr_provider": "Manual Only",
     "ocr_language": "id",
-    "ocr_max_pages": 2,
+    "ocr_max_pages": 5,  # Increase from 2 to 5 to capture all pages
     "ocr_min_confidence": 0.85,
     "ocr_max_retry": 1,
     "ocr_file_max_mb": 10,
@@ -2743,75 +2743,43 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
                     if isinstance(nested, dict):
                         yield nested
 
+    # 🔥 SIMPLIFIED: Directly extract fullTextAnnotation.text for complete content
+    # Skip coordinate filtering that was dropping middle content (item table)
     texts: list[str] = []
     confidence_values: list[float] = []
-    min_block_conf = flt(settings.get("ocr_min_confidence", 0.0)) or 0.0
-    full_text_candidates: list[str] = []
 
     for entry in _iter_entries(responses):
-        block_texts = _iter_block_text(entry)
-        filtered_blocks = [
-            (text, conf)
-            for text, y_min, y_max, conf in block_texts
-            if conf >= min_block_conf and (y_max <= 0.35 or y_min >= 0.65)
-        ]
-        if filtered_blocks:
-            texts.extend([text for text, _ in filtered_blocks])
-            confidence_values.extend([conf for _, conf in filtered_blocks])
-            full_text = (entry.get("fullTextAnnotation") or {}).get("text")
-            if full_text:
-                processed_full = _strip_border_artifacts((full_text or "").strip())
-                if processed_full:
-                    full_text_candidates.append(processed_full)
-            continue
-
+        # Priority 1: Use fullTextAnnotation.text (complete text without filtering)
         full_text = (entry.get("fullTextAnnotation") or {}).get("text")
+        if full_text:
+            processed = _strip_border_artifacts(full_text.strip())
+            if processed:
+                texts.append(processed)
+                
+        # Priority 2: Fallback to textAnnotations[0] if fullText missing
         if not full_text:
             text_annotations = entry.get("textAnnotations") or []
-            if text_annotations:
-                full_text = text_annotations[0].get("description")
-        if full_text:
-            processed_full = _strip_border_artifacts((full_text or "").strip())
-            if processed_full:
-                full_text_candidates.append(processed_full)
-                texts.append(processed_full)
-            pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
-            for page in pages:
-                if "confidence" in page:
-                    try:
-                        confidence_values.append(flt(page.get("confidence")))
-                    except Exception:
-                        continue
-
-    text = _strip_border_artifacts("\n".join(texts).strip())
-
-    if _needs_full_text_fallback(text) and full_text_candidates:
-        fallback_text = "\n".join(full_text_candidates).strip()
-        if fallback_text and fallback_text not in text:
-            text = "\n".join([text, fallback_text]).strip()
-
-    if not text:
-        for entry in _iter_entries(responses):
-            full_text = (entry.get("fullTextAnnotation") or {}).get("text")
-            if full_text:
-                pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
-                for page in pages:
-                    if "confidence" in page:
-                        try:
-                            confidence_values.append(flt(page.get("confidence")))
-                        except Exception:
-                            continue
-                text = _strip_border_artifacts(full_text.strip())
-                if text:
-                    break
-            text_annotations = entry.get("textAnnotations") or []
-            if text_annotations:
+            if text_annotations and len(text_annotations) > 0:
                 description = text_annotations[0].get("description")
                 if description:
-                    text = _strip_border_artifacts((description or "").strip())
-                    if text:
-                        break
+                    processed = _strip_border_artifacts(description.strip())
+                    if processed:
+                        texts.append(processed)
+        
+        # Extract confidence from pages
+        pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
+        for page in pages:
+            if "confidence" in page:
+                try:
+                    confidence_values.append(flt(page.get("confidence")))
+                except Exception:
+                    continue
+
+    # Combine all texts
+    text = "\n".join(texts).strip()
+    
     if not text:
+        frappe.logger().warning("Google Vision OCR returned empty text")
         return "", data, 0.0
 
     confidence = max(confidence_values) if confidence_values else 0.0

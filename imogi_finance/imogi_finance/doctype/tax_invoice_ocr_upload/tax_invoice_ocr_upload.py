@@ -615,9 +615,17 @@ class TaxInvoiceOCRUpload(Document):
                         )
                         summary_hj = flt(self.harga_jual)
 
+                        # 🔥 CRITICAL: Primary sum check with 5% tolerance
                         primary_sum_ok = (
                             summary_hj > 0
                             and abs(primary_sum - summary_hj) <= summary_hj * 0.05
+                        )
+
+                        # 🔥 ADDITIONAL: Check if primary is severely incomplete (< 50% of summary)
+                        primary_severely_incomplete = (
+                            summary_hj > 0
+                            and primary_sum > 0
+                            and primary_sum < summary_hj * 0.5
                         )
 
                         # Detect signs of mangled items even if sum matches:
@@ -640,10 +648,17 @@ class TaxInvoiceOCRUpload(Document):
                             has_zero_items or has_mangled_desc or item_count_mismatch
                         )
 
+                        # 🔥 RELAXED CONDITION: Use multirow items if:
+                        # 1. We have multirow items AND
+                        # 2. (multirow validation passes OR primary is severely incomplete)
                         use_multirow_items = (
-                            mr_validation.get('is_valid')
-                            and len(mr_items) > 0
-                            and (not primary_sum_ok or primary_items_suspect)
+                            len(mr_items) > 0
+                            and (
+                                # Original condition: multirow valid + primary bad
+                                (mr_validation.get('is_valid') and (not primary_sum_ok or primary_items_suspect))
+                                # NEW: Or primary is severely incomplete (even if multirow validation not perfect)
+                                or primary_severely_incomplete
+                            )
                         )
 
                         if use_multirow_items:
@@ -658,22 +673,24 @@ class TaxInvoiceOCRUpload(Document):
                             )
 
                             # Convert multirow items to the expected format
+                            # Keep numeric values as floats (not strings) to avoid database overflow
                             validated_items = []
                             for mr_item in mr_items:
                                 validated_items.append({
                                     'line_no': mr_item.get('line_no', 0),
                                     'description': mr_item.get('description', ''),
-                                    'harga_jual': str(mr_item.get('harga_jual', 0)),
-                                    'dpp': str(mr_item.get('dpp', 0)),
-                                    'ppn': str(mr_item.get('ppn', 0)),
-                                    'qty': mr_item.get('qty', 0),
-                                    'unit_price': mr_item.get('unit_price', 0),
+                                    'harga_jual': flt(mr_item.get('harga_jual', 0)),
+                                    'dpp': flt(mr_item.get('dpp', 0)),
+                                    'ppn': flt(mr_item.get('ppn', 0)),
+                                    'qty': flt(mr_item.get('qty', 0)),
+                                    'unit_price': flt(mr_item.get('unit_price', 0)),
                                     'page_no': 1,
                                     'source': 'multirow_fallback',
+                                    'row_confidence': mr_item.get('row_confidence', 1.0),
+                                    'notes': mr_item.get('notes', ''),
                                 })
 
-                            # Re-normalize the replacement items
-                            validated_items = normalize_all_items(validated_items)
+                            # Validate items (already normalized as floats)
                             validated_items, invalid_items = validate_all_line_items(
                                 validated_items, tax_rate
                             )
@@ -700,6 +717,76 @@ class TaxInvoiceOCRUpload(Document):
                 "dpp": self.dpp,
                 "ppn": self.ppn
             }
+            totals_validation = validate_invoice_totals(validated_items, header_totals)
+
+            # =================================================================
+            # 🔥 INCOMPLETE OCR FALLBACK: Retry with PyMuPDF if Vision OCR incomplete
+            # If items sum is significantly less than summary, Vision OCR may have
+            # failed to extract all items. Retry with PyMuPDF as fallback.
+            # =================================================================
+            items_sum = sum(flt(item.get('harga_jual', 0)) for item in validated_items)
+            summary_hj = flt(self.harga_jual)
+            ocr_incomplete = (
+                summary_hj > 0 and 
+                items_sum > 0 and 
+                items_sum < summary_hj * 0.5 and
+                vision_json_present  # Only retry if we used Vision OCR
+            )
+            
+            if ocr_incomplete:
+                frappe.logger().warning(
+                    f"[PARSE] Vision OCR incomplete: items sum {items_sum:,.0f} << "
+                    f"summary {summary_hj:,.0f}. Retrying with PyMuPDF..."
+                )
+                
+                try:
+                    # Retry parsing with PyMuPDF only (force vision_json=None)
+                    pymupdf_result = parse_invoice(
+                        file_url_or_path=file_url,
+                        vision_json=None,  # Force PyMuPDF extraction
+                        tax_rate=tax_rate
+                    )
+                    
+                    if pymupdf_result.get("success"):
+                        pymupdf_items = pymupdf_result.get("items", [])
+                        pymupdf_sum = sum(flt(i.get('harga_jual', 0)) for i in pymupdf_items)
+                        
+                        # Use PyMuPDF result if it's more complete
+                        if pymupdf_sum > items_sum * 1.5:  # At least 50% better
+                            frappe.logger().info(
+                                f"[PARSE] ✅ PyMuPDF fallback SUCCESS: "
+                                f"{len(pymupdf_items)} items, sum={pymupdf_sum:,.0f} "
+                                f"(was: {len(validated_items)} items, sum={items_sum:,.0f})"
+                            )
+                            
+                            # Replace with PyMuPDF items
+                            items = pymupdf_items
+                            validated_items, invalid_items = validate_all_line_items(items, tax_rate)
+                            items_sum = pymupdf_sum
+                            
+                            # Update debug info
+                            debug_info = parse_result.get("debug_info", {})
+                            debug_info["ocr_fallback"] = {
+                                "triggered": True,
+                                "reason": "Vision OCR incomplete",
+                                "vision_items": len(validated_items),
+                                "vision_sum": items_sum,
+                                "pymupdf_items": len(pymupdf_items),
+                                "pymupdf_sum": pymupdf_sum,
+                                "used_pymupdf": True
+                            }
+                        else:
+                            frappe.logger().warning(
+                                f"[PARSE] PyMuPDF fallback did not improve results: "
+                                f"sum={pymupdf_sum:,.0f} vs {items_sum:,.0f}"
+                            )
+                            
+                except Exception as pymupdf_err:
+                    frappe.logger().error(
+                        f"[PARSE] PyMuPDF fallback failed: {pymupdf_err}"
+                    )
+            
+            # Re-validate totals after potential PyMuPDF fallback
             totals_validation = validate_invoice_totals(validated_items, header_totals)
 
             # Determine parse status
