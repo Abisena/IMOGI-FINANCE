@@ -22,6 +22,9 @@ from collections import defaultdict
 import frappe
 from frappe import _
 
+# 🔥 FIX: Import Vision JSON unwrapping helper (relative import for ERPNext v15+ best practice)
+from .multirow_parser import _resolve_full_text_annotation
+
 _logger = logging.getLogger(__name__)
 try:
     _logger = frappe.logger()
@@ -460,9 +463,6 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 	tokens = []
 
 	# 🔥 FIX: Unwrap nested responses to reach fullTextAnnotation
-	# Import unwrapping helper from multirow_parser
-	from imogi_finance.imogi_finance.parsers.multirow_parser import _resolve_full_text_annotation
-	
 	full_text = _resolve_full_text_annotation(vision_json)
 	if not full_text:
 		frappe.logger().warning("No fullTextAnnotation found in Vision JSON (after unwrapping)")

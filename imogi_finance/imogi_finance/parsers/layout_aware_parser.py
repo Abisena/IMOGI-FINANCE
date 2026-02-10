@@ -43,6 +43,7 @@ import frappe
 from frappe import _
 
 from .normalization import parse_indonesian_currency
+from .multirow_parser import _resolve_full_text_annotation  # 🔥 FIX: Use shared unwrapper
 
 
 # =============================================================================
@@ -358,7 +359,8 @@ class LayoutAwareParser:
         tokens: List[OCRToken] = []
 
         # --- Unwrap nested responses to reach fullTextAnnotation ---
-        fta = self._resolve_full_text_annotation(vision_json)
+        # 🔥 FIX: Use shared unwrapper from multirow_parser
+        fta = _resolve_full_text_annotation(vision_json)
         if fta is None:
             self._logger.warning("[LayoutParser] No fullTextAnnotation found in OCR JSON")
             return tokens
@@ -418,10 +420,14 @@ class LayoutAwareParser:
         )
         return tokens
 
+    # 🔥 DEPRECATED: Use shared _resolve_full_text_annotation from multirow_parser instead
+    # Kept for backward compatibility but delegates to shared implementation
     def _resolve_full_text_annotation(
         self, data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
+        DEPRECATED: Use shared _resolve_full_text_annotation from multirow_parser.
+        
         Navigate through potentially nested responses to find
         ``fullTextAnnotation``.
 
@@ -430,26 +436,8 @@ class LayoutAwareParser:
           2. ``data["responses"][0]["fullTextAnnotation"]``
           3. ``data["responses"][0]["responses"][0]["fullTextAnnotation"]``
         """
-        # Direct
-        if "fullTextAnnotation" in data:
-            return data["fullTextAnnotation"]
-
-        # One level of responses
-        responses = data.get("responses", [])
-        if responses and isinstance(responses, list):
-            first = responses[0] if responses else {}
-
-            if "fullTextAnnotation" in first:
-                return first["fullTextAnnotation"]
-
-            # Double-nested
-            inner = first.get("responses", [])
-            if inner and isinstance(inner, list):
-                inner_first = inner[0] if inner else {}
-                if "fullTextAnnotation" in inner_first:
-                    return inner_first["fullTextAnnotation"]
-
-        return None
+        # Delegate to shared implementation
+        return _resolve_full_text_annotation(data)
 
     def _extract_bbox(
         self,
