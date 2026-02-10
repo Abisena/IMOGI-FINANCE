@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -134,7 +135,7 @@ PPN_RATE_REGEX = re.compile(r"(?:Tarif\s*)?PPN[^\d%]{0,10}(?P<rate>\d{1,2}(?:[.,
 TAX_INVOICE_REGEX = re.compile(r"(?P<fp>\d{2,3}[.\-\s]?\d{2,3}[.\-\s]?\d{1,2}[.\-\s]?\d{8})")
 DATE_REGEX = re.compile(r"(?P<date>\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4})")
 NUMBER_REGEX = re.compile(r"(?P<number>\d+[.,\d]*)")
-AMOUNT_REGEX = re.compile(r"(?P<amount>\d{1,3}(?:[.,]\d{3})*[.,]\d{2})")
+AMOUNT_REGEX = re.compile(r"(?P<amount>\d+(?:[.,\s]\d{3})*[.,]\d{2})")
 FAKTUR_NO_LABEL_REGEX = re.compile(
     r"Kode\s+dan\s+Nomor\s+Seri\s+Faktur\s+Pajak\s*[:\-]?\s*(?P<fp>[\d.\-\s]{10,})",
     re.IGNORECASE,
@@ -313,6 +314,63 @@ def detect_nilai_lain_factor(text: str) -> Optional[float]:
 
     return None
 
+
+def _to_decimal(value: Any) -> Decimal | None:
+    """Safely convert numeric values to Decimal using string conversion."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _compute_harga_jual_from_dpp_nilai_lain(dpp_value: Any, factor: float | None) -> float | None:
+    """Compute Harga Jual from DPP using Nilai Lain factor with Decimal precision.
+
+    Formula:
+    - DPP = Harga Jual × factor
+    - Harga Jual = DPP / factor
+    """
+    if not factor:
+        return None
+
+    dpp_dec = _to_decimal(dpp_value)
+    factor_dec = _to_decimal(factor)
+    if dpp_dec is None or factor_dec in (None, Decimal("0")):
+        return None
+
+    harga = (dpp_dec / factor_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return float(harga)
+
+
+
+
+def _infer_nilai_lain_factor_from_amounts(dpp_value: Any, ppn_value: Any) -> tuple[float | None, str]:
+    """Infer Nilai Lain factor when explicit fraction is not present.
+
+    Returns tuple of (factor, reason):
+    - matched-by-data: PPN ratio close to 12% => use 11/12
+    - default-policy: fallback to 11/12 when context indicates Nilai Lain
+    """
+    dpp_dec = _to_decimal(dpp_value)
+    ppn_dec = _to_decimal(ppn_value)
+    if dpp_dec is None or ppn_dec is None:
+        return None, "missing_dpp_or_ppn"
+    if dpp_dec <= 0 or ppn_dec < 0:
+        return None, "invalid_dpp_or_ppn"
+
+    try:
+        ratio = (ppn_dec / dpp_dec) if dpp_dec else Decimal("0")
+    except Exception:
+        ratio = Decimal("0")
+
+    # If PPN≈12% of DPP, infer canonical Nilai Lain factor 11/12
+    if abs(ratio - Decimal("0.12")) <= Decimal("0.01"):
+        return float(Decimal("11") / Decimal("12")), "matched_by_ppn_ratio"
+
+    # Conservative default policy for Nilai Lain context
+    return float(Decimal("11") / Decimal("12")), "default_policy"
 
 def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None, docname: str = None) -> float:
     """
@@ -1184,6 +1242,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     """
     matches: dict[str, Any] = {}
     confidence = 0.0
+    debug_notes: list[str] = []
 
     seller_section = _extract_section_lines(
         text or "", "Pengusaha Kena Pajak", ("Pembeli Barang Kena Pajak", "Pembeli Barang Kena Pajak/Penerima Jasa Kena Pajak")
@@ -1246,7 +1305,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     buyer_npwp = _extract_npwp_with_label(buyer_section_text) or _extract_npwp_from_text(buyer_section_text)
 
     amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) for m in AMOUNT_REGEX.finditer(text or "")]
-    amounts = [amt for amt in amounts if amt is not None]
+    amounts = [amt for amt in amounts if amt is not None and amt >= 1.0]
 
     logger = frappe.logger("tax_invoice_ocr")
     logger.info(f"🔍 parse_faktur_pajak_text: Found {len(amounts)} amounts in text")
@@ -1686,11 +1745,25 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             logger.info(f"🔍 ✅ LAST RESORT: Set Harga Jual to {best} (closest amount > DPP)")
             confidence += 0.1
         else:
-            # ABSOLUTE LAST RESORT: Calculate Harga Jual = DPP / 0.92 (assuming 8% discount)
-            # This is a reasonable assumption for Indonesian tax invoices
-            estimated_hj = round(dpp_val / 0.92, 2)
-            matches["harga_jual"] = estimated_hj
-            logger.warning(f"🔍 ⚠️ ABSOLUTE LAST RESORT: Estimated Harga Jual = {estimated_hj} (DPP / 0.92)")
+            # ABSOLUTE LAST RESORT: derive harga_jual from DPP + tax ratio (no 0.92 hardcode)
+            ppn_val = matches.get("ppn")
+            inferred_rate = infer_tax_rate(dpp=dpp_val, ppn=ppn_val, fp_date=matches.get("fp_date"))
+            if inferred_rate and inferred_rate > 0:
+                dpp_dec = _to_decimal(dpp_val)
+                rate_dec = _to_decimal(inferred_rate)
+                if dpp_dec is not None and rate_dec is not None:
+                    estimated_hj = (dpp_dec * (Decimal("1") + rate_dec)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                    matches["harga_jual"] = float(estimated_hj)
+                    logger.warning(
+                        f"🔍 ⚠️ ABSOLUTE LAST RESORT: Estimated Harga Jual = {estimated_hj} "
+                        f"(DPP × (1 + rate={inferred_rate:.4f}))"
+                    )
+                else:
+                    matches["harga_jual"] = dpp_val
+            else:
+                matches["harga_jual"] = dpp_val
             confidence = min(confidence, 0.4)  # Very low confidence
 
     # 🔧 CRITICAL: Validation for duplicate values (bug detection)
@@ -1812,28 +1885,69 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
     # 🔥 ERPNext v15+ Feature: Detect "DPP Nilai Lain" pattern (11/12 or 12/11)
     nilai_lain_factor = detect_nilai_lain_factor(text)
+    nilai_lain_context = bool(re.search(r"nilai\s*lain", text or "", re.IGNORECASE))
+
+    if nilai_lain_context and not nilai_lain_factor:
+        inferred_factor, infer_reason = _infer_nilai_lain_factor_from_amounts(matches.get("dpp"), matches.get("ppn"))
+        if inferred_factor:
+            nilai_lain_factor = inferred_factor
+            reason_label = {
+                "matched_by_ppn_ratio": "matched by ppn≈12% of dpp",
+                "default_policy": "default 11/12 policy",
+            }.get(infer_reason, infer_reason)
+            note = (
+                "DPP Nilai Lain detected without explicit fraction; "
+                f"factor inferred from DPP/PPN: {inferred_factor:.4f} ({reason_label})"
+            )
+            debug_notes.append(note)
+            # Force manual review path by lowering confidence for inferred-factor scenario
+            confidence = min(confidence, 0.6)
+            logger.warning(f"⚠️ {note}")
+
     if nilai_lain_factor:
         logger.info(f"🔍 DPP Nilai Lain factor detected: {nilai_lain_factor:.4f}")
 
-        # Apply correction if Harga Jual and DPP both exist
-        if matches.get("harga_jual") and matches.get("dpp"):
-            harga_jual_val = matches["harga_jual"]
-            dpp_current = matches["dpp"]
-            dpp_expected = harga_jual_val * nilai_lain_factor
+        dpp_current = matches.get("dpp")
+        harga_jual_derived = _compute_harga_jual_from_dpp_nilai_lain(dpp_current, nilai_lain_factor)
 
-            # Verify correction is reasonable (within 5% tolerance)
-            if dpp_current > 0 and abs(dpp_expected - dpp_current) / dpp_current < 0.05:
-                matches["dpp"] = round(dpp_expected, 2)
-                # Append to notes if exists, otherwise create new
-                existing_notes = matches.get("notes", "")
-                correction_note = f"DPP Nilai Lain corrected (factor: {nilai_lain_factor:.4f})"
-                matches["notes"] = (existing_notes + "; " + correction_note).strip("; ") if existing_notes else correction_note
-                logger.info(f"✅ DPP corrected: {dpp_current:,.0f} → {dpp_expected:,.0f}")
-            else:
-                logger.warning(
-                    f"⚠️ DPP Nilai Lain detected but correction skipped "
-                    f"(diff > 5%: expected={dpp_expected:,.0f}, current={dpp_current:,.0f})"
-                )
+        # Re-check explicit OCR/label extraction so derived fallback values don't override business rule
+        explicit_hj = None
+        for hj_label in (
+            "Harga Jual / Penggantian / Uang Muka / Termin",
+            "Harga Jual/Penggantian/Uang Muka/Termin",
+            "Harga Jual / Penggantian / Uang Muka",
+            "Harga Jual/Penggantian",
+            "Harga Jual / Penggantian",
+            "Harga Jual",
+        ):
+            explicit_hj = _find_amount_after_label(text or "", hj_label, max_lines_to_check=2)
+            if explicit_hj:
+                break
+
+        # Prioritize explicit OCR/extracted Harga Jual if present and valid
+        if explicit_hj and dpp_current and float(explicit_hj) >= float(dpp_current):
+            matches["harga_jual"] = float(_to_decimal(explicit_hj) or explicit_hj)
+
+            # Guardrail: if derived and extracted differ significantly, lower confidence and add debug note
+            if harga_jual_derived:
+                extracted_dec = _to_decimal(explicit_hj)
+                derived_dec = _to_decimal(harga_jual_derived)
+                if extracted_dec and derived_dec and extracted_dec > 0:
+                    diff_pct = abs((extracted_dec - derived_dec) / extracted_dec) * Decimal("100")
+                    if diff_pct > Decimal("1.5"):
+                        confidence = min(confidence, 0.7)
+                        mismatch_note = (
+                            "DPP Nilai Lain guardrail: extracted harga_jual differs from derived value "
+                            f"(extracted={float(extracted_dec):,.2f}, derived={float(derived_dec):,.2f}, diff={float(diff_pct):.2f}%)"
+                        )
+                        debug_notes.append(mismatch_note)
+                        logger.warning(f"⚠️ {mismatch_note}")
+        elif harga_jual_derived:
+            matches["harga_jual"] = harga_jual_derived
+            logger.info(
+                f"✅ DPP Nilai Lain: derived Harga Jual from DPP using factor {nilai_lain_factor:.4f}: "
+                f"{dpp_current:,.2f} -> {harga_jual_derived:,.2f}"
+            )
 
     # � FIX: Set tax_rate from infer_tax_rate() for validation
     # This ensures doctype validation uses the correct rate (11% or 12%)
@@ -1866,8 +1980,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
 
             # Add warning note
             swap_note = f"⚠️ AUTO-CORRECTED: DPP and PPN were swapped during extraction"
-            existing_notes = matches.get("notes", "")
-            matches["notes"] = (existing_notes + "; " + swap_note).strip("; ") if existing_notes else swap_note
+            debug_notes.append(swap_note)
 
         # Additional validation: Check if PPN matches expected value based on DPP and rate
         expected_ppn = dpp_final_for_rate * inferred_rate
@@ -1915,6 +2028,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             "dasar_pengenaan_pajak": matches.get("dpp"),
             "jumlah_ppn": matches.get("ppn"),
         },
+        "validation_notes": debug_notes,
     }
 
     matches["notes"] = json.dumps(summary, ensure_ascii=False, indent=2)
