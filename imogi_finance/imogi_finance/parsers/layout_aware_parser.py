@@ -223,7 +223,7 @@ SUMMARY_LABEL_PATTERNS: List[Tuple[str, List[re.Pattern]]] = [
         "ppn",
         [
             re.compile(r"Jumlah\s+PPN\s*\([^)]*\)", re.I),
-            re.compile(r"Jumlah\s+PPN", re.I),
+            re.compile(r"Jumlah\s+PPN\b(?!\s*BM)", re.I),
         ],
     ),
     (
@@ -1008,6 +1008,52 @@ class LayoutAwareParser:
             if result[k] is None:
                 result[k] = 0.0
 
+        # =================================================================
+        # POST-EXTRACTION PLAUSIBILITY CHECK
+        # =================================================================
+        # Validate that DPP is consistent with Harga Jual under standard
+        # Indonesian tax rules. If not, the extraction likely mixed up
+        # line-item values with summary totals — invalidate to trigger
+        # the text-based fallback in process_with_layout_parser().
+        #
+        # Rules checked:
+        #   - 2025 "Nilai Lain" (040): DPP ≈ Harga Jual × 11/12
+        #   - Classic (010/other):     DPP ≈ Harga Jual − Potongan − Uang Muka
+        # =================================================================
+        hj = result.get("harga_jual", 0.0)
+        pot = result.get("potongan_harga", 0.0)
+        um = result.get("uang_muka", 0.0)
+        dpp_val = result.get("dpp", 0.0)
+        ppn_val = result.get("ppn", 0.0)
+
+        if hj > 0 and dpp_val > 0 and ppn_val > 0:
+            # Expected DPP under 2025 "Nilai Lain" rule
+            expected_dpp_new = hj * 11.0 / 12.0
+            # Expected DPP under classic rule
+            expected_dpp_classic = hj - pot - um
+
+            tol = 0.20  # 20 % tolerance
+
+            dpp_ok_new = (
+                expected_dpp_new > 0
+                and abs(dpp_val - expected_dpp_new) <= expected_dpp_new * tol
+            )
+            dpp_ok_classic = (
+                expected_dpp_classic > 0
+                and abs(dpp_val - expected_dpp_classic) <= expected_dpp_classic * tol
+            )
+
+            if not dpp_ok_new and not dpp_ok_classic:
+                self._logger.warning(
+                    f"[LayoutParser] PLAUSIBILITY FAIL: "
+                    f"DPP ({dpp_val:,.0f}) doesn't match Harga Jual ({hj:,.0f}) "
+                    f"under new rules (expected ~{expected_dpp_new:,.0f}) "
+                    f"or classic rules (expected ~{expected_dpp_classic:,.0f}). "
+                    f"Invalidating coordinate extraction to trigger text fallback."
+                )
+                for k in result:
+                    result[k] = 0.0
+
         self._logger.info(
             f"[LayoutParser] Summary extracted: "
             + ", ".join(f"{k}={v:,.2f}" for k, v in result.items())
@@ -1230,21 +1276,56 @@ def process_with_layout_parser(
     dpp = summary.get("dpp", 0.0)
     ppn = summary.get("ppn", 0.0)
 
+    # Resolve fallback text: use caller-supplied text, or the raw text
+    # embedded inside the Vision JSON (so the text fallback works even when
+    # the caller passes ocr_text="").
+    _fallback_text = ocr_text or getattr(parser, "_raw_full_text", "") or parser._full_text
+
     if dpp <= 0 or ppn <= 0:
         # --- Fallback: text-based extraction ---
-        if ocr_text:
+        if _fallback_text:
             logger.warning(
                 "[LayoutParser] Coordinate extraction incomplete; "
                 "falling back to text-based extraction"
             )
             extraction_method = "text_fallback"
-            text_summary = parser.parse_summary_from_text(ocr_text)
+            text_summary = parser.parse_summary_from_text(_fallback_text)
             # Merge: prefer layout values where found, fill gaps from text
             for key in text_summary:
                 if summary.get(key, 0.0) == 0.0 and text_summary[key] > 0:
                     summary[key] = text_summary[key]
             dpp = summary.get("dpp", 0.0)
             ppn = summary.get("ppn", 0.0)
+
+    # -----------------------------------------------------------------
+    # Cross-validate: even when coordinate extraction returned values,
+    # also run text extraction.  If text-based values are significantly
+    # larger AND internally consistent, prefer them — summary totals
+    # are always larger than individual line-item amounts, so "larger
+    # but consistent" is a strong signal of correct extraction.
+    # -----------------------------------------------------------------
+    if dpp > 0 and ppn > 0 and _fallback_text and extraction_method == "layout_aware":
+        text_summary = parser.parse_summary_from_text(_fallback_text)
+        text_dpp = text_summary.get("dpp", 0.0)
+        text_ppn = text_summary.get("ppn", 0.0)
+        text_hj = text_summary.get("harga_jual", 0.0)
+
+        # If text extraction gives values ≥2× larger, check consistency
+        if text_dpp > dpp * 2 and text_ppn > ppn * 2 and text_dpp > 0 and text_ppn > 0:
+            text_ratio = text_ppn / text_dpp if text_dpp > 0 else 0
+            if 0.08 <= text_ratio <= 0.15:
+                logger.warning(
+                    f"[LayoutParser] Cross-validation override: "
+                    f"text extraction gives larger, consistent values. "
+                    f"DPP {dpp:,.0f} → {text_dpp:,.0f}, "
+                    f"PPN {ppn:,.0f} → {text_ppn:,.0f}"
+                )
+                for key in text_summary:
+                    if text_summary[key] > 0:
+                        summary[key] = text_summary[key]
+                dpp = summary.get("dpp", 0.0)
+                ppn = summary.get("ppn", 0.0)
+                extraction_method = "text_cross_validated"
 
     harga_jual = summary.get("harga_jual", 0.0)
     potongan_harga = summary.get("potongan_harga", 0.0)

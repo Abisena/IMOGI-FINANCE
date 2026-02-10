@@ -2866,7 +2866,28 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                 # Override summary values ONLY if layout parser found valid data
                 layout_dpp = layout_result.get("dpp", 0)
                 layout_ppn = layout_result.get("ppn", 0)
-                if layout_dpp > 0 and layout_ppn > 0 and layout_result.get("is_valid"):
+
+                # 🔥 Extra guard: skip override when layout values are
+                # implausibly small compared to text-parsed values.
+                # Summary totals must always be ≥ individual item amounts,
+                # so if the text parser found much larger values, the layout
+                # parser likely picked up line-item values by mistake.
+                text_dpp = parsed.get("dpp") or 0
+                text_ppn = parsed.get("ppn") or 0
+                skip_layout = False
+                if text_dpp > 0 and layout_dpp > 0 and text_dpp > layout_dpp * 2:
+                    frappe.logger().warning(
+                        f"[OCR] Layout DPP ({layout_dpp:,.0f}) << text DPP "
+                        f"({text_dpp:,.0f}); skipping layout override"
+                    )
+                    skip_layout = True
+
+                if (
+                    layout_dpp > 0
+                    and layout_ppn > 0
+                    and layout_result.get("is_valid")
+                    and not skip_layout
+                ):
                     old_dpp = parsed.get("dpp")
                     old_ppn = parsed.get("ppn")
                     old_hj  = parsed.get("harga_jual")

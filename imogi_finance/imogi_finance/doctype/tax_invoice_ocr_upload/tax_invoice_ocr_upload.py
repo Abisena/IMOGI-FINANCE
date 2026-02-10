@@ -460,11 +460,31 @@ class TaxInvoiceOCRUpload(Document):
                         vision_json=vision_json,
                         faktur_no=self.fp_no or "",
                         faktur_type=(self.fp_no or "")[:3],
-                        ocr_text="",  # no plain text needed; Vision JSON is primary
+                        ocr_text="",  # text will be auto-resolved from Vision JSON
                     )
                     layout_dpp = layout_result.get("dpp", 0)
                     layout_ppn = layout_result.get("ppn", 0)
-                    if layout_dpp > 0 and layout_ppn > 0 and layout_result.get("is_valid"):
+
+                    # Guard: skip override if existing (text-parsed) values
+                    # are much larger — summary totals shouldn't shrink.
+                    existing_dpp = flt(self.dpp)
+                    skip_layout = (
+                        existing_dpp > 0
+                        and layout_dpp > 0
+                        and existing_dpp > layout_dpp * 2
+                    )
+                    if skip_layout:
+                        frappe.logger().warning(
+                            f"[PARSE] Layout DPP ({layout_dpp:,.0f}) << existing "
+                            f"DPP ({existing_dpp:,.0f}); skipping layout override"
+                        )
+
+                    if (
+                        layout_dpp > 0
+                        and layout_ppn > 0
+                        and layout_result.get("is_valid")
+                        and not skip_layout
+                    ):
                         if layout_dpp != flt(self.dpp) or layout_ppn != flt(self.ppn):
                             frappe.logger().info(
                                 f"[PARSE] Layout-aware summary override: "

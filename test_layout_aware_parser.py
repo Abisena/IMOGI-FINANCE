@@ -522,6 +522,241 @@ class TestPreBuiltTokens(unittest.TestCase):
 
 
 # =============================================================================
+# TEST: Plausibility Check — DPP vs Harga Jual relationship
+# =============================================================================
+
+class TestPlausibilityCheck(unittest.TestCase):
+    """
+    Tests for the post-extraction plausibility check added in
+    parse_summary_section(). When extracted values are internally
+    consistent but don't satisfy DPP ≈ f(Harga_Jual), they should be
+    invalidated (set to 0.0) so that the text-based fallback triggers.
+    """
+
+    def test_wrong_values_rejected(self):
+        """
+        Invoice 04002500436451666 bug: parser extracted hj=121,275,
+        dpp=80,000, ppn=9,600. These are internally consistent
+        (80,000 × 12% = 9,600) but DPP doesn't match Harga Jual under
+        any tax rule.  Plausibility check should zero them out.
+        """
+        tokens = [
+            # Harga Jual label + WRONG value (121,275 = actual PPN)
+            OCRToken("Harga",         BoundingBox(0.05, 0.575, 0.10, 0.590)),
+            OCRToken("Jual",          BoundingBox(0.11, 0.575, 0.15, 0.590)),
+            OCRToken("/",             BoundingBox(0.16, 0.575, 0.17, 0.590)),
+            OCRToken("Penggantian",   BoundingBox(0.18, 0.575, 0.30, 0.590)),
+            OCRToken("121.275,00",    BoundingBox(0.65, 0.575, 0.88, 0.590)),
+
+            # Potongan Harga
+            OCRToken("Dikurangi",     BoundingBox(0.05, 0.595, 0.16, 0.610)),
+            OCRToken("Potongan",      BoundingBox(0.17, 0.595, 0.27, 0.610)),
+            OCRToken("Harga",         BoundingBox(0.28, 0.595, 0.34, 0.610)),
+            OCRToken("0,00",          BoundingBox(0.82, 0.595, 0.88, 0.610)),
+
+            # DPP label + WRONG value (80,000 = last item price)
+            OCRToken("Dasar",         BoundingBox(0.05, 0.635, 0.11, 0.650)),
+            OCRToken("Pengenaan",     BoundingBox(0.12, 0.635, 0.22, 0.650)),
+            OCRToken("Pajak",         BoundingBox(0.23, 0.635, 0.30, 0.650)),
+            OCRToken("80.000,00",     BoundingBox(0.65, 0.635, 0.88, 0.650)),
+
+            # PPN label + WRONG value (9,600 = 80,000 × 12%)
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.655, 0.12, 0.670)),
+            OCRToken("PPN",           BoundingBox(0.13, 0.655, 0.17, 0.670)),
+            OCRToken("(Pajak",        BoundingBox(0.18, 0.655, 0.24, 0.670)),
+            OCRToken("Pertambahan",   BoundingBox(0.25, 0.655, 0.38, 0.670)),
+            OCRToken("Nilai)",        BoundingBox(0.39, 0.655, 0.45, 0.670)),
+            OCRToken("9.600,00",      BoundingBox(0.67, 0.655, 0.88, 0.670)),
+
+            # PPnBM
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.675, 0.12, 0.690)),
+            OCRToken("PPnBM",         BoundingBox(0.13, 0.675, 0.20, 0.690)),
+            OCRToken("(Pajak",        BoundingBox(0.21, 0.675, 0.27, 0.690)),
+            OCRToken("Penjualan",     BoundingBox(0.28, 0.675, 0.38, 0.690)),
+            OCRToken("atas",          BoundingBox(0.39, 0.675, 0.42, 0.690)),
+            OCRToken("Barang",        BoundingBox(0.43, 0.675, 0.49, 0.690)),
+            OCRToken("Mewah)",        BoundingBox(0.50, 0.675, 0.56, 0.690)),
+            OCRToken("0,00",          BoundingBox(0.82, 0.675, 0.88, 0.690)),
+        ]
+        parser = LayoutAwareParser(tokens=tokens)
+        result = parser.parse_summary_section()
+
+        # All values should be zeroed out because DPP doesn't match HJ
+        self.assertEqual(result["harga_jual"], 0.0,
+                         "Plausibility check should zero harga_jual")
+        self.assertEqual(result["dpp"], 0.0,
+                         "Plausibility check should zero dpp")
+        self.assertEqual(result["ppn"], 0.0,
+                         "Plausibility check should zero ppn")
+
+    def test_correct_040_values_accepted(self):
+        """
+        Correct 040-type invoice: Harga Jual=1,102,500,
+        DPP=1,010,625 (= HJ × 11/12), PPN=121,275 (= DPP × 12%).
+        These should pass the plausibility check.
+        """
+        tokens = [
+            OCRToken("Harga",         BoundingBox(0.05, 0.575, 0.10, 0.590)),
+            OCRToken("Jual",          BoundingBox(0.11, 0.575, 0.15, 0.590)),
+            OCRToken("/",             BoundingBox(0.16, 0.575, 0.17, 0.590)),
+            OCRToken("Penggantian",   BoundingBox(0.18, 0.575, 0.30, 0.590)),
+            OCRToken("1.102.500,00",  BoundingBox(0.65, 0.575, 0.88, 0.590)),
+
+            OCRToken("Dikurangi",     BoundingBox(0.05, 0.595, 0.16, 0.610)),
+            OCRToken("Potongan",      BoundingBox(0.17, 0.595, 0.27, 0.610)),
+            OCRToken("Harga",         BoundingBox(0.28, 0.595, 0.34, 0.610)),
+            OCRToken("0,00",          BoundingBox(0.82, 0.595, 0.88, 0.610)),
+
+            OCRToken("Dasar",         BoundingBox(0.05, 0.635, 0.11, 0.650)),
+            OCRToken("Pengenaan",     BoundingBox(0.12, 0.635, 0.22, 0.650)),
+            OCRToken("Pajak",         BoundingBox(0.23, 0.635, 0.30, 0.650)),
+            OCRToken("1.010.625,00",  BoundingBox(0.65, 0.635, 0.88, 0.650)),
+
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.655, 0.12, 0.670)),
+            OCRToken("PPN",           BoundingBox(0.13, 0.655, 0.17, 0.670)),
+            OCRToken("(Pajak",        BoundingBox(0.18, 0.655, 0.24, 0.670)),
+            OCRToken("Pertambahan",   BoundingBox(0.25, 0.655, 0.38, 0.670)),
+            OCRToken("Nilai)",        BoundingBox(0.39, 0.655, 0.45, 0.670)),
+            OCRToken("121.275,00",    BoundingBox(0.67, 0.655, 0.88, 0.670)),
+
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.675, 0.12, 0.690)),
+            OCRToken("PPnBM",         BoundingBox(0.13, 0.675, 0.20, 0.690)),
+            OCRToken("(Pajak",        BoundingBox(0.21, 0.675, 0.27, 0.690)),
+            OCRToken("Penjualan",     BoundingBox(0.28, 0.675, 0.38, 0.690)),
+            OCRToken("atas",          BoundingBox(0.39, 0.675, 0.42, 0.690)),
+            OCRToken("Barang",        BoundingBox(0.43, 0.675, 0.49, 0.690)),
+            OCRToken("Mewah)",        BoundingBox(0.50, 0.675, 0.56, 0.690)),
+            OCRToken("0,00",          BoundingBox(0.82, 0.675, 0.88, 0.690)),
+        ]
+        parser = LayoutAwareParser(tokens=tokens)
+        result = parser.parse_summary_section()
+
+        self.assertAlmostEqual(result["harga_jual"], 1102500.0, delta=1)
+        self.assertAlmostEqual(result["dpp"], 1010625.0, delta=1)
+        self.assertAlmostEqual(result["ppn"], 121275.0, delta=1)
+
+    def test_classic_010_values_accepted(self):
+        """
+        Classic 010-type invoice: DPP = Harga Jual − Potongan.
+        Should pass plausibility under the classic rule.
+        """
+        tokens = [
+            OCRToken("Harga",         BoundingBox(0.05, 0.575, 0.10, 0.590)),
+            OCRToken("Jual",          BoundingBox(0.11, 0.575, 0.15, 0.590)),
+            OCRToken("1.000.000,00",  BoundingBox(0.65, 0.575, 0.88, 0.590)),
+
+            OCRToken("Dikurangi",     BoundingBox(0.05, 0.595, 0.16, 0.610)),
+            OCRToken("Potongan",      BoundingBox(0.17, 0.595, 0.27, 0.610)),
+            OCRToken("Harga",         BoundingBox(0.28, 0.595, 0.34, 0.610)),
+            OCRToken("50.000,00",     BoundingBox(0.67, 0.595, 0.88, 0.610)),
+
+            OCRToken("Dasar",         BoundingBox(0.05, 0.635, 0.11, 0.650)),
+            OCRToken("Pengenaan",     BoundingBox(0.12, 0.635, 0.22, 0.650)),
+            OCRToken("Pajak",         BoundingBox(0.23, 0.635, 0.30, 0.650)),
+            OCRToken("950.000,00",    BoundingBox(0.65, 0.635, 0.88, 0.650)),
+
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.655, 0.12, 0.670)),
+            OCRToken("PPN",           BoundingBox(0.13, 0.655, 0.17, 0.670)),
+            OCRToken("(Pajak",        BoundingBox(0.18, 0.655, 0.24, 0.670)),
+            OCRToken("Pertambahan",   BoundingBox(0.25, 0.655, 0.38, 0.670)),
+            OCRToken("Nilai)",        BoundingBox(0.39, 0.655, 0.45, 0.670)),
+            OCRToken("104.500,00",    BoundingBox(0.67, 0.655, 0.88, 0.670)),
+
+            OCRToken("Jumlah",        BoundingBox(0.05, 0.675, 0.12, 0.690)),
+            OCRToken("PPnBM",         BoundingBox(0.13, 0.675, 0.20, 0.690)),
+            OCRToken("(Pajak",        BoundingBox(0.21, 0.675, 0.27, 0.690)),
+            OCRToken("Penjualan",     BoundingBox(0.28, 0.675, 0.38, 0.690)),
+            OCRToken("atas",          BoundingBox(0.39, 0.675, 0.42, 0.690)),
+            OCRToken("Barang",        BoundingBox(0.43, 0.675, 0.49, 0.690)),
+            OCRToken("Mewah)",        BoundingBox(0.50, 0.675, 0.56, 0.690)),
+            OCRToken("0,00",          BoundingBox(0.82, 0.675, 0.88, 0.690)),
+        ]
+        parser = LayoutAwareParser(tokens=tokens)
+        result = parser.parse_summary_section()
+
+        # DPP = 950,000 = Harga Jual (1,000,000) − Potongan (50,000) → classic rule
+        self.assertAlmostEqual(result["harga_jual"], 1000000.0, delta=1)
+        self.assertAlmostEqual(result["dpp"], 950000.0, delta=1)
+        self.assertAlmostEqual(result["ppn"], 104500.0, delta=1)
+
+
+# =============================================================================
+# TEST: Cross-validation (text vs coordinate extraction)
+# =============================================================================
+
+class TestCrossValidation(unittest.TestCase):
+    """
+    Tests for the cross-validation logic in process_with_layout_parser()
+    that compares coordinate-based and text-based extraction results.
+    """
+
+    def test_text_override_when_layout_wrong(self):
+        """
+        When layout extraction returns small wrong values but text
+        extraction returns much larger correct values, the cross-
+        validation should prefer the text values.
+        """
+        # Build a Vision JSON that would produce wrong small values
+        wrong_tokens = [
+            _make_word("Harga",       0.05, 0.575, 0.10, 0.590),
+            _make_word("Jual",        0.11, 0.575, 0.15, 0.590),
+            _make_word("/",           0.16, 0.575, 0.17, 0.590),
+            _make_word("Penggantian", 0.18, 0.575, 0.30, 0.590),
+            _make_word("121.275,00",  0.65, 0.575, 0.88, 0.590),
+
+            _make_word("Dikurangi",   0.05, 0.595, 0.16, 0.610),
+            _make_word("Potongan",    0.17, 0.595, 0.27, 0.610),
+            _make_word("Harga",       0.28, 0.595, 0.34, 0.610),
+            _make_word("0,00",        0.82, 0.595, 0.88, 0.610),
+
+            _make_word("Dasar",       0.05, 0.635, 0.11, 0.650),
+            _make_word("Pengenaan",   0.12, 0.635, 0.22, 0.650),
+            _make_word("Pajak",       0.23, 0.635, 0.30, 0.650),
+            _make_word("80.000,00",   0.65, 0.635, 0.88, 0.650),
+
+            _make_word("Jumlah",      0.05, 0.655, 0.12, 0.670),
+            _make_word("PPN",         0.13, 0.655, 0.17, 0.670),
+            _make_word("(Pajak",      0.18, 0.655, 0.24, 0.670),
+            _make_word("Pertambahan", 0.25, 0.655, 0.38, 0.670),
+            _make_word("Nilai)",      0.39, 0.655, 0.45, 0.670),
+            _make_word("9.600,00",    0.67, 0.655, 0.88, 0.670),
+
+            _make_word("Jumlah",      0.05, 0.675, 0.12, 0.690),
+            _make_word("PPnBM",       0.13, 0.675, 0.20, 0.690),
+            _make_word("(Pajak",      0.21, 0.675, 0.27, 0.690),
+            _make_word("Penjualan",   0.28, 0.675, 0.38, 0.690),
+            _make_word("atas",        0.39, 0.675, 0.42, 0.690),
+            _make_word("Barang",      0.43, 0.675, 0.49, 0.690),
+            _make_word("Mewah)",      0.50, 0.675, 0.56, 0.690),
+            _make_word("0,00",        0.82, 0.675, 0.88, 0.690),
+        ]
+        vision_json = _build_vision_json(wrong_tokens)
+
+        # The plausibility check should zero out the wrong layout values,
+        # then the text fallback should provide correct values.
+        correct_text = (
+            "Harga Jual / Penggantian / Uang Muka / Termin 1.102.500,00\n"
+            "Dikurangi Potongan Harga 0,00\n"
+            "Dasar Pengenaan Pajak 1.010.625,00\n"
+            "Jumlah PPN (Pajak Pertambahan Nilai) 121.275,00\n"
+            "Jumlah PPnBM 0,00\n"
+        )
+
+        result = process_with_layout_parser(
+            vision_json=vision_json,
+            faktur_no="040.002-25.04364516",
+            faktur_type="040",
+            ocr_text=correct_text,
+        )
+
+        # Should use text fallback because plausibility check zeroed layout
+        self.assertIn(result["extraction_method"], ("text_fallback", "text_cross_validated"))
+        self.assertAlmostEqual(result["dpp"], 1010625.0, delta=1)
+        self.assertAlmostEqual(result["ppn"], 121275.0, delta=1)
+        self.assertAlmostEqual(result["harga_jual"], 1102500.0, delta=1)
+
+
+# =============================================================================
 # RUN
 # =============================================================================
 
