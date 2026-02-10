@@ -329,7 +329,7 @@ def extract_summary_values(ocr_text: str) -> dict[str, float]:
 			logger.info(f"✅ Values corrected: DPP={result['dpp']:,.0f}, PPN={result['ppn']:,.0f}")
 
 		# Additional validation: PPN should be roughly 11-12% of DPP
-		expected_ppn = result['dpp'] * 0.11
+		expected_ppn = result['dpp'] * 0.12
 		ppn_ratio = result['ppn'] / result['dpp'] if result['dpp'] > 0 else 0
 		if ppn_ratio < 0.08 or ppn_ratio > 0.15:
 			logger.warning(
@@ -375,9 +375,9 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 	logger = frappe.logger()
 
 	# Standard Indonesian tax rates
-	STANDARD_RATES = [0.11, 0.12]  # 11% (current) and 12% (legacy/special cases)
+	STANDARD_RATES = [0.12, 0.11]  # 12% (current since 2025) and 11% (pre-2025)
 	TOLERANCE = 0.02  # ±2% tolerance for rounding errors
-	DEFAULT_RATE = 0.11  # Current standard PPN rate in Indonesia
+	DEFAULT_RATE = 0.12  # Current standard PPN rate in Indonesia (since Jan 2025)
 
 	# ============================================================================
 	# SPECIAL CASE: Zero-rated transactions (exports, exempt goods)

@@ -51,18 +51,18 @@ SIGNATURE_STOP_KEYWORDS = {
 class Token:
 	"""
 	Unified token model for text with bounding box coordinates.
-	
+
 	Supports both PyMuPDF text-layer extraction and Google Vision OCR results.
 	Tracks page number for multi-page documents and OCR confidence for quality monitoring.
 	"""
-	
+
 	def __init__(
-		self, 
-		text: str, 
-		x0: float, 
-		y0: float, 
-		x1: float, 
-		y1: float, 
+		self,
+		text: str,
+		x0: float,
+		y0: float,
+		x1: float,
+		y1: float,
 		page_no: int = 1,
 		confidence: Optional[float] = None,
 		source: str = "pymupdf"
@@ -79,11 +79,11 @@ class Token:
 		self.page_no = page_no  # Track page number for multi-page PDFs
 		self.confidence = confidence  # OCR confidence (0.0-1.0), None for text-layer PDFs
 		self.source = source  # "pymupdf" or "vision_ocr"
-	
+
 	def __repr__(self):
 		conf_str = f", conf={self.confidence:.2f}" if self.confidence is not None else ""
 		return f"Token('{self.text}', x={self.x0:.1f}, y={self.y0:.1f}, page={self.page_no}{conf_str})"
-	
+
 	def to_dict(self) -> Dict:
 		"""Convert to dictionary for JSON serialization."""
 		result = {
@@ -101,13 +101,13 @@ class Token:
 
 class ColumnRange:
 	"""Represents X-coordinate range for a table column."""
-	
+
 	def __init__(self, name: str, x_min: float, x_max: float):
 		self.name = name
 		self.x_min = x_min
 		self.x_max = x_max
 		self.width = x_max - x_min
-	
+
 	def expand(self, pixels: float = None, percentage: float = None):
 		"""Expand range to handle column shifts."""
 		if pixels is None and percentage is None:
@@ -117,24 +117,24 @@ class ColumnRange:
 			expansion = pixels
 		else:
 			expansion = self.width * percentage
-		
+
 		self.x_min -= expansion
 		self.x_max += expansion
 		self.width = self.x_max - self.x_min
-	
+
 	def contains(self, token: Token, min_overlap: float = 0.1) -> bool:
 		"""Check if token overlaps with column range."""
 		overlap_start = max(self.x_min, token.x0)
 		overlap_end = min(self.x_max, token.x1)
 		overlap = max(0, overlap_end - overlap_start)
-		
+
 		if overlap <= 0:
 			return False
-		
+
 		# Check if overlap ratio is sufficient
 		overlap_ratio = overlap / token.width if token.width > 0 else 0
 		return overlap_ratio >= min_overlap
-	
+
 	def to_dict(self) -> Dict:
 		"""Convert to dictionary for JSON serialization."""
 		return {
@@ -152,33 +152,33 @@ class ColumnRange:
 def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 	"""
 	Get PDF file content as bytes via Frappe File API.
-	
+
 	🔥 FRAPPE CLOUD SAFE: Works with local files, S3, and remote storage.
 	This is the recommended way to read files in Frappe Cloud environments
 	where get_local_path() may return non-existent paths.
-	
+
 	Args:
 		file_url_or_name: Can be:
 			- File URL: /private/files/xxx.pdf or /files/xxx.pdf
 			- File doctype name
 			- Absolute path (fallback for backward compatibility)
-	
+
 	Returns:
 		PDF content as bytes
-	
+
 	Raises:
 		ValueError: If file not found, empty, or not a valid PDF
 	"""
 	import os
-	
+
 	if not file_url_or_name:
 		raise ValueError("File URL/name is empty or None")
-	
+
 	frappe.logger().info(f"[PDF] Getting bytes for: {file_url_or_name}")
-	
+
 	file_doc = None
 	content = None
-	
+
 	# Strategy 1: Try as File doctype name
 	try:
 		if frappe.db.exists("File", file_url_or_name):
@@ -186,7 +186,7 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 			frappe.logger().info(f"[PDF] Found File doc by name: {file_doc.name}")
 	except Exception as e:
 		frappe.logger().debug(f"[PDF] Not a File doc name: {e}")
-	
+
 	# Strategy 2: Try as file_url
 	if not file_doc:
 		try:
@@ -196,14 +196,14 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 				frappe.logger().info(f"[PDF] Found File doc by file_url: {file_doc.name}")
 		except Exception as e:
 			frappe.logger().debug(f"[PDF] Could not find by file_url: {e}")
-	
+
 	# Strategy 3: Try with normalized URL (strip leading /)
 	if not file_doc and file_url_or_name.startswith("/"):
 		try:
 			normalized_url = file_url_or_name.lstrip("/")
 			file_doc_name = frappe.db.get_value(
-				"File", 
-				{"file_url": ["like", f"%{normalized_url}"]}, 
+				"File",
+				{"file_url": ["like", f"%{normalized_url}"]},
 				"name"
 			)
 			if file_doc_name:
@@ -211,7 +211,7 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 				frappe.logger().info(f"[PDF] Found File doc by normalized URL: {file_doc.name}")
 		except Exception as e:
 			frappe.logger().debug(f"[PDF] Could not find by normalized URL: {e}")
-	
+
 	# Get content from File doc
 	if file_doc:
 		try:
@@ -222,7 +222,7 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 		except Exception as e:
 			frappe.logger().warning(f"[PDF] File.get_content() failed: {e}")
 			content = None
-	
+
 	# Strategy 4: Fallback to direct file read (for absolute paths)
 	if not content and os.path.isabs(file_url_or_name) and os.path.exists(file_url_or_name):
 		try:
@@ -231,7 +231,7 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 			frappe.logger().info(f"[PDF] Read from absolute path: {len(content)} bytes")
 		except Exception as e:
 			frappe.logger().warning(f"[PDF] Direct file read failed: {e}")
-	
+
 	# Strategy 5: Fallback to site_path resolution
 	if not content:
 		try:
@@ -243,17 +243,17 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 				frappe.logger().info(f"[PDF] Read from site_path: {len(content)} bytes")
 		except Exception as e:
 			frappe.logger().warning(f"[PDF] Site path resolution failed: {e}")
-	
+
 	# Validate content
 	if not content:
 		raise ValueError(
 			f"Could not read PDF file: {file_url_or_name}. "
 			"File may not exist or is in remote storage that is not accessible."
 		)
-	
+
 	if len(content) == 0:
 		raise ValueError(f"PDF file is empty (0 bytes): {file_url_or_name}")
-	
+
 	# Validate PDF header (allow some whitespace before %PDF)
 	header_check = content[:20].lstrip()
 	if not header_check.startswith(b"%PDF"):
@@ -266,7 +266,7 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 			f"File is not a valid PDF (missing %PDF header): {file_url_or_name}. "
 			f"First bytes: {content[:20]!r}"
 		)
-	
+
 	frappe.logger().info(
 		f"[PDF] Successfully loaded {len(content)} bytes from {file_url_or_name}"
 	)
@@ -276,17 +276,17 @@ def _get_pdf_bytes(file_url_or_name: str) -> bytes:
 def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "bytes") -> List[Token]:
 	"""
 	Extract text with bounding boxes from PDF bytes using PyMuPDF.
-	
+
 	🔥 FRAPPE CLOUD SAFE: Opens PDF from bytes, not file path.
 	This avoids issues with S3/remote storage where local paths don't exist.
-	
+
 	Args:
 		pdf_bytes: PDF content as bytes
 		source_name: Name for logging (e.g., file URL)
-	
+
 	Returns:
 		List of Token objects with text, coordinates, and page_no
-	
+
 	Raises:
 		ValueError: If PyMuPDF not available, PDF encrypted, or corrupted
 	"""
@@ -299,56 +299,56 @@ def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "byte
 			)
 		)
 		return []
-	
+
 	if not pdf_bytes:
 		raise ValueError("PDF bytes is empty or None")
-	
+
 	if len(pdf_bytes) < 100:
 		frappe.logger().warning(
 			f"[PyMuPDF] PDF suspiciously small ({len(pdf_bytes)} bytes): {source_name}"
 		)
-	
+
 	tokens = []
 	doc = None
-	
+
 	try:
 		# 🔥 Open from bytes, not path - this is the key fix!
 		doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-		
+
 		# Defensive check: verify document is actually open
 		if doc.is_closed:
 			raise ValueError(f"PDF document closed immediately after open (corrupted): {source_name}")
-		
+
 		# Check for encrypted PDFs
 		if doc.is_encrypted:
 			if not doc.authenticate(""):  # Try empty password
 				raise ValueError(f"PDF is encrypted and requires password: {source_name}")
 			frappe.logger().info(f"[PyMuPDF] PDF encrypted but opened with empty password: {source_name}")
-		
+
 		if len(doc) == 0:
 			raise ValueError(f"PDF has no pages: {source_name}")
-		
+
 		page_count = len(doc)
-		
+
 		# Process ALL pages
 		for page_index in range(page_count):
 			page_no = page_index + 1  # 1-based page numbering
 			page = doc[page_index]
-			
+
 			# Extract text as dictionary with position info
 			text_dict = page.get_text("dict")
-			
+
 			# Parse blocks -> lines -> spans
 			for block in text_dict.get("blocks", []):
 				if block.get("type") != 0:  # 0 = text block
 					continue
-				
+
 				for line in block.get("lines", []):
 					for span in line.get("spans", []):
 						text = span.get("text", "").strip()
 						if not text:
 							continue
-						
+
 						bbox = span.get("bbox")  # (x0, y0, x1, y1)
 						if bbox and len(bbox) == 4:
 							token = Token(
@@ -361,18 +361,18 @@ def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "byte
 								source="pymupdf"
 							)
 							tokens.append(token)
-		
+
 		frappe.logger().info(
 			f"[PyMuPDF] Extracted {len(tokens)} tokens from {page_count} page(s): {source_name}"
 		)
-		
+
 		if len(tokens) == 0:
 			frappe.logger().warning(
 				f"[PyMuPDF] No text tokens extracted: {source_name}. PDF may be scanned image."
 			)
-		
+
 		return tokens
-	
+
 	except fitz.FileDataError as e:
 		raise ValueError(f"PDF file is corrupted or invalid: {source_name}. Error: {e}")
 	except Exception as e:
@@ -386,7 +386,7 @@ def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "byte
 			message=f"Error extracting text from {source_name}: {e}\n{frappe.get_traceback()}"
 		)
 		raise
-	
+
 	finally:
 		# Always close the document to prevent resource leaks
 		if doc is not None and not doc.is_closed:
@@ -399,17 +399,17 @@ def extract_text_with_bbox_from_bytes(pdf_bytes: bytes, source_name: str = "byte
 def extract_text_with_bbox(file_url_or_path: str) -> List[Token]:
 	"""
 	Extract text with bounding boxes from PDF using PyMuPDF.
-	
+
 	🔥 FRAPPE CLOUD SAFE: Now uses bytes-based extraction internally.
 	Accepts file URLs, File doc names, or absolute paths.
-	
+
 	Args:
 		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path
-	
+
 	Returns:
 		List of Token objects with text, coordinates, and page_no
 		Empty list if PyMuPDF not available
-	
+
 	Raises:
 		ValueError: If file not found, empty, encrypted, or corrupted
 	"""
@@ -419,10 +419,10 @@ def extract_text_with_bbox(file_url_or_path: str) -> List[Token]:
 			message="PyMuPDF is required for Tax Invoice OCR line item parsing."
 		)
 		return []
-	
+
 	# Get PDF bytes via Cloud-safe method
 	pdf_bytes = _get_pdf_bytes(file_url_or_path)
-	
+
 	# Extract using bytes-based method
 	return extract_text_with_bbox_from_bytes(pdf_bytes, source_name=file_url_or_path)
 
@@ -430,34 +430,34 @@ def extract_text_with_bbox(file_url_or_path: str) -> List[Token]:
 def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 	"""
 	Convert Google Vision OCR JSON result to unified Token list.
-	
+
 	Reads fullTextAnnotation.pages[].blocks[].paragraphs[].words[]
 	and creates Token objects with page_no, confidence, and bounding boxes.
-	
+
 	Vision API coordinate system:
 	- Origin (0,0) is top-left
 	- boundingBox.vertices = [{x, y}, {x, y}, {x, y}, {x, y}]
 	  (4 corners: top-left, top-right, bottom-right, bottom-left)
-	
+
 	Args:
 		vision_json: Parsed JSON from Google Vision API response
-	
+
 	Returns:
 		List of Token objects with page_no and confidence
 	"""
 	tokens = []
-	
+
 	# Navigate to pages array
 	full_text = vision_json.get("fullTextAnnotation", {})
 	pages = full_text.get("pages", [])
-	
+
 	if not pages:
 		frappe.logger().warning("No pages found in Vision OCR result")
 		return tokens
-	
+
 	for page_index, page in enumerate(pages):
 		page_no = page_index + 1  # 1-based page numbering
-		
+
 		blocks = page.get("blocks", [])
 		for block in blocks:
 			paragraphs = block.get("paragraphs", [])
@@ -468,37 +468,37 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 					symbols = word.get("symbols", [])
 					if not symbols:
 						continue
-					
+
 					word_text = "".join([sym.get("text", "") for sym in symbols])
 					if not word_text.strip():
 						continue
-					
+
 					# Extract bounding box (4 vertices -> x0,y0,x1,y1)
 					bbox = word.get("boundingBox", {})
 					vertices = bbox.get("vertices", [])
-					
+
 					if len(vertices) < 4:
 						continue
-					
+
 					# Convert vertices to (x_min, y_min, x_max, y_max)
 					x_coords = [v.get("x", 0) for v in vertices if "x" in v]
 					y_coords = [v.get("y", 0) for v in vertices if "y" in v]
-					
+
 					if not x_coords or not y_coords:
 						continue
-					
+
 					x0 = min(x_coords)
 					y0 = min(y_coords)
 					x1 = max(x_coords)
 					y1 = max(y_coords)
-					
+
 					# Extract confidence (optional, word-level or paragraph-level)
 					confidence = word.get("confidence")
 					if confidence is None:
 						confidence = paragraph.get("confidence")
 					if confidence is None:
 						confidence = block.get("confidence")
-					
+
 					# Create Token
 					token = Token(
 						text=word_text,
@@ -511,51 +511,51 @@ def vision_to_tokens(vision_json: Dict[str, Any]) -> List[Token]:
 						source="vision_ocr"
 					)
 					tokens.append(token)
-	
+
 	frappe.logger().info(
 		f"Converted {len(tokens)} tokens from Vision OCR ({len(pages)} page(s))"
 	)
-	
+
 	return tokens
 
 
 def extract_tokens(
-	file_url_or_path: Optional[str] = None, 
+	file_url_or_path: Optional[str] = None,
 	vision_json: Optional[Dict] = None,
 	pdf_bytes: Optional[bytes] = None
 ) -> List[Token]:
 	"""
 	Unified token extraction with automatic fallback.
-	
+
 	🔥 FRAPPE CLOUD SAFE: Now accepts file URLs for bytes-based extraction.
-	
+
 	Pure extraction layer - does not perform any parsing logic.
 	Returns unified Token list regardless of source.
-	
+
 	Extraction Priority (automatic fallback):
 		1. Vision JSON (if provided) - Best for scanned PDFs
 		2. PDF bytes (if provided) - Direct bytes extraction
 		3. PyMuPDF via file URL (if file_url_or_path provided) - Best for text-layer PDFs
 		4. Raise ValueError if all fail or none provided
-	
+
 	Args:
 		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path
 		vision_json: Google Vision OCR JSON result (for scanned PDFs)
 		pdf_bytes: Direct PDF bytes (optional, for pre-loaded content)
-	
+
 	Returns:
 		List of Token objects
-	
+
 	Raises:
 		ValueError if no input provided or all extraction methods fail
 	"""
 	if not file_url_or_path and not vision_json and not pdf_bytes:
 		raise ValueError("At least one of file_url_or_path, vision_json, or pdf_bytes must be provided")
-	
+
 	# Track errors for final error message
 	vision_error = None
 	pymupdf_error = None
-	
+
 	# STEP 1: Try vision_json first (preferred for scanned PDFs)
 	if vision_json:
 		try:
@@ -569,7 +569,7 @@ def extract_tokens(
 		except Exception as e:
 			vision_error = str(e)
 			frappe.logger().warning(f"Vision OCR extraction failed: {vision_error} - falling back to PyMuPDF")
-	
+
 	# STEP 2: Try direct bytes if provided
 	if pdf_bytes:
 		try:
@@ -583,7 +583,7 @@ def extract_tokens(
 			pymupdf_error = str(e)
 		except Exception as e:
 			pymupdf_error = f"unexpected error - {str(e)}"
-	
+
 	# STEP 3: Try file URL/path via Cloud-safe method
 	# NOTE: Always try if file_url_or_path is provided, even if Step 2 failed
 	# (Step 2 might fail with direct bytes, but Step 3 could work with file lookup)
@@ -608,11 +608,11 @@ def extract_tokens(
 				pymupdf_error = pymupdf_error or f"file access error - {str(e)}"
 			else:
 				pymupdf_error = pymupdf_error or str(e)
-	
+
 	# Build clear error message
 	vision_status = "not provided" if not vision_json else f"failed ({vision_error})" if vision_error else "failed"
 	pymupdf_status = "not attempted" if not file_url_or_path and not pdf_bytes else pymupdf_error or "unknown error"
-	
+
 	raise ValueError(
 		f"Both extraction methods failed. "
 		f"Vision OCR: {vision_status}. "
@@ -623,46 +623,46 @@ def extract_tokens(
 def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str, ColumnRange], str]:
 	"""
 	Detect table header row and extract column ranges.
-	
+
 	Supports two Faktur Pajak formats:
 	1. Multi-column: Separate Harga Jual, DPP, PPN columns per line item
 	2. Single-column: Only Harga Jual per line, DPP/PPN in summary section
-	
+
 	Args:
 		tokens: List of Token objects
-	
+
 	Returns:
 		Tuple of (header_y_position, column_ranges_dict, format_type)
 		format_type is either "multi_column" or "single_column"
 	"""
 	# Group tokens by Y coordinate (rows)
 	rows = cluster_tokens_by_row(tokens, y_tolerance=5)
-	
+
 	# Keywords to identify header row - Multi-column format
 	multi_col_keywords = {
 		"harga_jual": ["harga jual", "harga", "jual"],
 		"dpp": ["dpp", "dasar pengenaan", "dasar"],
 		"ppn": ["ppn", "pajak pertambahan"]
 	}
-	
+
 	# Keywords for single-column format header
 	# Standard DJP format: "Harga Jual / Penggantian / Uang Muka / Termin"
 	single_col_keywords = [
 		"harga jual / penggantian",
-		"harga jual/penggantian", 
+		"harga jual/penggantian",
 		"uang muka / termin",
 		"uang muka/termin",
 		"harga jual"
 	]
-	
+
 	column_ranges = {}
 	header_y = None
 	format_type = None
-	
+
 	for y_pos, row_tokens in rows:
 		# Combine tokens in row for keyword matching
 		row_text = " ".join([t.text.lower() for t in row_tokens])
-		
+
 		# First, check for multi-column format (all 3 separate columns)
 		found_columns = {}
 		for col_name, keywords in multi_col_keywords.items():
@@ -674,23 +674,23 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 						x_max = max(t.x1 for t in matching_tokens)
 						found_columns[col_name] = (x_min, x_max)
 						break
-		
+
 		# If we found all 3 columns, this is multi-column format
 		if len(found_columns) >= 3:
 			header_y = y_pos
 			format_type = "multi_column"
-			
+
 			for col_name, (x_min, x_max) in found_columns.items():
 				col_range = ColumnRange(col_name, x_min, x_max)
 				col_range.expand()
 				column_ranges[col_name] = col_range
-			
+
 			frappe.logger().info(
 				f"Found MULTI-COLUMN header at Y={header_y:.1f} with columns: "
 				f"{list(column_ranges.keys())}"
 			)
 			break
-		
+
 		# Check for single-column format (Harga Jual only)
 		for keyword in single_col_keywords:
 			if keyword in row_text:
@@ -701,24 +701,24 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 					rightmost = max(matching_tokens, key=lambda t: t.x1)
 					x_min = rightmost.x0
 					x_max = rightmost.x1
-					
+
 					header_y = y_pos
 					format_type = "single_column"
-					
+
 					# Only create harga_jual column - DPP/PPN will be calculated from summary
 					col_range = ColumnRange("harga_jual", x_min, x_max)
 					col_range.expand(pixels=30)  # Wider expansion for single column
 					column_ranges["harga_jual"] = col_range
-					
+
 					frappe.logger().info(
 						f"Found SINGLE-COLUMN header at Y={header_y:.1f}. "
 						f"DPP/PPN will be extracted from summary section."
 					)
 					break
-		
+
 		if format_type:
 			break
-	
+
 	if not column_ranges:
 		frappe.log_error(
 			title="Table Header Not Found",
@@ -729,65 +729,65 @@ def detect_table_header(tokens: List[Token]) -> Tuple[Optional[float], Dict[str,
 		if column_ranges:
 			format_type = "multi_column"  # Fallback assumes multi-column
 			frappe.logger().info("Used fallback column detection")
-	
+
 	return header_y, column_ranges, format_type
 
 
 def _fallback_column_detection(rows: List[Tuple[float, List[Token]]]) -> Tuple[Optional[float], Dict[str, ColumnRange]]:
 	"""
 	Fallback column detection when header keywords not found.
-	
+
 	Heuristic: Find rows with 3+ numeric tokens on the right side,
 	assume rightmost 3 are Harga Jual, DPP, PPN in order.
-	
+
 	Args:
 		rows: List of (y_position, tokens) tuples
-	
+
 	Returns:
 		Tuple of (header_y, column_ranges) or (None, {})
 	"""
 	numeric_pattern = re.compile(r'[\d\.\,]+')
-	
+
 	for y_pos, row_tokens in rows:
 		# Find tokens that look numeric
 		numeric_tokens = [t for t in row_tokens if numeric_pattern.search(t.text)]
-		
+
 		if len(numeric_tokens) >= 3:
 			# Sort by X position, take rightmost 3
 			numeric_tokens.sort(key=lambda t: t.x0)
 			rightmost_3 = numeric_tokens[-3:]
-			
+
 			# Assume order: Harga Jual, DPP, PPN
 			column_ranges = {
 				"harga_jual": ColumnRange("harga_jual", rightmost_3[0].x0, rightmost_3[0].x1),
 				"dpp": ColumnRange("dpp", rightmost_3[1].x0, rightmost_3[1].x1),
 				"ppn": ColumnRange("ppn", rightmost_3[2].x0, rightmost_3[2].x1)
 			}
-			
+
 			# Expand ranges
 			for col in column_ranges.values():
 				col.expand()
-			
+
 			frappe.logger().warning(
 				f"Fallback column detection at Y={y_pos:.1f}. "
 				"This may be less accurate than keyword-based detection."
 			)
-			
+
 			return y_pos, column_ranges
-	
+
 	return None, {}
 
 
 def find_table_end(tokens: List[Token], header_y: float) -> Optional[float]:
 	"""
 	Find Y-position where table ends (totals/summary section).
-	
+
 	Looks for keywords: "Jumlah", "Total", "Grand Total", "Dasar Pengenaan Pajak"
-	
+
 	Args:
 		tokens: List of Token objects
 		header_y: Y-position of header row (to search below it)
-	
+
 	Returns:
 		Y-position of table end, or None if not found
 	"""
@@ -798,23 +798,23 @@ def find_table_end(tokens: List[Token], header_y: float) -> Optional[float]:
 		# 🔥 FIX: Include signature/footer keywords to stop before footer section
 		*SIGNATURE_STOP_KEYWORDS,
 	]
-	
+
 	# Filter tokens below header
 	below_header = [t for t in tokens if t.y0 > header_y]
-	
+
 	# Group by Y coordinate
 	rows = cluster_tokens_by_row(below_header, y_tolerance=5)
-	
+
 	for y_pos, row_tokens in rows:
 		row_text = " ".join([t.text.lower() for t in row_tokens])
-		
+
 		for keyword in stop_keywords:
 			if keyword in row_text:
 				frappe.logger().info(
 					f"Found table end keyword '{keyword}' at Y={y_pos:.1f}"
 				)
 				return y_pos
-	
+
 	# If not found, return None (will use all tokens below header)
 	return None
 
@@ -822,24 +822,24 @@ def find_table_end(tokens: List[Token], header_y: float) -> Optional[float]:
 def cluster_tokens_by_row(tokens: List[Token], y_tolerance: float = 3) -> List[Tuple[float, List[Token]]]:
 	"""
 	Group tokens into rows based on Y-coordinate clustering.
-	
+
 	Args:
 		tokens: List of Token objects
 		y_tolerance: Maximum Y-distance to consider same row
-	
+
 	Returns:
 		List of (y_position, tokens_in_row) tuples, sorted by Y
 	"""
 	if not tokens:
 		return []
-	
+
 	# Sort tokens by Y position
 	sorted_tokens = sorted(tokens, key=lambda t: t.y_mid)
-	
+
 	rows = []
 	current_row = [sorted_tokens[0]]
 	current_y = sorted_tokens[0].y_mid
-	
+
 	for token in sorted_tokens[1:]:
 		if abs(token.y_mid - current_y) <= y_tolerance:
 			# Same row
@@ -850,11 +850,11 @@ def cluster_tokens_by_row(tokens: List[Token], y_tolerance: float = 3) -> List[T
 			rows.append((current_y, current_row))
 			current_row = [token]
 			current_y = token.y_mid
-	
+
 	# Add last row
 	if current_row:
 		rows.append((current_y, current_row))
-	
+
 	return rows
 
 
@@ -864,59 +864,59 @@ def assign_tokens_to_columns(
 ) -> Dict[str, List[Token]]:
 	"""
 	Assign tokens in a row to appropriate columns based on X-overlap.
-	
+
 	IMPORTANT: Only assigns tokens that overlap with defined column ranges.
 	Tokens outside all column ranges (e.g., in description area) are excluded.
-	
+
 	Args:
 		row_tokens: Tokens in this row
 		column_ranges: Dictionary of column name -> ColumnRange
-	
+
 	Returns:
 		Dictionary of column name -> tokens in that column
 	"""
 	assignments = {col_name: [] for col_name in column_ranges.keys()}
-	
+
 	# Sort column ranges by X position to determine leftmost boundary
 	sorted_cols = sorted(column_ranges.values(), key=lambda c: c.x_min)
 	leftmost_numeric_col = sorted_cols[0].x_min if sorted_cols else float('inf')
-	
+
 	for token in row_tokens:
 		# Critical guard: Skip tokens that are clearly in description area
 		# (left of the leftmost numeric column)
 		if token.x1 < leftmost_numeric_col * 0.9:  # 10% tolerance
 			continue
-		
+
 		assigned = False
 		for col_name, col_range in column_ranges.items():
 			if col_range.contains(token):
 				assignments[col_name].append(token)
 				assigned = True
 				break  # Assign to first matching column only
-		
+
 		# Log warning if numeric token wasn't assigned (potential data loss)
 		if not assigned and re.search(r'[\d\.,]+', token.text):
 			frappe.logger().debug(
 				f"Numeric token '{token.text}' at X={token.x0:.1f} not assigned to any column. "
 				f"This is expected for amounts in description."
 			)
-	
+
 	return assignments
 
 
 def get_rightmost_value(tokens: List[Token]) -> Optional[str]:
 	"""
 	Get the rightmost token's text from a list (for numeric columns).
-	
+
 	Args:
 		tokens: List of tokens in a column
-	
+
 	Returns:
 		Text of rightmost token, or None if empty
 	"""
 	if not tokens:
 		return None
-	
+
 	rightmost = max(tokens, key=lambda t: t.x1)
 	return rightmost.text
 
@@ -924,26 +924,26 @@ def get_rightmost_value(tokens: List[Token]) -> Optional[str]:
 def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 	"""
 	Merge rows without numeric values into previous row's description.
-	
+
 	Handles wrapped description lines in multi-line items.
-	
+
 	Special handling:
 		- Rows with "PPnBM", "Potongan", "x 1,00" etc. in description
 		  but no values in Harga Jual/DPP/PPN columns are merged
 		- Preserves data rows with valid numeric columns
-	
+
 	Args:
 		rows: List of parsed row dictionaries
-	
+
 	Returns:
 		List of merged row dictionaries
 	"""
 	if not rows:
 		return []
-	
+
 	merged = []
 	current_row = None
-	
+
 	for row in rows:
 		# Check if row has numeric values in the CORRECT columns
 		# (not just any numeric text in description)
@@ -952,16 +952,22 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 			row.get("dpp"),
 			row.get("ppn")
 		])
-		
+
 		# Additional check: description-only keywords that should merge
+		# 🔧 FIX: These keywords only trigger merge when the row has NO numeric
+		# column values. Rows with actual harga_jual/dpp/ppn values are ALWAYS
+		# kept as data rows, even if description contains these keywords.
 		description_only_keywords = [
 			"ppnbm", "potongan", "diskon", "discount",
 			"x 1,00", "x 1.00", "lainnya"
 		]
 		desc_text = (row.get("description", "") or "").lower()
-		is_description_only = any(keyword in desc_text for keyword in description_only_keywords)
-		
-		if (has_numbers and not is_description_only) or current_row is None:
+		is_description_only = (
+			not has_numbers
+			and any(keyword in desc_text for keyword in description_only_keywords)
+		)
+
+		if (has_numbers or not is_description_only) or current_row is None:
 			# This is a data row or first row
 			if current_row:
 				merged.append(current_row)
@@ -973,15 +979,15 @@ def merge_description_wraparounds(rows: List[Dict]) -> List[Dict]:
 				prev_desc = current_row.get("description", "")
 				new_desc = row.get("description", "")
 				current_row["description"] = f"{prev_desc} {new_desc}".strip()
-				
+
 				frappe.logger().debug(
 					f"Merged wraparound: '{new_desc[:50]}...' into previous row"
 				)
-	
+
 	# Add last row
 	if current_row:
 		merged.append(current_row)
-	
+
 	return merged
 
 
@@ -993,13 +999,13 @@ def parse_invoice(
 ) -> Dict[str, Any]:
 	"""
 	🆕 LINE ITEM PARSER - Token+Bounding Box Based
-	
+
 	🔥 FRAPPE CLOUD SAFE: Now uses bytes-based PDF reading.
-	
+
 	Scope:
 		Extracts LINE ITEMS (individual rows) from Faktur Pajak using spatial coordinates.
 		Does NOT extract header/totals (use parse_faktur_pajak_text() for that).
-	
+
 	Extracted Per Line Item:
 		- line_no (sequential)
 		- description (item description, multi-line merged)
@@ -1008,20 +1014,20 @@ def parse_invoice(
 		- ppn (tax amount per item)
 		- page_no (for multi-page PDFs)
 		- row_confidence (OCR quality score)
-	
+
 	Used By:
 		- Tax Invoice OCR Upload.parse_line_items()
 		- auto_parse_line_items() background job
-	
+
 	Extraction Strategy (Automatic Fallback):
 		1. Try Vision JSON (if ocr_raw_json exists) → Best for scanned PDFs
 		2. Fallback: PyMuPDF text layer → Best for digital PDFs
 		3. If both fail: Set status "Needs Review"
-	
+
 	Token Sources:
 		- PyMuPDF: extract_text_with_bbox() → Native text layer
 		- Vision OCR: vision_to_tokens() → Google Vision API response
-	
+
 	Parsing Architecture:
 		1. extract_tokens() → Unified Token list (source-agnostic)
 		2. detect_table_header() → Find "Harga Jual", "DPP", "PPN" columns
@@ -1030,36 +1036,36 @@ def parse_invoice(
 		5. merge_description_wraparounds() → Combine multi-line descriptions
 		6. normalize_all_items() → Parse Indonesian amounts
 		7. validate_all_line_items() → Business rule validation
-	
+
 	Multi-Page Support:
 		✅ Handles 1-N page PDFs
 		✅ Sticky column detection (reuse header from page 1)
 		✅ Strong totals detection on last page only
 		✅ Global line numbering across pages
-	
+
 	Why Token-Based?
 		- Accurate column mapping (X/Y coordinates)
 		- Handles multi-line item descriptions
 		- Solves regex parsing limitations for tabular data
 		- Multi-page support out of the box
-	
+
 	⚠️ DO NOT USE FOR HEADERS
 		For header/totals extraction, use:
 		from imogi_finance.tax_invoice_ocr import parse_faktur_pajak_text
-	
+
 	Args:
 		file_url_or_path: File URL (/private/files/xxx.pdf), File name, or path (🔥 Cloud-safe)
 		vision_json: Google Vision OCR JSON result (for scanned PDFs)
 		tax_rate: PPN tax rate for validation (default 11%)
 		pdf_path: DEPRECATED - use file_url_or_path instead (backward compatibility)
-	
+
 	Returns:
 		Dictionary with:
 			- items: List of line item dictionaries (empty if parsing failed)
 			- debug_info: Debug metadata (source, token_count, page_count, tokens)
 			- success: Boolean (True if parsing succeeded)
 			- errors: List of error messages (empty if success)
-	
+
 	Example:
 		>>> from imogi_finance.imogi_finance.parsers.faktur_pajak_parser import parse_invoice
 		>>> result = parse_invoice(file_url_or_path="/private/files/faktur.pdf", tax_rate=0.11)
@@ -1072,25 +1078,25 @@ def parse_invoice(
 	# Backward compatibility: pdf_path -> file_url_or_path
 	if pdf_path and not file_url_or_path:
 		file_url_or_path = pdf_path
-	
+
 	result = {
 		"items": [],
 		"debug_info": {},
 		"success": False,
 		"errors": []
 	}
-	
+
 	try:
 		# Step 1: Extract tokens (source-specific, Cloud-safe)
 		tokens = extract_tokens(file_url_or_path=file_url_or_path, vision_json=vision_json)
-		
+
 		if not tokens:
 			result["errors"].append("No text extracted from source")
 			return result
-		
+
 		# Step 2: Parse tokens (source-agnostic)
 		result = parse_tokens(tokens, tax_rate)
-		
+
 	except ValueError as e:
 		# Handle invalid inputs
 		result["errors"].append(str(e))
@@ -1102,34 +1108,34 @@ def parse_invoice(
 			title="Tax Invoice Parsing Error",
 			message=f"Error: {str(e)}\n{frappe.get_traceback()}"
 		)
-	
+
 	return result
 
 
 def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 	"""
 	Parse multi-page invoice with per-page column detection and sticky columns.
-	
+
 	Works with BOTH PyMuPDF and Vision OCR tokens.
 	Used for ALL invoices regardless of page count (including page_count=1).
-	
+
 	Key features:
 	- Per-page header detection with sticky columns
 	- Header keyword skipping on subsequent pages
 	- Strong totals detection (last page only)
 	- Global line numbering across all pages
 	- Per-page debug summary
-	
+
 	Args:
 		tokens: All tokens from all pages (any source)
 		tax_rate: PPN tax rate
-	
+
 	Returns:
 		Dictionary with items and debug_info
 	"""
 	# Determine page count
 	page_count = max(t.page_no for t in tokens) if tokens else 1
-	
+
 	result = {
 		"items": [],
 		"debug_info": {
@@ -1137,18 +1143,18 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 			"pages": []
 		}
 	}
-	
+
 	# State carried across pages
 	previous_column_ranges = None
 	previous_format_type = None
 	global_line_no = 1
-	
+
 	# Header keywords to skip on continuation pages
 	HEADER_SKIP_KEYWORDS = [
 		"harga jual", "dasar pengenaan", "dpp", "ppn",
 		"nama barang", "kode barang", "no.", "no"
 	]
-	
+
 	# Strong totals keywords (need 2+ to trigger table end)
 	# 🔥 FIX: Include signature keywords as hard-stop (single keyword sufficient)
 	TOTALS_KEYWORDS = [
@@ -1157,7 +1163,7 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		# Signature markers - single occurrence should stop parsing
 		*SIGNATURE_STOP_KEYWORDS,
 	]
-	
+
 	# 🔥 Summary row keywords - rows containing these are NEVER valid line items
 	# This is the LAST LINE OF DEFENSE against summary rows leaking into items
 	# Uses SIGNATURE_STOP_KEYWORDS as single source of truth
@@ -1178,10 +1184,10 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		# 🔥 FIX: Include signature/footer patterns
 		*SIGNATURE_STOP_KEYWORDS,
 	}
-	
+
 	for page_no in range(1, page_count + 1):
 		frappe.logger().debug(f"Processing page {page_no}/{page_count}")
-		
+
 		page_result = _parse_page(
 			tokens=tokens,
 			page_no=page_no,
@@ -1193,15 +1199,15 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 			totals_keywords=TOTALS_KEYWORDS,
 			is_last_page=(page_no == page_count)
 		)
-		
+
 		# Accumulate items
 		result["items"].extend(page_result["items"])
-		
+
 		# Update state for next page
 		previous_column_ranges = page_result.get("column_ranges")
 		previous_format_type = page_result.get("format_type")
 		global_line_no += len(page_result["items"])
-		
+
 		# Store per-page debug info
 		page_debug = {
 			"page_no": page_no,
@@ -1210,23 +1216,23 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 			"used_sticky_columns": page_result.get("used_sticky_columns", False),
 			"table_end_y": page_result.get("table_end_y")
 		}
-		
+
 		# Add column ranges to debug (only if detected)
 		if page_result.get("column_ranges"):
 			page_debug["column_ranges"] = {
 				k: v.to_dict() for k, v in page_result.get("column_ranges", {}).items()
 			}
-		
+
 		# 🔥 OBSERVABILITY: Add filter stats to page debug
 		if page_result.get("filter_stats"):
 			page_debug["filter_stats"] = page_result["filter_stats"]
-		
+
 		result["debug_info"]["pages"].append(page_debug)
-	
+
 	# Set format_type at document level (use first page's type)
 	if result["debug_info"]["pages"]:
 		result["debug_info"]["format_type"] = result["debug_info"]["pages"][0]["format_type"]
-	
+
 	# 🔥 OBSERVABILITY: Aggregate filter stats across all pages
 	total_filter_stats = {
 		"raw_rows_count": 0,
@@ -1236,7 +1242,7 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 		"final_items_count": len(result["items"]),
 		"first_10_filtered_descriptions": []
 	}
-	
+
 	for page_debug in result["debug_info"]["pages"]:
 		if "filter_stats" in page_debug:
 			ps = page_debug["filter_stats"]
@@ -1248,9 +1254,9 @@ def _parse_multipage(tokens: List[Token], tax_rate: float) -> Dict[str, Any]:
 			for desc in ps.get("first_10_filtered_descriptions", []):
 				if len(total_filter_stats["first_10_filtered_descriptions"]) < 10:
 					total_filter_stats["first_10_filtered_descriptions"].append(desc)
-	
+
 	result["debug_info"]["filter_stats"] = total_filter_stats
-	
+
 	return result
 
 
@@ -1273,17 +1279,17 @@ def _parse_page(
 		"table_end_y": None,
 		"used_sticky_columns": False
 	}
-	
+
 	# Filter tokens for this page
 	page_tokens = [t for t in tokens if t.page_no == page_no]
-	
+
 	if not page_tokens:
 		frappe.logger().warning(f"No tokens on page {page_no}")
 		return page_result
-	
+
 	# Try detect header
 	header_y, column_ranges, format_type = detect_table_header(page_tokens)
-	
+
 	# Sticky columns: reuse from previous page if not found
 	if (not column_ranges or not header_y) and previous_column_ranges and page_no > 1:
 		frappe.logger().info(f"Page {page_no}: Using sticky columns from previous page")
@@ -1291,36 +1297,36 @@ def _parse_page(
 		format_type = previous_format_type
 		header_y = _find_first_non_header_row(page_tokens, header_skip_keywords)
 		page_result["used_sticky_columns"] = True
-	
+
 	if not column_ranges:
 		frappe.logger().warning(f"Page {page_no}: No columns detected, skipping page")
 		return page_result
-	
+
 	page_result["column_ranges"] = column_ranges
 	page_result["format_type"] = format_type
-	
+
 	# Find table end (strong detection on last page only)
 	if is_last_page:
 		table_end_y = _find_table_end_strong(page_tokens, header_y, totals_keywords, min_keywords=2)
 	else:
 		# On continuation pages, parse until end of page (no early stop)
 		table_end_y = None
-	
+
 	page_result["table_end_y"] = table_end_y
-	
+
 	# Filter table tokens
 	table_tokens = [t for t in page_tokens if t.y0 > header_y]
 	if table_end_y:
 		table_tokens = [t for t in table_tokens if t.y0 < table_end_y]
-	
+
 	# Cluster into rows
 	rows = cluster_tokens_by_row(table_tokens, y_tolerance=3)
-	
+
 	# Parse each row
 	parsed_rows = []
 	for y_pos, row_tokens in rows:
 		column_assignments = assign_tokens_to_columns(row_tokens, column_ranges)
-		
+
 		if format_type == "multi_column":
 			row_data = {
 				"row_y": y_pos,
@@ -1332,7 +1338,7 @@ def _parse_page(
 		else:
 			# Single-column format
 			harga_jual_raw = get_rightmost_value(column_assignments.get("harga_jual", []))
-			
+
 			row_data = {
 				"row_y": y_pos,
 				"page_no": page_no,
@@ -1340,26 +1346,26 @@ def _parse_page(
 				"dpp": None,
 				"ppn": None,
 			}
-		
+
 		# Get description
-		desc_tokens = [t for t in row_tokens 
+		desc_tokens = [t for t in row_tokens
 		               if not any(t in col_list for col_list in column_assignments.values())]
 		row_data["description"] = " ".join([t.text for t in desc_tokens]) if desc_tokens else ""
-		
+
 		# 🔥 FIX: Fallback harga_jual extraction for single-column format
 		# If harga_jual is empty/junk, extract last valid amount from description
 		if format_type != "multi_column":
 			hj_value = row_data.get("harga_jual")
 			# Check if harga_jual is missing or junk (like "(Rp)" or empty)
 			is_junk = not hj_value or hj_value in {"(Rp)", "Rp", "-", "0", "0,00"}
-			
+
 			if is_junk and row_data.get("description"):
 				# Extract amounts with thousand separator (to avoid qty like "1,00")
 				# Pattern: 1-3 digits, then groups of .XXX, optionally ending with ,XX
 				amount_pattern = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)')
 				desc_text = row_data["description"]
 				amount_matches = amount_pattern.findall(desc_text)
-				
+
 				if amount_matches:
 					# Take the LAST amount (usually the total for the line)
 					last_amount_str = amount_matches[-1]
@@ -1376,7 +1382,7 @@ def _parse_page(
 							parsed_amount >= 10000 and  # Minimum reasonable price
 							not (parsed_amount % 1000 == 0 and parsed_amount < 1_000_000)  # Avoid 1000, 2000, etc.
 						)
-						
+
 						if is_valid_price:
 							row_data["harga_jual"] = last_amount_str
 							frappe.logger().debug(
@@ -1390,16 +1396,16 @@ def _parse_page(
 							)
 					except (ValueError, TypeError):
 						pass
-		
+
 		parsed_rows.append(row_data)
-	
+
 	# Merge wraparounds
 	merged_rows = merge_description_wraparounds(parsed_rows)
-	
+
 	# 🔥 CRITICAL FIX: Filter out summary/header rows that leaked past table_end detection
 	# Summary section rows (e.g., "Harga Jual / Pengganti", "Dasar Pengenaan Pajak")
 	# and header rows (e.g., "No. Barang / Nama Barang") are NEVER valid line items
-	
+
 	# Keywords that indicate a summary/totals row (case-insensitive contains match)
 	# 🔥 FIX: Uses SIGNATURE_STOP_KEYWORDS for consistency (single source of truth)
 	SUMMARY_ROW_KEYWORDS = {
@@ -1415,7 +1421,9 @@ def _parse_page(
 		"ppnbm = ",
 		"ppnbm =",
 		"grand total",
-		"potongan harga",
+		# 🔧 FIX: Removed "potongan harga" — it appears inside multi-row item details
+		#   (e.g., "Potongan Harga = Rp 0,00") and was causing valid line items to be
+		#   filtered out. Summary-level "Dikurangi Potongan Harga" is caught separately.
 		"uang muka yang telah diterima",
 		"nilai lain",
 		"total harga",
@@ -1424,7 +1432,20 @@ def _parse_page(
 		# 🔥 FIX: Include signature/footer patterns from single source of truth
 		*SIGNATURE_STOP_KEYWORDS,
 	}
-	
+
+	# 🔧 FIX: Keywords that must START the description to be considered summary rows.
+	# These distinguish summary-level labels from item detail text containing the
+	# same words (e.g., "Potongan Harga = Rp 0,00" inside an item vs
+	# "Dikurangi Potongan Harga" as a standalone summary label).
+	SUMMARY_START_KEYWORDS = [
+		"dikurangi potongan harga",
+		"potongan harga",
+		"harga jual",
+		"dasar pengenaan",
+		"jumlah ppn",
+		"jumlah ppnbm",
+	]
+
 	# Keywords that indicate a header row (not a data row)
 	HEADER_ROW_KEYWORDS = {
 		"no. barang",
@@ -1434,26 +1455,36 @@ def _parse_page(
 		"harga satuan",
 		"jumlah barang",
 	}
-	
+
 	# Keywords for the extra zero-value rule
 	# If DPP==0 AND PPN==0 AND description contains any of these, it's a summary row
 	ZERO_VALUE_SUSPECT_KEYWORDS = {
 		"ppn",
-		"dpp", 
+		"dpp",
 		"dasar",
 		"harga jual",
 		"pengganti",
 		"total",
 		"jumlah",
 	}
-	
+
 	def _is_summary_row(row: Dict[str, Any]) -> Tuple[bool, str, str]:
 		"""
 		Check if row is a summary/header row that should be filtered out.
-		
+
+		🔧 SMART FILTER: Distinguishes between:
+		  - Summary labels: "Dikurangi Potongan Harga" (standalone) → FILTER
+		  - Item detail text: "...Potongan Harga = Rp 0,00..." (embedded) → KEEP
+
+		Detection strategy:
+		  1. Substring match against SUMMARY_ROW_KEYWORDS (broad match)
+		  2. Start-of-description match against SUMMARY_START_KEYWORDS (precise)
+		  3. Item number pattern override: if description starts with "\d+ \d{6}"
+		     (e.g., "1 000000"), it's ALWAYS a line item, never a summary row.
+
 		Whitespace normalization: Collapses multiple spaces, strips, lowercases
 		before matching keywords.
-		
+
 		Returns:
 			Tuple of (is_filtered, reason, filter_type)
 			filter_type is one of: "summary", "header", "zero_suspect", ""
@@ -1461,26 +1492,48 @@ def _parse_page(
 		description = row.get("description", "")
 		if not description:
 			return False, "", ""
-		
+
 		# 🔥 Whitespace normalization: collapse multiple spaces, strip, lowercase
 		import re as _re
 		text_lower = _re.sub(r'\s+', ' ', description.lower().strip())
-		
-		# Check summary keywords
+
+		# 🔧 FIX: If description starts with an item number pattern (e.g., "1 000000"),
+		# it's a line item — never filter it, regardless of embedded keywords.
+		if _re.match(r'^\d+\s+\d{4,6}', text_lower):
+			return False, "", ""
+
+		# Check summary keywords (broad substring match).
+		# These keywords should NOT appear in normal item descriptions.
 		for kw in SUMMARY_ROW_KEYWORDS:
 			if kw in text_lower:
 				return True, f"summary keyword '{kw}'", "summary"
-		
+
+		# 🔧 FIX: Check start-of-description keywords for summary labels that
+		# might also appear embedded in item details (like "Potongan Harga").
+		# Only match if the description STARTS with the summary label.
+		for kw in SUMMARY_START_KEYWORDS:
+			if text_lower.startswith(kw):
+				# Extra safety: if it has a valid harga_jual value, it might be
+				# a real item with an unfortunate name — don't filter
+				raw_hj = row.get("harga_jual", "")
+				if raw_hj and str(raw_hj).strip():
+					frappe.logger().debug(
+						f"[FILTER] Row starts with summary keyword '{kw}' but has "
+						f"harga_jual='{raw_hj}' — keeping as line item"
+					)
+					continue
+				return True, f"summary start keyword '{kw}'", "summary"
+
 		# Check header keywords
 		for kw in HEADER_ROW_KEYWORDS:
 			if kw in text_lower:
 				return True, f"header keyword '{kw}'", "header"
-		
+
 		# Extra rule: DPP==0 AND PPN==0 with suspect keywords
 		# This catches rows like "Harga Jual / Pengganti" with amount but no DPP/PPN
 		raw_dpp = row.get("dpp") or row.get("raw_dpp") or ""
 		raw_ppn = row.get("ppn") or row.get("raw_ppn") or ""
-		
+
 		# Parse numeric values (handle string or float)
 		try:
 			if isinstance(raw_dpp, str):
@@ -1489,7 +1542,7 @@ def _parse_page(
 				dpp_val = float(raw_dpp) if raw_dpp else 0
 		except (ValueError, TypeError):
 			dpp_val = 0
-		
+
 		try:
 			if isinstance(raw_ppn, str):
 				ppn_val = float(raw_ppn.replace(".", "").replace(",", ".")) if raw_ppn.strip() else 0
@@ -1497,15 +1550,20 @@ def _parse_page(
 				ppn_val = float(raw_ppn) if raw_ppn else 0
 		except (ValueError, TypeError):
 			ppn_val = 0
-		
+
 		# If DPP and PPN are both zero/empty and description has suspect keywords
-		if dpp_val == 0 and ppn_val == 0:
+		# 🔧 FIX: Skip this check if the row has a valid harga_jual — that means
+		# it's a real item (e.g., merged multi-row item with "PPnBM" in description)
+		raw_hj_check = row.get("harga_jual", "")
+		has_harga_jual = bool(raw_hj_check and str(raw_hj_check).strip())
+
+		if dpp_val == 0 and ppn_val == 0 and not has_harga_jual:
 			for kw in ZERO_VALUE_SUSPECT_KEYWORDS:
 				if kw in text_lower:
 					return True, f"zero DPP/PPN with suspect keyword '{kw}'", "zero_suspect"
-		
+
 		return False, "", ""
-	
+
 	# 🔥 OBSERVABILITY: Track filtering statistics for debug_info
 	filter_stats = {
 		"raw_rows_count": len(merged_rows),
@@ -1514,14 +1572,14 @@ def _parse_page(
 		"filtered_zero_suspect_count": 0,
 		"first_10_filtered_descriptions": []
 	}
-	
+
 	filtered_rows = []
-	
+
 	for row in merged_rows:
 		is_filtered, reason, filter_type = _is_summary_row(row)
 		if is_filtered:
 			desc = row.get("description", "")[:60]
-			
+
 			# Track by type
 			if filter_type == "summary":
 				filter_stats["filtered_summary_count"] += 1
@@ -1529,20 +1587,20 @@ def _parse_page(
 				filter_stats["filtered_header_count"] += 1
 			elif filter_type == "zero_suspect":
 				filter_stats["filtered_zero_suspect_count"] += 1
-			
+
 			# Store first 10 descriptions for debugging
 			if len(filter_stats["first_10_filtered_descriptions"]) < 10:
 				filter_stats["first_10_filtered_descriptions"].append(f"'{desc}' ({reason})")
-			
+
 			continue
 		filtered_rows.append(row)
-	
+
 	# Final count
 	filter_stats["final_items_count"] = len(filtered_rows)
-	
+
 	# Store filter stats in page_result for aggregation
 	page_result["filter_stats"] = filter_stats
-	
+
 	# Log filtered rows (debug level to avoid noise)
 	filtered_count = len(merged_rows) - len(filtered_rows)
 	if filtered_count > 0:
@@ -1552,7 +1610,7 @@ def _parse_page(
 			f"header={filter_stats['filtered_header_count']}, "
 			f"zero_suspect={filter_stats['filtered_zero_suspect_count']}"
 		)
-	
+
 	# Assign global line numbers
 	for row in filtered_rows:
 		row["line_no"] = global_line_no
@@ -1560,7 +1618,7 @@ def _parse_page(
 		row["raw_dpp"] = row.get("dpp", "") or ""
 		row["raw_ppn"] = row.get("ppn", "") or ""
 		global_line_no += 1
-	
+
 	page_result["items"] = filtered_rows
 	return page_result
 
@@ -1568,14 +1626,14 @@ def _parse_page(
 def _find_first_non_header_row(tokens: List[Token], skip_keywords: List[str]) -> float:
 	"""Find first row without header keywords (for continuation pages)."""
 	rows = cluster_tokens_by_row(tokens, y_tolerance=5)
-	
+
 	for y_pos, row_tokens in rows:
 		row_text = " ".join([t.text.lower() for t in row_tokens])
 		has_header = any(kw.lower() in row_text for kw in skip_keywords)
-		
+
 		if not has_header:
 			return y_pos
-	
+
 	return rows[0][0] if rows else 0.0
 
 
@@ -1587,39 +1645,39 @@ def _find_table_end_strong(
 ) -> Optional[float]:
 	"""
 	Find table end with strong detection (requires 2+ keywords).
-	
+
 	Prevents early termination on ambiguous single keywords like "Total" in descriptions.
 	"""
 	below_header = [t for t in tokens if t.y0 > header_y]
 	rows = cluster_tokens_by_row(below_header, y_tolerance=5)
-	
+
 	for y_pos, row_tokens in rows:
 		row_text = " ".join([t.text.lower() for t in row_tokens])
-		
+
 		keyword_count = sum(1 for kw in totals_keywords if kw in row_text)
-		
+
 		if keyword_count >= min_keywords:
 			frappe.logger().info(f"Strong totals block at Y={y_pos:.1f} ({keyword_count} keywords)")
 			return y_pos
-		
+
 		# Special case: "Dasar Pengenaan Pajak" alone is strong signal
 		if "dasar pengenaan pajak" in row_text:
 			return y_pos
-	
+
 	return None
 
 
 def parse_tokens(tokens: List[Token], tax_rate: float = 0.11) -> Dict[str, Any]:
 	"""
 	Pure parsing function: convert tokens to structured line items.
-	
+
 	Parser layer - only accepts Token list, agnostic to source (PyMuPDF or Vision OCR).
 	Always uses multi-page parser for consistency (works for page_count=1 too).
-	
+
 	Args:
 		tokens: List of Token objects from any source
 		tax_rate: PPN tax rate for validation (default 11%)
-	
+
 	Returns:
 		Dictionary with:
 			- items: List of line item dictionaries
@@ -1633,20 +1691,20 @@ def parse_tokens(tokens: List[Token], tax_rate: float = 0.11) -> Dict[str, Any]:
 		"success": False,
 		"errors": []
 	}
-	
+
 	try:
 		if not tokens:
 			result["errors"].append("No tokens provided")
 			return result
-		
+
 		# Determine source and page count
 		page_count = max(t.page_no for t in tokens) if tokens else 1
 		source = tokens[0].source if tokens else "unknown"
-		
+
 		result["debug_info"]["source"] = source
 		result["debug_info"]["token_count"] = len(tokens)
 		result["debug_info"]["page_count"] = page_count
-		
+
 		# Store tokens in debug info (truncate if too large)
 		MAX_DEBUG_TOKENS = 500
 		if len(tokens) <= MAX_DEBUG_TOKENS:
@@ -1658,17 +1716,17 @@ def parse_tokens(tokens: List[Token], tax_rate: float = 0.11) -> Dict[str, Any]:
 				[t.to_dict() for t in tokens[-100:]]
 			)
 			result["debug_info"]["tokens_truncated"] = True
-		
+
 		# ALWAYS use multi-page parser (works for page_count=1 too)
 		# No separate single-page legacy path
 		multi_result = _parse_multipage(tokens, tax_rate)
 		result.update(multi_result)
-		
+
 		result["success"] = True
 		frappe.logger().info(
 			f"Successfully parsed {len(result['items'])} line items from {page_count} page(s) ({source})"
 		)
-		
+
 	except Exception as e:
 		error_msg = f"Parsing failed: {str(e)}"
 		result["errors"].append(error_msg)
@@ -1676,5 +1734,5 @@ def parse_tokens(tokens: List[Token], tax_rate: float = 0.11) -> Dict[str, Any]:
 			title="Tax Invoice Parsing Error",
 			message=f"Error: {str(e)}\n{frappe.get_traceback()}"
 		)
-	
+
 	return result

@@ -20,25 +20,25 @@ from .normalization import normalize_indonesian_number
 def get_tolerance_settings(amount: float = None) -> float:
 	"""
 	Get validation tolerance percentage from Tax Invoice OCR Settings.
-	
+
 	ERPNext v15+ Best Practice: Single percentage-based tolerance
 	scales fairly for all amount sizes and tax rates (including low-rate PPN like 1.1%).
-	
+
 	🔥 NEW: Tiered tolerance for large amounts
 	- < 100 million: base tolerance (default 2%)
 	- 100M - 500M: base × 1.25 (2.5% max)
 	- 500M - 1B: base × 1.5 (3% max)
 	- > 1B: base × 2 (4% max, capped at 5%)
-	
+
 	Rationale: Large invoices have more rounding errors accumulation
 	but absolute IDR tolerance would be unfair to small invoices.
-	
+
 	Args:
 		amount: Optional amount to scale tolerance (DPP or PPN)
-	
+
 	Returns:
 		Tolerance as decimal (e.g., 0.02 for 2%)
-		
+
 	Example:
 		>>> get_tolerance_settings(50_000_000)  # 50M
 		0.02  # 2%
@@ -51,14 +51,14 @@ def get_tolerance_settings(amount: float = None) -> float:
 		settings = frappe.get_single("Tax Invoice OCR Settings")
 		base_tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))
 		base_tolerance = base_tolerance_pct / 100  # Convert to decimal
-		
+
 		# If no amount provided, return base tolerance
 		if amount is None or amount <= 0:
 			return base_tolerance
-		
+
 		# Tiered multiplier based on amount
 		amount_val = flt(amount)
-		
+
 		if amount_val < 100_000_000:  # < 100M
 			multiplier = 1.0
 		elif amount_val < 500_000_000:  # 100M - 500M
@@ -67,10 +67,10 @@ def get_tolerance_settings(amount: float = None) -> float:
 			multiplier = 1.5
 		else:  # > 1B
 			multiplier = 2.0
-		
+
 		# Apply multiplier and cap at 5%
 		tiered_tolerance = min(base_tolerance * multiplier, 0.05)
-		
+
 		# Log if using tiered tolerance
 		if multiplier > 1.0:
 			frappe.logger().debug(
@@ -78,9 +78,9 @@ def get_tolerance_settings(amount: float = None) -> float:
 				f"Base: {base_tolerance_pct:.2f}% × {multiplier} = "
 				f"{tiered_tolerance*100:.2f}%"
 			)
-		
+
 		return tiered_tolerance
-		
+
 	except Exception as e:
 		frappe.logger().warning(f"[TOLERANCE] Error getting settings: {e}")
 		return 0.02  # 2% default (covers low-rate PPN)
@@ -725,3 +725,107 @@ def validate_line_summation(
 		result["summary"] = f"Found {len(result['suggestions'])} mismatch(es) in totals"
 
 	return result
+
+
+def validate_parsed_data(
+	items: List[Dict],
+	summary: Dict,
+	tax_rate: float = 0.12,
+	tolerance_pct: float = 0.01,
+) -> Dict:
+	"""
+	Cross-check parsed line items against invoice summary values.
+
+	Performs three consistency checks:
+		1. Sum of item harga_jual == summary harga_jual
+		2. PPN ≈ DPP × tax_rate (within tolerance)
+		3. At least 1 item was parsed
+
+	Args:
+		items: List of parsed line item dicts, each with 'harga_jual' key.
+		summary: Dict with 'harga_jual', 'dpp', 'ppn', 'ppnbm' keys (float).
+		tax_rate: Expected PPN rate as decimal (default 0.12 = 12%).
+		tolerance_pct: Tolerance for PPN check as decimal (default 0.01 = 1%).
+
+	Returns:
+		Dictionary with:
+			- is_valid: bool — True if all checks pass
+			- errors: list[str] — Critical issues (data is wrong)
+			- warnings: list[str] — Non-critical issues (data may still be usable)
+			- details: dict — Computed values for debugging
+
+	Example:
+		>>> items = [
+		...     {"harga_jual": 360500},
+		...     {"harga_jual": 380000},
+		...     {"harga_jual": 54000},
+		...     {"harga_jual": 228000},
+		...     {"harga_jual": 80000},
+		... ]
+		>>> summary = {"harga_jual": 1102500, "dpp": 1010625, "ppn": 121275}
+		>>> result = validate_parsed_data(items, summary)
+		>>> result["is_valid"]
+		True
+	"""
+	errors: List[str] = []
+	warnings: List[str] = []
+
+	items = items or []
+	summary = summary or {}
+
+	summary_hj = flt(summary.get("harga_jual", 0))
+	summary_dpp = flt(summary.get("dpp", 0))
+	summary_ppn = flt(summary.get("ppn", 0))
+
+	# Check 1: At least 1 item parsed
+	if len(items) == 0:
+		errors.append("No line items parsed from invoice")
+
+	# Check 2: Sum of items == summary harga_jual
+	items_sum = sum(flt(item.get("harga_jual", 0)) for item in items)
+	hj_diff = abs(items_sum - summary_hj) if summary_hj else 0
+	hj_tolerance = summary_hj * tolerance_pct if summary_hj else 0
+
+	if summary_hj > 0 and hj_diff > hj_tolerance:
+		errors.append(
+			f"Harga Jual mismatch: sum of items ({items_sum:,.0f}) != "
+			f"summary ({summary_hj:,.0f}), diff={hj_diff:,.0f}"
+		)
+	elif summary_hj > 0 and hj_diff > 0:
+		warnings.append(
+			f"Harga Jual minor rounding: diff={hj_diff:,.0f} "
+			f"(within tolerance {hj_tolerance:,.0f})"
+		)
+
+	# Check 3: PPN ≈ DPP × tax_rate
+	if summary_dpp > 0 and summary_ppn > 0:
+		expected_ppn = summary_dpp * tax_rate
+		ppn_diff = abs(summary_ppn - expected_ppn)
+		ppn_tolerance = expected_ppn * tolerance_pct
+
+		if ppn_diff > ppn_tolerance:
+			actual_rate = summary_ppn / summary_dpp
+			warnings.append(
+				f"PPN calculation: expected {expected_ppn:,.0f} "
+				f"(DPP × {tax_rate*100:.0f}%), got {summary_ppn:,.0f}. "
+				f"Actual rate: {actual_rate*100:.2f}%"
+			)
+	elif summary_dpp > 0 and summary_ppn == 0:
+		warnings.append("PPN is zero — may be zero-rated or exempt transaction")
+
+	is_valid = len(errors) == 0
+
+	return {
+		"is_valid": is_valid,
+		"errors": errors,
+		"warnings": warnings,
+		"details": {
+			"item_count": len(items),
+			"items_harga_jual_sum": items_sum,
+			"summary_harga_jual": summary_hj,
+			"summary_dpp": summary_dpp,
+			"summary_ppn": summary_ppn,
+			"harga_jual_diff": hj_diff,
+			"tax_rate": tax_rate,
+		},
+	}
