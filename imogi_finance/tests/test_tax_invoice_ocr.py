@@ -320,3 +320,149 @@ def test_infer_nilai_lain_factor_reason_labels(ocr_module):
     factor, reason = ocr_module._infer_nilai_lain_factor_from_amounts(863335, 103600)
     assert factor == pytest.approx(11 / 12, rel=0, abs=1e-9)
     assert reason in {"matched_by_ppn_ratio", "default_policy"}
+
+
+# =============================================================================
+# Tests for _extract_summary_from_last_section and multi-item sanity check
+# =============================================================================
+
+
+class TestExtractSummaryFromLastSection:
+    """Tests for the bottom-section summary extraction."""
+
+    def test_finds_summary_values_after_last_marker(self, ocr_module):
+        """Given text with column header AND summary marker, returns the LAST marker's values."""
+        text = (
+            # Column header (FIRST occurrence of "Harga Jual /")
+            "No. Barang\n"
+            "Harga Jual / Penggantian / Uang Muka / Termin (Rp)\n"
+            "80.000,00\n"
+            "80.000,00\n"
+            "9.600,00\n"
+            "0,00\n"
+            # ... more item rows ...\n
+            "360.500,00\n"
+            "228.000,00\n"
+            # Summary section (LAST occurrence)
+            "Harga Jual / Penggantian / Uang Muka / Termin\n"
+            "1.102.500,00\n"
+            "Dikurangi Potongan Harga\n"
+            "0,00\n"
+            "Dasar Pengenaan Pajak\n"
+            "1.010.625,00\n"
+            "Jumlah PPN (Pajak Pertambahan Nilai)\n"
+            "121.275,00\n"
+            "Jumlah PPnBM (Pajak Penjualan atas Barang Mewah)\n"
+            "0,00\n"
+        )
+        result = ocr_module._extract_summary_from_last_section(text)
+
+        assert result.get("harga_jual") == pytest.approx(1_102_500.0, abs=1)
+        assert result.get("dpp") == pytest.approx(1_010_625.0, abs=1)
+        assert result.get("ppn") == pytest.approx(121_275.0, abs=1)
+
+    def test_empty_text_returns_empty(self, ocr_module):
+        assert ocr_module._extract_summary_from_last_section("") == {}
+        assert ocr_module._extract_summary_from_last_section(None) == {}
+
+    def test_no_marker_returns_empty(self, ocr_module):
+        text = "Some random OCR text\n123.456,00\n"
+        assert ocr_module._extract_summary_from_last_section(text) == {}
+
+    def test_single_marker_works(self, ocr_module):
+        """Single occurrence = always the summary."""
+        text = (
+            "Harga Jual / Penggantian / Uang Muka / Termin\n"
+            "500.000,00\n"
+            "Dasar Pengenaan Pajak\n"
+            "458.333,00\n"
+            "Jumlah PPN (Pajak Pertambahan Nilai)\n"
+            "55.000,00\n"
+        )
+        result = ocr_module._extract_summary_from_last_section(text)
+        assert result["harga_jual"] == pytest.approx(500_000.0, abs=1)
+        assert result["dpp"] == pytest.approx(458_333.0, abs=1)
+        assert result["ppn"] == pytest.approx(55_000.0, abs=1)
+
+
+class TestMultiItemSanityCheck:
+    """End-to-end: parse_faktur_pajak_text detects and corrects item-level values."""
+
+    def test_multi_item_invoice_dpp_corrected(self, ocr_module):
+        """
+        Simulates Bug #1: DPP picks up last item's price (80,000) instead
+        of summary total (1,010,625).  The sanity check should re-extract
+        from the bottom section to get the correct values.
+        """
+        text = (
+            "Kode dan Nomor Seri Faktur Pajak: 040.025-00.43645166\n"
+            "Pengusaha Kena Pajak:\n"
+            "Nama : ASTRA INTERNATIONAL TBK\n"
+            "NPWP: 0013025846092000\n"
+            # Column header area — causes label misdetection
+            "No. Nama Barang/Jasa\n"
+            "Harga Jual / Penggantian / Uang Muka / Termin (Rp)\n"
+            "Dasar Pengenaan Pajak\n"
+            "80.000,00\n"
+            "PPN\n"
+            "9.600,00\n"
+            # Item amounts (many to trigger len(amounts)>=8)
+            "360.500,00\n"
+            "380.000,00\n"
+            "54.000,00\n"
+            "228.000,00\n"
+            "80.000,00\n"
+            "43.260,00\n"
+            "45.600,00\n"
+            "25.080,00\n"
+            # Summary section (LAST occurrence of markers)
+            "Harga Jual / Penggantian / Uang Muka / Termin\n"
+            "1.102.500,00\n"
+            "Dikurangi Potongan Harga\n"
+            "0,00\n"
+            "Dasar Pengenaan Pajak\n"
+            "1.010.625,00\n"
+            "Jumlah PPN (Pajak Pertambahan Nilai)\n"
+            "121.275,00\n"
+            "Jumlah PPnBM (Pajak Penjualan atas Barang Mewah)\n"
+            "0,00\n"
+            "ditandatangani secara elektronik\n"
+            "JOHN DOE\n"
+            "1.102.500,00\n"
+            "1.102.500,00\n"
+            "0,00\n"
+            "1.010.625,00\n"
+            "121.275,00\n"
+            "0,00\n"
+        )
+        parsed, confidence = ocr_module.parse_faktur_pajak_text(text)
+
+        # After sanity check, the values should be the summary totals
+        assert parsed["dpp"] == pytest.approx(1_010_625.0, rel=0.01)
+        assert parsed["ppn"] == pytest.approx(121_275.0, rel=0.01)
+        assert parsed["harga_jual"] == pytest.approx(1_102_500.0, rel=0.01)
+
+    def test_single_item_invoice_not_affected(self, ocr_module):
+        """Single-item invoices should NOT trigger the sanity check."""
+        text = (
+            "Kode dan Nomor Seri Faktur Pajak: 010.025-00.12345678\n"
+            "NPWP: 0013025846092000\n"
+            "Harga Jual / Penggantian / Uang Muka / Termin\n"
+            "80.000,00\n"
+            "Dasar Pengenaan Pajak\n"
+            "73.333,00\n"
+            "Jumlah PPN (Pajak Pertambahan Nilai)\n"
+            "8.800,00\n"
+            "ditandatangani secara elektronik\n"
+            "JOHN DOE\n"
+            "80.000,00\n"
+            "80.000,00\n"
+            "0,00\n"
+            "73.333,00\n"
+            "8.800,00\n"
+            "0,00\n"
+        )
+        parsed, _ = ocr_module.parse_faktur_pajak_text(text)
+
+        # Single-item: DPP = 73,333 should stay as-is
+        assert parsed["dpp"] == pytest.approx(73_333.0, rel=0.01)

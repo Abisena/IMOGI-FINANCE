@@ -534,7 +534,17 @@ class TaxInvoiceOCRUpload(Document):
                         current_ppn = flt(self.ppn)
                         current_hj = flt(self.harga_jual)
 
-                        if mr_dpp > 0 and mr_ppn > 0 and mr_validation.get('is_valid'):
+                        # For summary override, only require PPN/DPP ratio
+                        # to be consistent.  Full item validation (is_valid)
+                        # is only needed for the line-items fallback.
+                        mr_ppn_ratio_ok = any(
+                            abs(mr_ppn - mr_dpp * rate) <= mr_dpp * rate * 0.20
+                            for rate in (0.12, 0.11, 0.10)
+                        ) if mr_dpp > 0 else False
+
+                        if mr_dpp > 0 and mr_ppn > 0 and (
+                            mr_validation.get('is_valid') or mr_ppn_ratio_ok
+                        ):
                             # Override if multirow values are significantly larger
                             # (primary parser may have picked up item-level values
                             # instead of summary totals)

@@ -1186,6 +1186,113 @@ def _extract_faktur_number_from_json(raw_json: dict[str, Any] | str | None) -> s
     return None
 
 
+def _extract_summary_from_last_section(text: str) -> dict[str, float]:
+    """
+    Extract summary values from the LAST occurrence of the summary section.
+
+    On multi-item invoices, labels like "Harga Jual / Penggantian" and
+    "Dasar Pengenaan Pajak" can appear MULTIPLE times:
+      - As column headers at the TOP of the item table
+      - As summary labels at the BOTTOM of the invoice
+
+    ``_find_amount_after_label`` picks up the FIRST occurrence, which is
+    often a column header followed by an individual item value — not the
+    summary total.
+
+    This function finds the **LAST** "Harga Jual / Penggantian" marker
+    and extracts DPP / PPN / Harga Jual from the text after it, ensuring
+    we read the summary totals.
+
+    Returns:
+        Dict with 'harga_jual', 'dpp', 'ppn' keys (floats).  Empty dict
+        if the marker is not found.
+    """
+    logger = frappe.logger("tax_invoice_ocr")
+    if not text:
+        return {}
+
+    # Find the LAST occurrence of the summary section marker
+    summary_markers = [
+        r'Harga\s+Jual\s*/\s*Penggantian\s*/\s*Uang\s+Muka\s*/\s*Termin',
+        r'Harga\s+Jual\s*/\s*Penggantian',
+        r'Harga\s+Jual\s*/',
+    ]
+
+    summary_start = -1
+    for marker_re in summary_markers:
+        all_matches = list(re.finditer(marker_re, text, re.IGNORECASE))
+        if all_matches:
+            summary_start = all_matches[-1].start()  # LAST occurrence
+            logger.info(
+                f"\U0001f50d _extract_summary_from_last_section: "
+                f"Found marker at pos {summary_start} (last of {len(all_matches)} matches)"
+            )
+            break
+
+    if summary_start < 0:
+        logger.info("\U0001f50d _extract_summary_from_last_section: No summary marker found")
+        return {}
+
+    # Only look at text after the LAST marker
+    summary_text = text[summary_start:]
+    lines = summary_text.split('\n')
+
+    result: dict[str, float] = {}
+
+    summary_fields = [
+        ('harga_jual', [
+            r'Harga\s+Jual\s*/\s*Penggantian',
+            r'Harga\s+Jual',
+        ]),
+        ('dpp', [
+            r'Dasar\s+Pengenaan\s+Pajak',
+            r'DPP',
+        ]),
+        ('ppn', [
+            r'Jumlah\s+PPN',
+            r'PPN\s*\(',
+            r'Pajak\s+Pertambahan\s+Nilai',
+        ]),
+    ]
+
+    for field_name, label_patterns in summary_fields:
+        for lp in label_patterns:
+            found = False
+            for idx, line in enumerate(lines):
+                if not re.search(lp, line, re.IGNORECASE):
+                    continue
+
+                # Found label — look for amount on the same line
+                for amt_match in AMOUNT_REGEX.finditer(line):
+                    amt = _sanitize_amount(_parse_idr_amount(amt_match.group("amount")))
+                    if amt is not None and amt >= 1.0:
+                        result[field_name] = amt
+                        found = True
+                        break
+
+                if not found:
+                    # Check next 3 non-empty lines
+                    for next_idx in range(idx + 1, min(idx + 4, len(lines))):
+                        next_line = lines[next_idx].strip()
+                        if not next_line:
+                            continue
+                        for amt_match in AMOUNT_REGEX.finditer(next_line):
+                            amt = _sanitize_amount(_parse_idr_amount(amt_match.group("amount")))
+                            if amt is not None and amt >= 1.0:
+                                result[field_name] = amt
+                                found = True
+                                break
+                        if found:
+                            break
+
+                break  # Found label match — move to next field
+            if found:
+                break
+
+    logger.info(f"\U0001f50d _extract_summary_from_last_section: Extracted {result}")
+    return result
+
+
 def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     """
     ⚠️ LEGACY HEADER/TOTALS EXTRACTOR - OCR Text-Based Parsing
@@ -1243,6 +1350,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     matches: dict[str, Any] = {}
     confidence = 0.0
     debug_notes: list[str] = []
+    logger = frappe.logger("tax_invoice_ocr")
 
     seller_section = _extract_section_lines(
         text or "", "Pengusaha Kena Pajak", ("Pembeli Barang Kena Pajak", "Pembeli Barang Kena Pajak/Penerima Jasa Kena Pajak")
@@ -1307,7 +1415,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     amounts = [_sanitize_amount(_parse_idr_amount(m.group("amount"))) for m in AMOUNT_REGEX.finditer(text or "")]
     amounts = [amt for amt in amounts if amt is not None and amt >= 1.0]
 
-    logger = frappe.logger("tax_invoice_ocr")
     logger.info(f"🔍 parse_faktur_pajak_text: Found {len(amounts)} amounts in text")
     if amounts:
         logger.info(f"🔍 parse_faktur_pajak_text: All amounts: {amounts}")
@@ -1677,6 +1784,47 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
                     logger.info(f"🔍 parse_faktur_pajak_text: Fallback PPN (second distinct): {distinct_amounts[1]}")
 
             confidence += 0.15
+
+    # =====================================================================
+    # 🔥 MULTI-ITEM INVOICE SANITY CHECK
+    # On multi-item invoices the label-based extraction may pick up
+    # column-header values or individual item amounts instead of the
+    # summary totals.  Detect this by comparing DPP against the largest
+    # amounts found in the text and re-extract from the bottom section.
+    # =====================================================================
+    if amounts and matches.get("dpp"):
+        max_amount = max(amounts)
+        current_dpp = matches["dpp"]
+
+        # If DPP is < 50 % of the largest amount AND there are many amounts
+        # in the text (multi-item indicator), the extraction is suspect.
+        if current_dpp < max_amount * 0.5 and len(amounts) >= 8:
+            logger.warning(
+                f"\U0001f50d parse_faktur_pajak_text: \u26a0\ufe0f "
+                f"DPP ({current_dpp:,.0f}) looks like an item-level value "
+                f"(max amount in text = {max_amount:,.0f}).  "
+                f"Re-extracting from bottom summary section."
+            )
+
+            bottom = _extract_summary_from_last_section(text or "")
+
+            if bottom:
+                for key in ('harga_jual', 'dpp', 'ppn'):
+                    new_val = bottom.get(key)
+                    # Only override if bottom-section value is LARGER
+                    if new_val and new_val > (matches.get(key) or 0):
+                        old_val = matches.get(key)
+                        matches[key] = new_val
+                        logger.info(
+                            f"\U0001f50d parse_faktur_pajak_text: "
+                            f"\u2705 Bottom-section override: "
+                            f"{key} {old_val} \u2192 {new_val}"
+                        )
+                debug_notes.append(
+                    f"Multi-item sanity check: re-extracted summary from "
+                    f"bottom section (old DPP={current_dpp:,.0f}, "
+                    f"new DPP={matches.get('dpp', 0):,.0f})"
+                )
 
     # 🔧 CRITICAL FIX: Final validation and correction for Harga Jual
     logger.info("=" * 80)
@@ -2965,7 +3113,17 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                     mr_hj = mr_summary.get("harga_jual", 0) or 0
                     current_dpp = parsed.get("dpp") or 0
 
-                    if mr_dpp > 0 and mr_ppn > 0 and mr_validation.get("is_valid"):
+                    # For summary override, only require PPN/DPP ratio to
+                    # be consistent.  Full item validation (is_valid) is
+                    # only needed for the line-items fallback.
+                    mr_ppn_ratio_ok = any(
+                        abs(mr_ppn - mr_dpp * rate) <= mr_dpp * rate * 0.20
+                        for rate in (0.12, 0.11, 0.10)
+                    ) if mr_dpp > 0 else False
+
+                    if mr_dpp > 0 and mr_ppn > 0 and (
+                        mr_validation.get("is_valid") or mr_ppn_ratio_ok
+                    ):
                         should_override = False
 
                         # Override if multirow values are significantly larger
