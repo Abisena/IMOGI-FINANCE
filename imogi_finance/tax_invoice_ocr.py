@@ -1576,7 +1576,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         if "harga_jual" not in matches:
             labeled_harga_jual = _extract_harga_jual_from_signature_section(text or "")
             logger.info(f"🔍 parse_faktur_pajak_text: Strategy 2 (signature with labels): {labeled_harga_jual}")
-            
             if labeled_harga_jual is not None and labeled_harga_jual >= 10000:
                 # Validate against DPP if available
                 dpp_check = matches.get("dpp")
