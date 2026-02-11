@@ -385,39 +385,36 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 	"""
 	Detect the tax rate for Indonesian tax invoices.
 
-	Uses a three-tier approach:
-	1. PRIMARY: Calculate from actual DPP and PPN values
-	2. SECONDARY: Use faktur type prefix (040/010 → current default rate)
-	3. FALLBACK: Default to 12% (current standard PPN rate since Jan 2025)
+	IMPORTANT: Tax rate is CALCULATED from DPP and PPN only.
+	No default/fallback rates are used.
 
 	Args:
 		dpp: Dasar Pengenaan Pajak (tax base) amount
 		ppn: PPN (VAT) amount
-		faktur_type: Invoice type code (e.g., "040.000-26.12345678", "010.000-16.12345678")
+		faktur_type: Invoice type code (ignored - kept for API compatibility)
 
 	Returns:
-		Tax rate as decimal (0.12 or 0.11 for older invoices)
+		Tax rate as decimal (calculated from PPN/DPP), or 0.0 if cannot be calculated
 
 	Examples:
-		>>> detect_tax_rate(4313371.0, 517605.0, "040.000-26.12345678")
+		>>> detect_tax_rate(4313371.0, 517605.0)
 		0.12  # Calculated: 517605/4313371 = 0.12 (12%)
 
-		>>> detect_tax_rate(1000000.0, 110000.0, "010.000-16.12345678")
+		>>> detect_tax_rate(1000000.0, 110000.0)
 		0.11  # Calculated: 110000/1000000 = 0.11 (11%)
 
-		>>> detect_tax_rate(0, 0, "040.000-26.12345678")
-		0.12  # Fallback to default 12% (current rate since Jan 2025)
+		>>> detect_tax_rate(0, 0)
+		0.0  # Cannot calculate - no DPP/PPN provided
 
-		>>> detect_tax_rate(0, 0, "030.000-16.12345678")
-		0.12  # Fallback to default 12%
+		>>> detect_tax_rate(1000000.0, 0)
+		0.0  # Zero-rated transaction (export or exempt)
 	"""
 	import frappe
 	logger = frappe.logger()
 
-	# Standard Indonesian tax rates
-	STANDARD_RATES = [0.12, 0.11]  # 12% (current since 2025) and 11% (pre-2025)
+	# Standard Indonesian tax rates for validation/tolerance
+	STANDARD_RATES = [0.12, 0.11]  # 12% and 11% (pre-2025)
 	TOLERANCE = 0.02  # ±2% tolerance for rounding errors
-	DEFAULT_RATE = 0.11  # Standard PPN rate for Indonesian tax invoices
 
 	# ============================================================================
 	# SPECIAL CASE: Zero-rated transactions (exports, exempt goods)
@@ -426,7 +423,7 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 		logger.info("✅ Zero-rated transaction detected (PPN = 0, likely export or exempt)")
 		return 0.0  # Export or exempt transaction
 
-	# METHOD 1: Calculate from actual values (MOST ACCURATE)
+	# ONLY METHOD: Calculate from actual DPP and PPN values
 	if dpp and ppn and dpp > 0 and ppn > 0:
 		calculated_rate = ppn / dpp
 
@@ -454,33 +451,131 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 					f"{ppn_difference_pct:.1f}% difference from actual PPN. "
 					f"Expected: {recalculated_ppn:,.0f}, Actual: {ppn:,.0f}"
 				)
+			
+			# 🔥 VERIFY against Indonesian regulations
+			verification = verify_tax_rate_against_regulations(closest_rate)
+			if not verification["is_valid"]:
+				logger.error(f"🚨 {verification['message']}")
+			
 			return closest_rate
+		else:
+			# Calculated rate outside tolerance - return calculated rate directly
+			logger.warning(
+				f"⚠️  Calculated rate {calculated_rate*100:.2f}% outside standard rates "
+				f"(11% or 12% with ±2% tolerance). Returning calculated rate."
+			)
+			
+			# 🔥 VERIFY against Indonesian regulations even for non-standard rates
+			verification = verify_tax_rate_against_regulations(calculated_rate)
+			if not verification["is_valid"]:
+				logger.error(f"🚨 {verification['message']}")
+			
+			return calculated_rate
 
-		# If calculated rate doesn't match standard rates, log warning and try faktur type
-		logger.warning(
-			f"⚠️  Calculated rate {calculated_rate*100:.2f}% doesn't match standard rates "
-			f"(11% or 12% with ±2% tolerance). Trying faktur type method..."
+	# Cannot calculate tax rate without DPP and PPN
+	logger.warning(f"⚠️  Cannot calculate tax rate: DPP={dpp}, PPN={ppn}")
+	return 0.0
+
+
+def verify_tax_rate_against_regulations(tax_rate: float) -> dict[str, any]:
+	"""
+	Verify if calculated tax rate is valid according to Indonesian tax regulations.
+
+	Valid Indonesian PPN rates (as of Feb 2026):
+	- 0%: Export, exempt goods, certain services
+	- 1.1%: Digital transactions, e-commerce specific (since 2023)
+	- 3%: Certain goods and services
+	- 5%: Reduced rate - food items, medicines, books (since Jan 2025)
+	- 11%: Previous standard rate (before Jan 2025)
+	- 12%: Current standard rate (since Jan 2025)
+
+	Reference: Indonesian Ministry of Finance, DJP regulations (2023-2026)
+
+	Args:
+		tax_rate: Calculated tax rate as decimal (e.g., 0.12 for 12%)
+
+	Returns:
+		Dictionary with:
+		- is_valid: bool - True if rate matches Indonesian regulations
+		- rate_type: str - Description of the rate type
+		- message: str - Explanation of the rate
+		- issues: List[str] - Any validation warnings
+	"""
+	import frappe
+	logger = frappe.logger()
+
+	# Valid Indonesian PPN rates with descriptions
+	# Updated for 2023-2026 regulations
+	VALID_RATES = {
+		0.00: {
+			"type": "Zero-Rated",
+			"description": "Export goods, exempt services, tertentu",
+		},
+		0.011: {
+			"type": "Digital",
+			"description": "Digital transactions, e-commerce specific (1.1%)",
+		},
+		0.03: {
+			"type": "Special",
+			"description": "Certain goods and services (3%)",
+		},
+		0.05: {
+			"type": "Reduced",
+			"description": "Food, medicines, books, newspapers (5% since Jan 2025)",
+		},
+		0.11: {
+			"type": "Standard (Pre-2025)",
+			"description": "Previous standard PPN rate (11%)",
+		},
+		0.12: {
+			"type": "Standard (Current)",
+			"description": "Current standard PPN rate (12% since Jan 2025)",
+		},
+	}
+	
+	TOLERANCE = 0.001  # Allow small floating-point errors
+	issues = []
+
+	# Check if rate matches any valid rate (within tolerance)
+	closest_match = None
+	min_difference = float('inf')
+	
+	for valid_rate, info in VALID_RATES.items():
+		difference = abs(tax_rate - valid_rate)
+		if difference <= TOLERANCE and difference < min_difference:
+			closest_match = valid_rate
+			min_difference = difference
+
+	if closest_match is not None:
+		rate_info = VALID_RATES[closest_match]
+		logger.info(
+			f"✅ Tax rate {tax_rate*100:.2f}% matches Indonesian regulations: "
+			f"{rate_info['type']} - {rate_info['description']}"
 		)
-
-	# METHOD 2: Use faktur type prefix (SECONDARY)
-	# NOTE: Since January 2025, standard PPN rate is 12% (not 11%)
-	# Only use faktur type if DPP/PPN calculation failed
-	if faktur_type:
-		# Extract first 3 digits from faktur type (e.g., "040.000-26.12345678" → "040")
-		faktur_prefix = faktur_type[:3]
-
-		# Faktur type 040: DPP Nilai Lain (use current default rate)
-		# Faktur type 010: Normal invoice (use current default rate)
-		if faktur_prefix in ["040", "010"]:
-			logger.info(f"✅ Tax rate detected from faktur type {faktur_prefix}: {DEFAULT_RATE*100:.0f}%")
-			return DEFAULT_RATE
-
-		# Other faktur types: use default
-		logger.debug(f"Faktur type {faktur_prefix} doesn't match known patterns, using default rate")
-
-	# METHOD 3: Fallback to default (LAST RESORT)
-	logger.info(f"ℹ️  Using default tax rate: {DEFAULT_RATE*100:.0f}%")
-	return DEFAULT_RATE
+		return {
+			"is_valid": True,
+			"rate_type": rate_info["type"],
+			"message": f"{rate_info['type']}: {rate_info['description']}",
+			"issues": issues,
+			"matched_rate": closest_match,
+		}
+	else:
+		# Rate does NOT match any valid Indonesian rate
+		valid_rates_str = ", ".join([f"{r*100:.1f}%" for r in VALID_RATES.keys()])
+		message = (
+			f"❌ Calculated tax rate {tax_rate*100:.2f}% does NOT match any valid Indonesian PPN rate. "
+			f"Valid rates are: {valid_rates_str}"
+		)
+		issues.append(message)
+		logger.error(message)
+		
+		return {
+			"is_valid": False,
+			"rate_type": "Invalid",
+			"message": message,
+			"issues": issues,
+			"matched_rate": None,
+		}
 
 
 def validate_tax_calculation(
