@@ -120,5 +120,100 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 				await frm.reload_doc();
 			}, TAX_INVOICE_OCR_GROUP);
 		}
+	},
+
+	// 🆕 Real-time validation when PPN Type is changed
+	ppn_type(frm) {
+		if (!frm.doc.ppn_type || !frm.doc.dpp || !frm.doc.ppn) return;
+
+		const dpp = parseFloat(frm.doc.dpp || 0);
+		const ppn = parseFloat(frm.doc.ppn || 0);
+		const ppn_type = frm.doc.ppn_type;
+
+		let warnings = [];
+
+		// Validate based on selected PPN Type
+		if (ppn_type.includes('Standard 11%')) {
+			const expected_rate = 0.11;
+			if (ppn === 0 && dpp > 0) {
+				warnings.push(__('⚠️ PPN Type is "11%" but PPN amount is 0. Should this be Zero Rated?'));
+			} else if (dpp > 0) {
+				const actual_rate = ppn / dpp;
+				if (Math.abs(actual_rate - expected_rate) > 0.02) {
+					warnings.push(
+						__('⚠️ PPN Type is "Standard 11%" but actual rate is {0}%. Please verify.', 
+						   [(actual_rate * 100).toFixed(2)])
+					);
+				}
+			}
+		} else if (ppn_type.includes('Standard 12%')) {
+			const expected_rate = 0.12;
+			if (ppn === 0 && dpp > 0) {
+				warnings.push(__('⚠️ PPN Type is "12%" but PPN amount is 0. Should this be Zero Rated?'));
+			} else if (dpp > 0) {
+				const actual_rate = ppn / dpp;
+				if (Math.abs(actual_rate - expected_rate) > 0.02) {
+					warnings.push(
+						__('⚠️ PPN Type is "Standard 12%" but actual rate is {0}%. Please verify.',
+						   [(actual_rate * 100).toFixed(2)])
+					);
+				}
+			}
+		} else if (ppn_type.includes('Zero Rated') || ppn_type.includes('Ekspor')) {
+			if (ppn > 0) {
+				warnings.push(
+					__('⚠️ PPN Type is "Zero Rated (Ekspor)" but PPN amount is Rp {0}. Zero Rated should have PPN = 0.',
+					   [ppn.toLocaleString('id-ID', {minimumFractionDigits: 2})])
+				);
+			}
+		} else if (ppn_type.includes('Tidak Dipungut') || ppn_type.includes('Dibebaskan')) {
+			if (ppn > 0) {
+				warnings.push(
+					__('⚠️ PPN Type is "{0}" but PPN amount is Rp {1}. This type should have PPN = 0.',
+					   [ppn_type, ppn.toLocaleString('id-ID', {minimumFractionDigits: 2})])
+				);
+			}
+		} else if (ppn_type.includes('Bukan Objek PPN')) {
+			if (ppn > 0) {
+				warnings.push(
+					__('⚠️ PPN Type is "Bukan Objek PPN" but PPN amount is Rp {0}. Non-PPN should have PPN = 0.',
+					   [ppn.toLocaleString('id-ID', {minimumFractionDigits: 2})])
+				);
+			}
+		} else if (ppn_type.includes('Digital 1.1%') || ppn_type.includes('PMSE')) {
+			const expected_rate = 0.011;
+			if (dpp > 0) {
+				const actual_rate = ppn / dpp;
+				if (Math.abs(actual_rate - expected_rate) > 0.005) {
+					warnings.push(
+						__('⚠️ PPN Type is "Digital 1.1%" but actual rate is {0}%. Please verify.',
+						   [(actual_rate * 100).toFixed(2)])
+					);
+				}
+			}
+		} else if (ppn_type.includes('Custom') || ppn_type.includes('Other')) {
+			// ✅ Custom tariff - show actual rate for reference
+			if (dpp > 0 && ppn > 0) {
+				const actual_rate = ppn / dpp;
+				frappe.show_alert({
+					message: __('Custom PPN Type: Actual rate is {0}%', [(actual_rate * 100).toFixed(2)]),
+					indicator: 'blue'
+				}, 5);
+			}
+		}
+
+		// Show warnings to user
+		if (warnings.length > 0) {
+			frappe.msgprint({
+				title: __('PPN Type Verification'),
+				indicator: 'orange',
+				message: warnings.join('<br><br>')
+			});
+		} else if (ppn > 0 && dpp > 0) {
+			frappe.show_alert({
+				message: __('✅ PPN Type matches the invoice amounts'),
+				indicator: 'green'
+			}, 3);
+		}
 	}
 });

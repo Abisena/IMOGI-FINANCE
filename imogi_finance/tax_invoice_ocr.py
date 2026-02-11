@@ -2022,21 +2022,27 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         logger.warning("⚠️ DUPLICATE VALUES DETECTED - some extraction issues occurred but may have been corrected")
         confidence = min(confidence, 0.4)  # Mark as lower confidence
 
-    ppn_rate = None
+    # 🔥 REMOVED: Auto-detection of PPN Type
+    # PPN Type is now REQUIRED user input, not auto-detected from OCR
+    # Verification will check if user's selected PPN Type matches OCR data
+    
+    # Still extract PPN rate from text for verification purposes
+    ppn_rate_from_text = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
     if ppn_rate_match:
         raw_rate = ppn_rate_match.group("rate").replace(",", ".")
         try:
-            ppn_rate = flt(raw_rate)
+            ppn_rate_from_text = flt(raw_rate)
         except Exception:
-            ppn_rate = None
+            ppn_rate_from_text = None
+    
+    # Store extracted rate for verification (not for setting ppn_type)
+    if ppn_rate_from_text:
+        matches["ppn_rate_from_text"] = ppn_rate_from_text
+        logger.info(f"📋 Extracted PPN rate from text: {ppn_rate_from_text}%")
 
-    if ppn_rate is None:
-        ppn_type = DEFAULT_SETTINGS.get("default_ppn_type", "Standard")
-    else:
-        ppn_type = "Standard" if ppn_rate > 0 else "Zero Rated"
-
-    matches["ppn_type"] = ppn_type
+    # DO NOT set ppn_type from OCR - user must select it manually
+    # matches["ppn_type"] is intentionally NOT set here
 
     # 🔥 ERPNext v15+ Feature: Detect "DPP Nilai Lain" pattern (11/12 or 12/11)
     nilai_lain_factor = detect_nilai_lain_factor(text)
@@ -2889,17 +2895,6 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         frappe.logger().warning("[Google Vision] OCR returned empty text after processing all pages")
         return "", data, 0.0
 
-    # 🔥 ENHANCE: Add structured summary using bounding box coordinates
-    # This matches labels with values by Y coordinate to fix the column-reading issue
-    try:
-        from imogi_finance.imogi_finance.parsers.vision_helpers import (
-            enhance_ocr_text_with_structured_summary,
-        )
-        text = enhance_ocr_text_with_structured_summary(text, data)
-        frappe.logger().info("[Google Vision] ✅ Enhanced OCR text with structured summary section")
-    except Exception as e:
-        frappe.logger().warning(f"[Google Vision] ⚠️ Could not enhance OCR text: {e}")
-
     # 🔥 LOG: Final combined result
     frappe.logger().info(
         f"[Google Vision] ✅ Successfully combined text from {len(texts)} page(s): "
@@ -3436,9 +3431,88 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
             label = _("supplier") if doctype != "Sales Invoice" else _("customer")
             notes.append(_("NPWP on tax invoice does not match {0}.").format(label))
 
+    # ============================================================================
+    # 🆕 PPN TYPE VERIFICATION (User-selected vs OCR-detected)
+    # ============================================================================
+    ppn_type = _get_value(doc, doctype, "ppn_type")
+    dpp = flt(_get_value(doc, doctype, "dpp", 0))
+    ppn_value = flt(_get_value(doc, doctype, "ppn", 0))
+    ppnbm_value = flt(_get_value(doc, doctype, "ppnbm", 0))
+    tax_rate = flt(_get_value(doc, doctype, "tax_rate", 0))
+    
+    # Verify PPN Type selection against actual amounts
+    if ppn_type:
+        if "Standard 11%" in ppn_type:
+            expected_rate = 0.11
+            if ppn_value == 0 and dpp > 0:
+                notes.append(_("PPN Type is '11%' but PPN amount is 0. Should this be Zero Rated?"))
+            elif dpp > 0:
+                actual_rate = ppn_value / dpp
+                if abs(actual_rate - expected_rate) > 0.02:  # 2% tolerance
+                    notes.append(_(
+                        "PPN Type is 'Standard 11%' but actual rate is {0:.2%}. "
+                        "Please verify if type selection is correct."
+                    ).format(actual_rate))
+        
+        elif "Standard 12%" in ppn_type:
+            expected_rate = 0.12
+            if ppn_value == 0 and dpp > 0:
+                notes.append(_("PPN Type is '12%' but PPN amount is 0. Should this be Zero Rated?"))
+            elif dpp > 0:
+                actual_rate = ppn_value / dpp
+                if abs(actual_rate - expected_rate) > 0.02:  # 2% tolerance
+                    notes.append(_(
+                        "PPN Type is 'Standard 12%' but actual rate is {0:.2%}. "
+                        "Please verify if type selection is correct."
+                    ).format(actual_rate))
+        
+        elif "Zero Rated" in ppn_type or "Ekspor" in ppn_type:
+            if ppn_value > 0:
+                notes.append(_(
+                    "PPN Type is 'Zero Rated (Ekspor)' but PPN amount is Rp {0:,.2f}. "
+                    "Zero Rated invoices should have PPN = 0."
+                ).format(ppn_value))
+        
+        elif "Tidak Dipungut" in ppn_type or "Dibebaskan" in ppn_type:
+            if ppn_value > 0:
+                notes.append(_(
+                    "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
+                    "This type should have PPN = 0."
+                ).format(ppn_type, ppn_value))
+        
+        elif "Bukan Objek PPN" in ppn_type:
+            if ppn_value > 0:
+                notes.append(_(
+                    "PPN Type is 'Bukan Objek PPN' but PPN amount is Rp {0:,.2f}. "
+                    "Non-PPN transactions should have PPN = 0."
+                ).format(ppn_value))
+        
+        elif "Digital 1.1%" in ppn_type or "PMSE" in ppn_type:
+            expected_rate = 0.011
+            if dpp > 0:
+                actual_rate = ppn_value / dpp
+                if abs(actual_rate - expected_rate) > 0.005:  # 0.5% tolerance
+                    notes.append(_(
+                        "PPN Type is 'Digital 1.1%' but actual rate is {0:.2%}. "
+                        "Please verify if this is a PMSE transaction."
+                    ).format(actual_rate))
+        
+        elif "Custom" in ppn_type or "Other" in ppn_type:
+            # ✅ Custom tariff - show actual rate for user reference
+            if dpp > 0 and ppn_value > 0:
+                actual_rate = ppn_value / dpp
+                notes.append(_(
+                    "Custom PPN Type selected. Actual rate: {0:.2%}. "
+                    "Please verify this is correct for your transaction."
+                ).format(actual_rate))
+    else:
+        notes.append(_("PPN Type is required. Please select the appropriate PPN type."))
+
+    # ============================================================================
+    # CALCULATE EXPECTED PPN (based on user-selected PPN Type)
+    # ============================================================================
     expected_ppn = None
-    if _get_value(doc, doctype, "ppn_type") == "Standard":
-        dpp = flt(_get_value(doc, doctype, "dpp", 0))
+    if ppn_type and ("Standard 11%" in ppn_type or "Standard 12%" in ppn_type):
         template_rate = None
         taxes = getattr(doc, "taxes", []) or []
         for row in taxes:
@@ -3449,9 +3523,20 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                     break
             except Exception:
                 continue
-        rate = template_rate if template_rate is not None else 11
+        
+        # Determine rate from PPN Type selection
+        if "Standard 11%" in ppn_type:
+            rate = template_rate if template_rate is not None else 11
+        elif "Standard 12%" in ppn_type:
+            rate = template_rate if template_rate is not None else 12
+        else:
+            rate = template_rate if template_rate is not None else 11
+        
         expected_ppn = dpp * rate / 100
+    elif ppn_type and "Digital 1.1%" in ppn_type:
+        expected_ppn = dpp * 1.1 / 100
     else:
+        # Zero Rated, Tidak Dipungut, Dibebaskan, Bukan Objek PPN
         expected_ppn = 0
 
     # Use percentage-based tolerance (2% default)
@@ -3471,15 +3556,16 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                 _raise_validation_error(message)
             notes.append(message)
 
-    dpp_value = flt(_get_value(doc, doctype, "dpp", 0))
-    ppn_value = flt(_get_value(doc, doctype, "ppn", 0))
-    ppnbm_value = flt(_get_value(doc, doctype, "ppnbm", 0))
-    if ppnbm_value > 0 and dpp_value > 0:
-        ppn_rate_actual = (ppn_value / dpp_value) * 100
-        # PPnBM rule: PPN rate must be 11% (pre-2025 standard rate)
-        # Note: This is a regulatory requirement, not a dynamic rate
-        if abs(ppn_rate_actual - 11) > 0.1:  # Allow 0.1% tolerance
-            notes.append(_("PPN rate must be 11% when PPnBM is present (regulatory requirement)."))
+    # PPnBM validation (if present)
+    if ppnbm_value > 0 and dpp > 0:
+        ppn_rate_actual = (ppn_value / dpp) * 100
+        # PPnBM rule: PPN rate is typically 11% (standard rate for luxury goods)
+        # This is a regulatory guideline, not strict requirement
+        if ppn_type and "Standard 11%" not in ppn_type and "Standard 12%" not in ppn_type:
+            notes.append(_(
+                "PPnBM is present (Rp {0:,.2f}). Verify that PPN Type is correct. "
+                "PPnBM typically applies with Standard PPN rate."
+            ).format(ppnbm_value))
 
     if notes and not force:
         _set_value(doc, doctype, "status", "Needs Review")

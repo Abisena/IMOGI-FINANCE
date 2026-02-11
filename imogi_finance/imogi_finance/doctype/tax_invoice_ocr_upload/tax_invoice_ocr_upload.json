@@ -105,7 +105,9 @@
       "fieldname": "ppn_type",
       "fieldtype": "Select",
       "label": "Tipe PPN",
-      "options": "Standard\nZero Rated\nExempt/Not PPN"
+      "options": "\nStandard 11% (PPN 2022-2024)\nStandard 12% (PPN 2025+)\nZero Rated (Ekspor)\nPPN Tidak Dipungut (Fasilitas)\nPPN Dibebaskan (Fasilitas)\nBukan Objek PPN\nDigital 1.1% (PMSE)\nCustom/Other (Tarif Khusus)",
+      "reqd": 1,
+      "description": "Pilih jenis PPN sesuai faktur pajak. Required untuk validasi. Pilih 'Custom/Other' untuk tarif khusus."
     },
     {
       "default": "0.11",

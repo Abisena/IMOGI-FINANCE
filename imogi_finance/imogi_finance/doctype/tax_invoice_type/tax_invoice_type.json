@@ -12,7 +12,12 @@
     "transaction_description",
     "status_code",
     "status_description",
-    "is_replacement"
+    "is_replacement",
+    "section_break_ppn_mapping",
+    "expected_ppn_types",
+    "ppn_type_notes",
+    "section_break_info",
+    "usage_notes"
   ],
   "fields": [
     {
@@ -55,6 +60,36 @@
       "fieldtype": "Check",
       "in_list_view": 1,
       "label": "Replacement"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_break_ppn_mapping",
+      "fieldtype": "Section Break",
+      "label": "PPN Type Mapping"
+    },
+    {
+      "fieldname": "expected_ppn_types",
+      "fieldtype": "Small Text",
+      "label": "Expected PPN Types",
+      "description": "Jenis PPN yang biasanya digunakan untuk kode faktur ini (pisahkan dengan koma)"
+    },
+    {
+      "fieldname": "ppn_type_notes",
+      "fieldtype": "Text",
+      "label": "PPN Type Notes",
+      "description": "Catatan tentang penggunaan PPN Type untuk kode ini"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_break_info",
+      "fieldtype": "Section Break",
+      "label": "Additional Information"
+    },
+    {
+      "fieldname": "usage_notes",
+      "fieldtype": "Text",
+      "label": "Usage Notes",
+      "description": "Catatan penggunaan dan referensi peraturan"
     }
   ],
   "index_web_pages_for_search": 1,
