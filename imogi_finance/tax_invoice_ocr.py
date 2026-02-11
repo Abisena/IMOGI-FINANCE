@@ -2804,27 +2804,52 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     if not responses:
         raise ValidationError(_("Google Vision OCR did not return any responses for file {0}.").format(file_url))
 
+    # 🔥 LOG: Multi-page detection
+    frappe.logger().info(f"[Google Vision] Received {len(responses)} top-level response(s) from API")
+
     def _iter_entries(resp: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Iterate through all response entries, handling both:
+        1. Single-page: responses[0] contains fullTextAnnotation directly
+        2. Multi-page PDF: responses[0].responses[] contains per-page annotations
+        """
         for entry in resp:
-            yield entry
+            # For files:annotate with multi-page PDFs, check if this is a wrapper response
             nested_responses = entry.get("responses")
-            if isinstance(nested_responses, list):
-                for nested in nested_responses:
+            if isinstance(nested_responses, list) and len(nested_responses) > 0:
+                frappe.logger().info(
+                    f"[Google Vision] Multi-page PDF detected: "
+                    f"{len(nested_responses)} page response(s)"
+                )
+                # Iterate through per-page responses
+                for page_idx, nested in enumerate(nested_responses, 1):
                     if isinstance(nested, dict):
+                        frappe.logger().debug(f"[Google Vision] Processing page {page_idx}")
                         yield nested
+            else:
+                # Single-page or direct response structure
+                frappe.logger().debug("[Google Vision] Processing single-page response")
+                yield entry
 
     # 🔥 SIMPLIFIED: Directly extract fullTextAnnotation.text for complete content
     # Skip coordinate filtering that was dropping middle content (item table)
+    # Process ALL pages from multi-page PDF
     texts: list[str] = []
     confidence_values: list[float] = []
+    page_counter = 0
 
     for entry in _iter_entries(responses):
+        page_counter += 1
         # Priority 1: Use fullTextAnnotation.text (complete text without filtering)
         full_text = (entry.get("fullTextAnnotation") or {}).get("text")
         if full_text:
             processed = _strip_border_artifacts(full_text.strip())
             if processed:
                 texts.append(processed)
+                frappe.logger().info(
+                    f"[Google Vision] Page {page_counter}: Extracted {len(processed)} chars "
+                    f"from fullTextAnnotation"
+                )
                 
         # Priority 2: Fallback to textAnnotations[0] if fullText missing
         if not full_text:
@@ -2835,6 +2860,10 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
                     processed = _strip_border_artifacts(description.strip())
                     if processed:
                         texts.append(processed)
+                        frappe.logger().info(
+                            f"[Google Vision] Page {page_counter}: Extracted {len(processed)} chars "
+                            f"from textAnnotations (fallback)"
+                        )
         
         # Extract confidence from pages
         pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
@@ -2845,12 +2874,43 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
                 except Exception:
                     continue
 
-    # Combine all texts
-    text = "\n".join(texts).strip()
+    # Combine all texts from all pages
+    # 🔥 FIX: Use double newline between pages to preserve structure
+    # This ensures summary section from page 2 doesn't merge with line items from page 1
+    text = "\n\n".join(texts).strip()
     
     if not text:
-        frappe.logger().warning("Google Vision OCR returned empty text")
+        frappe.logger().warning("[Google Vision] OCR returned empty text after processing all pages")
         return "", data, 0.0
+
+    # 🔥 LOG: Final combined result
+    frappe.logger().info(
+        f"[Google Vision] ✅ Successfully combined text from {len(texts)} page(s): "
+        f"{len(text)} total chars, {text.count(chr(10))} lines"
+    )
+    
+    # 🔥 VALIDATION: Check if summary section markers are present
+    has_summary_markers = (
+        "Dasar Pengenaan Pajak" in text or 
+        "Jumlah PPN" in text or
+        "Dikurangi Potongan Harga" in text
+    )
+    if not has_summary_markers:
+        frappe.logger().warning(
+            "[Google Vision] ⚠️  Summary section markers not found in extracted text. "
+            "PDF may be incomplete or OCR quality is low."
+        )
+    
+    # 🔥 DEBUG: Log first/last 500 chars for troubleshooting
+    if frappe.conf.get("developer_mode"):
+        preview_start = text[:500] if len(text) > 500 else text
+        preview_end = text[-500:] if len(text) > 500 else ""
+        frappe.logger().debug(
+            f"[Google Vision] Text preview (start):\n{preview_start}\n"
+            f"{'...' if len(text) > 500 else ''}"
+        )
+        if preview_end:
+            frappe.logger().debug(f"[Google Vision] Text preview (end):\n...{preview_end}")
 
     confidence = max(confidence_values) if confidence_values else 0.0
     return text, data, confidence
