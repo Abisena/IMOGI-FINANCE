@@ -30,7 +30,7 @@ _COMPILED_PATTERNS = {
 	],
 	'uang_muka': [
 		re.compile(r'Dikurangi\s+Uang\s+Muka\s+yang\s+telah\s+diterima', re.IGNORECASE),
-		re.compile(r'Uang\s+Muka', re.IGNORECASE),
+		re.compile(r'Dikurangi\s+Uang\s+Muka', re.IGNORECASE),
 	],
 	'dpp': [
 		re.compile(r'Dasar\s+Pengenaan\s+Pajak', re.IGNORECASE),
@@ -204,11 +204,12 @@ def extract_summary_values(ocr_text: str) -> dict[str, float]:
 		Jumlah PPnBM (Pajak Penjualan atas Barang Mewah)    0,00
 
 	Algorithm:
-		1. Define specific label patterns for each field
-		2. Search for label in text (case-insensitive)
-		3. Extract amount from same line or next line
-		4. Parse using Indonesian currency parser
-		5. Validate DPP > PPN (swap if needed)
+		1. Filter to SUMMARY SECTION ONLY (lines containing "Dasar Pengenaan Pajak")
+		2. Define specific label patterns for each field
+		3. Search for label in text (case-insensitive)
+		4. Extract amount from same line or next line
+		5. Parse using Indonesian currency parser
+		6. Validate DPP > PPN (swap if needed)
 
 	Args:
 		ocr_text: Raw OCR text containing summary section
@@ -237,6 +238,46 @@ def extract_summary_values(ocr_text: str) -> dict[str, float]:
 		517605.0
 	"""
 	logger = frappe.logger()
+
+	# 🔥 CRITICAL FIX: Extract ONLY summary section (avoid line-item details)
+	# Summary section contains: "Harga Jual/Penggantian", "Dikurangi Potongan Harga", 
+	# "Dikurangi Uang Muka", "Dasar Pengenaan Pajak", "Jumlah PPN", "Jumlah PPnBM"
+	# 
+	# Strategy: Find summary section by looking for UNIQUE summary markers:
+	# - "Dikurangi Potongan Harga" (appears ONLY in summary, never in item details)
+	# - "Dasar Pengenaan Pajak" (appears ONLY in summary, never in item details)
+	# 
+	# These markers ONLY appear once in the entire document (in summary section),
+	# so we can extract text from that point onwards.
+	# Go back ONLY 1-2 lines to catch summary "Harga Jual" (not item details).
+	
+	summary_section = ocr_text
+	lines = ocr_text.split('\n')
+	summary_start_line = 0
+	
+	# Find UNIQUE summary marker - use whichever appears first
+	summary_markers = [
+		"Dikurangi Potongan Harga",
+		"Dasar Pengenaan Pajak",
+	]
+	
+	for marker in summary_markers:
+		# Find this marker
+		marker_idx = ocr_text.find(marker)
+		if marker_idx > 0:
+			marker_line_num = ocr_text[:marker_idx].count('\n')
+			# Go back ONLY 2 lines to catch "Harga Jual / Penggantian" summary line
+			# (not item details which are further up)
+			summary_start_line = max(0, marker_line_num - 2)
+			logger.info(
+				f"🔥 Found summary marker '{marker}' at line {marker_line_num}, "
+				f"starting extraction from line {summary_start_line}"
+			)
+			break
+	
+	if summary_start_line > 0:
+		summary_section = '\n'.join(lines[summary_start_line:])
+		logger.info(f"🔥 Extracted summary section ({len(lines) - summary_start_line} lines)")
 
 	# Use pre-compiled patterns (defined at module level for 30-40% performance boost)
 	field_patterns = {
@@ -305,14 +346,14 @@ def extract_summary_values(ocr_text: str) -> dict[str, float]:
 		logger.debug(f"⚠️  Could not extract {field_name} - no matching pattern found")
 		return 0.0
 
-	# Extract all values
+	# Extract all values FROM SUMMARY SECTION ONLY (not full text)
 	result = {
-		'harga_jual': _find_value_after_label(ocr_text, field_patterns['harga_jual'], 'harga_jual'),
-		'potongan_harga': _find_value_after_label(ocr_text, field_patterns['potongan_harga'], 'potongan_harga'),
-		'uang_muka': _find_value_after_label(ocr_text, field_patterns['uang_muka'], 'uang_muka'),
-		'dpp': _find_value_after_label(ocr_text, field_patterns['dpp'], 'dpp'),
-		'ppn': _find_value_after_label(ocr_text, field_patterns['ppn'], 'ppn'),
-		'ppnbm': _find_value_after_label(ocr_text, field_patterns['ppnbm'], 'ppnbm'),
+		'harga_jual': _find_value_after_label(summary_section, field_patterns['harga_jual'], 'harga_jual'),
+		'potongan_harga': _find_value_after_label(summary_section, field_patterns['potongan_harga'], 'potongan_harga'),
+		'uang_muka': _find_value_after_label(summary_section, field_patterns['uang_muka'], 'uang_muka'),
+		'dpp': _find_value_after_label(summary_section, field_patterns['dpp'], 'dpp'),
+		'ppn': _find_value_after_label(summary_section, field_patterns['ppn'], 'ppn'),
+		'ppnbm': _find_value_after_label(summary_section, field_patterns['ppnbm'], 'ppnbm'),
 	}
 
 	# 🔥 CRITICAL VALIDATION: Check if DPP and PPN were swapped
@@ -376,7 +417,7 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 	# Standard Indonesian tax rates
 	STANDARD_RATES = [0.12, 0.11]  # 12% (current since 2025) and 11% (pre-2025)
 	TOLERANCE = 0.02  # ±2% tolerance for rounding errors
-	DEFAULT_RATE = 0.12  # Current standard PPN rate in Indonesia (since Jan 2025)
+	DEFAULT_RATE = 0.11  # Standard PPN rate for Indonesian tax invoices
 
 	# ============================================================================
 	# SPECIAL CASE: Zero-rated transactions (exports, exempt goods)
