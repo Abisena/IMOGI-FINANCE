@@ -2638,6 +2638,76 @@ def _get_google_vision_headers(settings: dict[str, Any]) -> dict[str, str]:
     return {"Authorization": f"Bearer {credentials.token}"}
 
 
+def _filter_ocr_text_summary_only(text: str) -> str:
+	"""
+	Filter OCR text to keep only header + summary sections.
+	
+	Removes line items table (feature removed from Tax Invoice OCR Upload).
+	Keeps:
+	- Faktur Pajak header (nomor seri, dates, supplier info)
+	- Buyer/recipient information
+	- Summary totals (DPP, PPN, PPnBM, Harga Jual)
+	- Footer/signature section
+	
+	Removes:
+	- Line items table (No., Kode, Nama Barang, Harga, DPP per item, etc.)
+	"""
+	if not text or not text.strip():
+		return text
+	
+	lines = text.splitlines()
+	filtered_lines: list[str] = []
+	in_table = False
+	
+	# Keywords that mark the start of the line items table
+	table_start_keywords = {
+		"No.", "NOMOR", "Kode Barang", "Nama Barang", "Harga Jual",
+		"No.Kode", "No. Kode"
+	}
+	
+	# Keywords that mark the end of line items (summary section)
+	summary_start_keywords = {
+		"Dasar Pengenaan Pajak", "Jumlah PPN", "Jumlah PPnBM",
+		"Dikurangi Potongan", "Dikurangi Uang Muka",
+		"Harga Jual / Penggantian / Uang Muka / Termin"  # Summary line (not items)
+	}
+	
+	for i, line in enumerate(lines):
+		stripped = line.strip()
+		
+		# Check if we're entering the table
+		if any(kw in stripped for kw in table_start_keywords):
+			# Verify this is actually a table header by checking next few lines
+			if not in_table:
+				# Look ahead to confirm table structure
+				next_lines = "\n".join(lines[i:min(i+3, len(lines))]).lower()
+				if "rp" in next_lines or "harga" in next_lines or "potongan" in next_lines:
+					in_table = True
+					continue  # Skip the header line
+		
+		# Check if we're exiting the table (summary section starts)
+		if in_table and any(kw in stripped for kw in summary_start_keywords):
+			in_table = False
+			# Include this summary line
+		
+		# Skip lines that are clearly item details (numbers with Rp currency, item codes, etc.)
+		if in_table:
+			# Skip if line is item data (e.g., numbers, descriptions, amounts)
+			if stripped and (
+				"Rp" in stripped or  # Currency amounts
+				re.match(r"^\d+\.", stripped) or  # Item numbers (1., 2., etc.)
+				re.match(r"^\d{6}$", stripped) or  # Item codes (000000)
+				"Potongan Harga" in stripped or  # Item discount lines
+				"PPnBM" in stripped and i > 0 and in_table or  # Item tax lines (while in table)
+				"x" in stripped and "Rp" in stripped  # Quantity x amount (e.g., "Rp 360.500,00 x 1,00")
+			):
+				continue
+		
+		filtered_lines.append(line)
+	
+	return "\n".join(filtered_lines).strip()
+
+
 def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, dict[str, Any], float]:
     def _iter_block_text(entry: dict[str, Any]) -> list[tuple[str, float, float, float]]:
         """Yield (text, y_min, y_max, confidence) for each block with normalized coordinates."""
@@ -2965,8 +3035,10 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         parsed, estimated_confidence = parse_faktur_pajak_text(text or "")
         frappe.logger().info(f"[OCR] Parse complete | Found fp_no: {parsed.get('fp_no')}")
 
-        # 🔥 FIX: Store raw OCR text in parsed dict for saving
-        parsed["_ocr_text_raw"] = text or ""
+        # 🔥 FIX: Strip line items from ocr_text (line items feature removed)
+        # Keep only header + summary sections for user reference
+        ocr_text_clean = _filter_ocr_text_summary_only(text or "")
+        parsed["_ocr_text_raw"] = ocr_text_clean
 
         if not parsed.get("fp_no"):
             raw_fp_no = _extract_faktur_number_from_json(raw_json)
