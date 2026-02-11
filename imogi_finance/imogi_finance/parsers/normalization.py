@@ -195,12 +195,14 @@ def _extract_summary_by_sequence(text: str, logger) -> Dict[str, float]:
 	This handles Google Vision OCR output where labels and values are in 
 	SEPARATE sections (labels first, values second) instead of row-by-row.
 	
-	Algorithm:
-	1. Find where summary labels appear (Harga Jual, Potongan, DPP, PPN, PPnBM)
-	2. Count how many summary labels are found (typically 6)
-	3. Find all standalone amounts (lines that are ONLY numbers)
-	4. Take the LAST N amounts where N = number of labels
-	5. Match amounts to labels in ORDER (skip any item amounts before summary)
+	Algorithm (FIXED for multi-page PDFs):
+	1. Find all standalone amounts after the last summary label
+	2. Identify Harga Jual as the LARGEST amount (must be > all others)
+	3. Take 5 amounts starting from Harga Jual position
+	4. Map to: Harga Jual, Potongan, DPP, PPN, PPnBM
+	
+	This fixes the issue where item amounts (like TIMAH BALANCE 80.000)
+	appear AFTER labels but BEFORE actual summary values.
 	
 	Args:
 		text: Summary section OCR text
@@ -219,79 +221,90 @@ def _extract_summary_by_sequence(text: str, logger) -> Dict[str, float]:
 		'ppnbm': 0.0,
 	}
 	
-	# Step 1: Count how many summary labels are present (in order)
-	# The order MUST match the order on invoice:
-	# 1. Harga Jual / Penggantian / Uang Muka / Termin
-	# 2. Dikurangi Potongan Harga
-	# 3. Dikurangi Uang Muka yang telah diterima
-	# 4. Dasar Pengenaan Pajak
-	# 5. Jumlah PPN
-	# 6. Jumlah PPnBM
-	summary_labels = [
-		("harga_jual", r"Harga\s+Jual.*(?:Penggantian|Termin)"),
-		("potongan_harga", r"Dikurangi\s+Potongan\s+Harga"),
-		("uang_muka", r"Dikurangi\s+Uang\s+Muka"),
-		("dpp", r"Dasar\s+Pengenaan\s+Pajak"),
-		("ppn", r"Jumlah\s+PPN"),
-		("ppnbm", r"Jumlah\s+PPnBM|PPnBM"),
+	# Step 1: Find the last summary label position
+	summary_labels_patterns = [
+		r"Harga\s+Jual.*(?:Penggantian|Termin)",
+		r"Dikurangi\s+Potongan",
+		r"Dikurangi\s+Uang\s+Muka",
+		r"Dasar\s+Pengenaan\s+Pajak",
+		r"Jumlah\s+PPN",
+		r"Jumlah\s+PPnBM|PPnBM.*Mewah",
 	]
 	
-	# Find which labels are present and in what order
-	found_labels = []
-	for field_name, pattern in summary_labels:
-		for idx, line in enumerate(lines):
+	last_label_idx = -1
+	for idx, line in enumerate(lines):
+		for pattern in summary_labels_patterns:
 			if re.search(pattern, line, re.IGNORECASE):
-				found_labels.append((field_name, idx))
+				last_label_idx = max(last_label_idx, idx)
 				break
 	
-	if len(found_labels) < 3:
-		logger.debug(f"Sequential extraction: Only {len(found_labels)} summary labels found (need >= 3)")
+	if last_label_idx < 0:
+		logger.debug("Sequential extraction: No summary labels found")
 		return result
 	
-	logger.info(f"Sequential extraction: Found {len(found_labels)} labels: {[f[0] for f in found_labels]}")
+	logger.info(f"Sequential extraction: Last summary label at line {last_label_idx}")
 	
-	# Step 2: Find ALL standalone amounts (lines that contain ONLY a number)
+	# Step 2: Find ALL standalone amounts AFTER the last label
 	amount_pattern = re.compile(r'^[\s\-]*[\d\.\,]+[\s\-]*$')
-	standalone_amounts: List[tuple] = []
+	amounts_after_labels: List[tuple] = []
 	
 	for idx, line in enumerate(lines):
+		if idx <= last_label_idx:
+			continue  # Skip lines before/at last label
+			
 		stripped = line.strip()
 		if not stripped or stripped == '-':
 			continue
-		# Check if line is just an amount (with possible trailing/leading spaces or dash)
+			
+		# Check if line is just an amount
 		if amount_pattern.match(stripped) or re.match(r'^[\d\.\,]+,\d{2}$', stripped):
 			amount = parse_indonesian_currency(stripped)
-			standalone_amounts.append((amount, idx))
+			# Skip if it looks like a year (2020-2030)
+			if 2020 <= amount <= 2030:
+				logger.debug(f"  Skipping line {idx}: {amount} (looks like a year)")
+				continue
+			amounts_after_labels.append((amount, idx))
 			logger.debug(f"  Found amount at line {idx}: {amount:,.2f}")
 	
-	logger.info(f"Sequential extraction: Found {len(standalone_amounts)} standalone amounts")
+	if len(amounts_after_labels) < 5:
+		logger.warning(f"Sequential extraction: Only {len(amounts_after_labels)} amounts after labels")
+		return result
 	
-	# Step 3: Take the LAST N amounts where N = number of labels found
-	# This skips any item amounts that appear BEFORE the summary values
-	num_labels = len(found_labels)
+	logger.info(f"Sequential extraction: Found {len(amounts_after_labels)} amounts after labels")
 	
-	if len(standalone_amounts) < num_labels:
-		logger.warning(f"Sequential extraction: Only {len(standalone_amounts)} amounts, but {num_labels} labels")
-		# Use what we have
-		summary_amounts = standalone_amounts
-	else:
-		# Take LAST N amounts (skip item amounts before summary)
-		summary_amounts = standalone_amounts[-num_labels:]
-		if len(standalone_amounts) > num_labels:
-			skipped = len(standalone_amounts) - num_labels
-			logger.info(f"Sequential extraction: Skipping first {skipped} amounts (likely line items)")
+	# Step 3: Find Harga Jual = the LARGEST amount
+	# This is the key fix: Harga Jual MUST be the largest value
+	max_amount = max(amounts_after_labels, key=lambda x: x[0])
+	max_idx = amounts_after_labels.index(max_amount)
 	
-	# Step 4: Match amounts to labels in order
-	for i, (field_name, label_idx) in enumerate(found_labels):
+	logger.info(f"Sequential extraction: Harga Jual (largest) = {max_amount[0]:,.2f} at position {max_idx}")
+	
+	# Step 4: Take 5 amounts starting from Harga Jual position
+	# Order: Harga Jual, Potongan, DPP, PPN, PPnBM
+	summary_amounts = amounts_after_labels[max_idx:max_idx + 5]
+	
+	if len(summary_amounts) < 5:
+		logger.warning(f"Sequential extraction: Only {len(summary_amounts)} amounts from Harga Jual position")
+	
+	# Step 5: Map to result fields
+	field_order = ['harga_jual', 'potongan_harga', 'dpp', 'ppn', 'ppnbm']
+	for i, field_name in enumerate(field_order):
 		if i < len(summary_amounts):
 			result[field_name] = summary_amounts[i][0]
 			logger.info(f"  {field_name} = {result[field_name]:,.2f}")
 	
-	# Step 5: Additional validation - check DPP/PPN ratio
+	# Step 6: Validation - check DPP/PPN ratio (should be ~12%)
 	if result['dpp'] > 0 and result['ppn'] > 0:
 		ratio = result['ppn'] / result['dpp']
-		if not (0.08 <= ratio <= 0.15):
-			logger.warning(f"Sequential extraction: PPN/DPP ratio {ratio*100:.1f}% unusual (expected 8-15%)")
+		if 0.10 <= ratio <= 0.13:
+			logger.info(f"Sequential extraction: PPN/DPP ratio {ratio*100:.1f}% ✓ (valid)")
+		else:
+			logger.warning(f"Sequential extraction: PPN/DPP ratio {ratio*100:.1f}% (expected 11-12%)")
+	
+	# Step 7: Validation - Harga Jual should be >= DPP
+	if result['harga_jual'] > 0 and result['dpp'] > 0:
+		if result['harga_jual'] < result['dpp']:
+			logger.warning(f"Sequential extraction: Harga Jual < DPP, may be incorrect!")
 	
 	logger.info(f"Sequential extraction result: {result}")
 	return result
