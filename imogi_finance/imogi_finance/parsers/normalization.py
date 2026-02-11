@@ -9,7 +9,7 @@ Handles Indonesian number formats, description cleaning, and OCR corrections.
 """
 
 import re
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Any
 
 import frappe
 
@@ -188,7 +188,7 @@ def parse_indonesian_currency(value_str: str) -> float:
 		return 0.0
 
 
-def extract_summary_values(ocr_text: str) -> dict[str, float]:
+def extract_summary_values(ocr_text: str) -> Dict[str, float]:
 	"""
 	Extract summary section values from Indonesian tax invoice OCR text.
 
@@ -477,7 +477,7 @@ def detect_tax_rate(dpp: float, ppn: float, faktur_type: str = "") -> float:
 	return 0.0
 
 
-def verify_tax_rate_against_regulations(tax_rate: float) -> dict[str, any]:
+def verify_tax_rate_against_regulations(tax_rate: float) -> Dict[str, Any]:
 	"""
 	Verify if calculated tax rate is valid according to Indonesian tax regulations.
 
@@ -643,19 +643,7 @@ def validate_tax_calculation(
 	is_valid = True
 
 	# ============================================================================
-	# CHECK 6 (MOST CRITICAL): Detect swapped PPN and DPP fields
-	# ============================================================================
-	# This is the main bug we're fixing - check this FIRST
-	if ppn > 0 and dpp > 0 and ppn > dpp:
-		issues.append(
-			f"🚨 CRITICAL: PPN ({ppn:,.2f}) > DPP ({dpp:,.2f}) - Fields are likely SWAPPED! "
-			f"PPN should always be smaller than DPP (typically 11-12% of DPP)."
-		)
-		is_valid = False
-		logger.error(f"🚨 Field swap detected: PPN={ppn:,.2f} > DPP={dpp:,.2f}")
-
-	# ============================================================================
-	# CHECK 5: Negative values
+	# CHECK 1: Negative values
 	# ============================================================================
 	if harga_jual < 0:
 		issues.append(f"❌ Harga Jual cannot be negative: {harga_jual:,.2f}")
@@ -678,26 +666,23 @@ def validate_tax_calculation(
 		is_valid = False
 
 	# ============================================================================
-	# CHECK 4: Suspiciously low values (might indicate parsing error)
+	# CHECK 2: DPP should be ≤ Harga Jual
 	# ============================================================================
-	MIN_REASONABLE_AMOUNT = 1000.0  # Rp 1,000
+	if harga_jual > 0 and dpp > 0:
+		# Allow small rounding tolerance (Rp 10)
+		ROUNDING_TOLERANCE = 10.0
 
-	if 0 < harga_jual < MIN_REASONABLE_AMOUNT:
-		issues.append(
-			f"⚠️  Warning: Harga Jual is suspiciously low ({harga_jual:,.2f}). "
-			f"Values < Rp 1,000 might indicate a parsing error."
-		)
-		# Don't mark as invalid, just warn
-
-	if 0 < dpp < MIN_REASONABLE_AMOUNT:
-		issues.append(
-			f"⚠️  Warning: DPP is suspiciously low ({dpp:,.2f}). "
-			f"Values < Rp 1,000 might indicate a parsing error."
-		)
-		# Don't mark as invalid, just warn
+		if dpp > harga_jual + ROUNDING_TOLERANCE:
+			difference = dpp - harga_jual
+			issues.append(
+				f"❌ DPP ({dpp:,.2f}) cannot be greater than Harga Jual ({harga_jual:,.2f}). "
+				f"Difference: {difference:,.2f}"
+			)
+			is_valid = False
+			logger.warning(f"DPP > Harga Jual: dpp={dpp:,.2f}, harga_jual={harga_jual:,.2f}")
 
 	# ============================================================================
-	# CHECK 1: PPN = DPP × tax_rate (with tolerance)
+	# CHECK 3: PPN = DPP × tax_rate (with tolerance)
 	# ============================================================================
 	# Skip this check for zero-rated transactions (exports, exempt goods)
 	if tax_rate == 0.0:
@@ -731,23 +716,7 @@ def validate_tax_calculation(
 			)
 
 	# ============================================================================
-	# CHECK 2: DPP should be ≤ Harga Jual
-	# ============================================================================
-	if harga_jual > 0 and dpp > 0:
-		# Allow small rounding tolerance (Rp 10)
-		ROUNDING_TOLERANCE = 10.0
-
-		if dpp > harga_jual + ROUNDING_TOLERANCE:
-			difference = dpp - harga_jual
-			issues.append(
-				f"❌ DPP ({dpp:,.2f}) cannot be greater than Harga Jual ({harga_jual:,.2f}). "
-				f"Difference: {difference:,.2f}"
-			)
-			is_valid = False
-			logger.warning(f"DPP > Harga Jual: dpp={dpp:,.2f}, harga_jual={harga_jual:,.2f}")
-
-	# ============================================================================
-	# CHECK 3: If potongan_harga exists, validate discount calculation
+	# CHECK 4: If potongan_harga exists, validate discount calculation
 	# ============================================================================
 	if potongan_harga > 0 and harga_jual > 0 and dpp > 0:
 		# Expected: DPP = Harga Jual - Potongan Harga
@@ -772,6 +741,37 @@ def validate_tax_calculation(
 			)
 
 	# ============================================================================
+	# CHECK 5: Suspiciously low values (might indicate parsing error)
+	# ============================================================================
+	MIN_REASONABLE_AMOUNT = 1000.0  # Rp 1,000
+
+	if 0 < harga_jual < MIN_REASONABLE_AMOUNT:
+		issues.append(
+			f"⚠️  Warning: Harga Jual is suspiciously low ({harga_jual:,.2f}). "
+			f"Values < Rp 1,000 might indicate a parsing error."
+		)
+		# Don't mark as invalid, just warn
+
+	if 0 < dpp < MIN_REASONABLE_AMOUNT:
+		issues.append(
+			f"⚠️  Warning: DPP is suspiciously low ({dpp:,.2f}). "
+			f"Values < Rp 1,000 might indicate a parsing error."
+		)
+		# Don't mark as invalid, just warn
+
+	# ============================================================================
+	# CHECK 6 (MOST CRITICAL): Detect swapped PPN and DPP fields
+	# ============================================================================
+	# This check comes LAST to allow other validations to run first for audit trail
+	if ppn > 0 and dpp > 0 and ppn > dpp:
+		issues.append(
+			f"🚨 CRITICAL: PPN ({ppn:,.2f}) > DPP ({dpp:,.2f}) - Fields are likely SWAPPED! "
+			f"PPN should always be smaller than DPP (typically 11-12% of DPP)."
+		)
+		is_valid = False
+		logger.error(f"🚨 Field swap detected: PPN={ppn:,.2f} > DPP={dpp:,.2f}")
+
+	# ============================================================================
 	# Summary
 	# ============================================================================
 	if is_valid:
@@ -787,7 +787,7 @@ def process_tax_invoice_ocr(
 	tokens: List[Dict],
 	faktur_no: str,
 	faktur_type: str
-) -> Dict:
+) -> Dict[str, Any]:
 	"""
 	Process tax invoice OCR text and extract all values with validation.
 
@@ -846,11 +846,14 @@ def process_tax_invoice_ocr(
 	)
 
 	# ============================================================================
-	# STEP 2: Detect correct tax rate
+	# STEP 2: Detect correct tax rate and verify against regulations
 	# ============================================================================
 	logger.info("🔍 Step 2: Detecting tax rate...")
 	detected_rate = detect_tax_rate(dpp, ppn, faktur_type)
 	logger.info(f"   Detected tax rate: {detected_rate*100:.0f}%")
+	
+	# Verify rate against Indonesian regulations
+	rate_verification = verify_tax_rate_against_regulations(detected_rate)
 
 	# ============================================================================
 	# STEP 3: Validate all calculations
@@ -908,7 +911,10 @@ def process_tax_invoice_ocr(
 
 		# Detected values
 		'detected_tax_rate': detected_rate,
+		'tax_rate': detected_rate,  # Alias for consistency with flow documentation
 		'tax_rate_percentage': detected_rate * 100,  # For display
+		'rate_type': rate_verification.get('rate_type', 'Unknown'),  # Flow documentation requirement
+		'rate_verification': rate_verification,  # Flow documentation requirement
 
 		# Validation results
 		'parse_status': parse_status,
@@ -1100,7 +1106,7 @@ def extract_npwp(text: str) -> Optional[str]:
 	return None
 
 
-def normalize_line_item(item: dict) -> dict:
+def normalize_line_item(item: Dict) -> Dict:
 	"""
 	Normalize all fields in a line item dictionary.
 
@@ -1222,7 +1228,7 @@ def find_decimal_separator(text: str) -> tuple:
 	return None, None
 
 
-def validate_number_format(original_text: str, parsed_value: Optional[float]) -> dict:
+def validate_number_format(original_text: str, parsed_value: Optional[float]) -> Dict[str, Any]:
 	"""
 	Validate that parsed number makes sense in context.
 
@@ -1317,7 +1323,7 @@ def detect_vat_inclusivity(
 	ppn: Optional[float],
 	tax_rate: float = 0.11,
 	tolerance_percentage: float = 0.02
-) -> dict:
+) -> Dict[str, Any]:
 	"""
 	Detect if invoice amounts suggest Harga Jual includes VAT (inclusive VAT).
 
@@ -1403,7 +1409,7 @@ def detect_vat_inclusivity(
 def recalculate_dpp_from_inclusive(
 	harga_jual: float,
 	tax_rate: float = 0.11
-) -> dict:
+) -> Dict[str, Any]:
 	"""
 	Recalculate DPP and PPN from INCLUSIVE Harga Jual amount.
 
