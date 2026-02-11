@@ -79,29 +79,44 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			frm.doc.ocr_status === 'Failed' || 
 			frm.doc.ocr_status === 'Pending';
 		
-		if (!frm.is_new() && frm.doc.tax_invoice_pdf && providerReady !== false && ocrNotDone) {
-			frm.add_custom_button(__('Run OCR'), async () => {
-				await frappe.call({
-					method: 'imogi_finance.api.tax_invoice.run_ocr_for_upload',
-					args: { upload_name: frm.doc.name },
-					freeze: true,
-					freeze_message: __('Queueing OCR...'),
-				});
-				frappe.show_alert({ message: __('OCR queued.'), indicator: 'green' });
-				await refreshUploadStatus(frm);
-			}, TAX_INVOICE_OCR_GROUP);
+		if (!frm.is_new() && frm.doc.tax_invoice_pdf && providerReady !== false) {
+			if (ocrNotDone) {
+				// Show "Run OCR" button when OCR not yet completed
+				frm.add_custom_button(__('Run OCR'), async () => {
+					await frappe.call({
+						method: 'imogi_finance.api.tax_invoice.run_ocr_for_upload',
+						args: { upload_name: frm.doc.name },
+						freeze: true,
+						freeze_message: __('Queueing OCR...'),
+					});
+					frappe.show_alert({ message: __('OCR queued.'), indicator: 'green' });
+					await refreshUploadStatus(frm);
+				}, TAX_INVOICE_OCR_GROUP);
+			} else {
+				// Show "Re-Run OCR" button when OCR already done (for re-processing)
+				frm.add_custom_button(__('🔄 Re-Run OCR'), async () => {
+					await frappe.call({
+						method: 'imogi_finance.api.tax_invoice.run_ocr_for_upload',
+						args: { upload_name: frm.doc.name },
+						freeze: true,
+						freeze_message: __('Queueing OCR...'),
+					});
+					frappe.show_alert({ message: __('OCR queued.'), indicator: 'green' });
+					await refreshUploadStatus(frm);
+				}, TAX_INVOICE_OCR_GROUP);
+			}
 		}
 
-		// Add Manual Verify button if verification needed
+		// Add Force Verify button if verification needed
 		if (frm.doc.verification_status === 'Needs Review' && frm.doc.fp_no) {
-			frm.add_custom_button(__('🔍 Re-Run Verification'), async () => {
+			frm.add_custom_button(__('✅ Force Verify (Approve)'), async () => {
 				await frappe.call({
 					method: 'imogi_finance.api.tax_invoice.verify_tax_invoice_upload',
-					args: { upload_name: frm.doc.name },
+					args: { upload_name: frm.doc.name, force: true },
 					freeze: true,
-					freeze_message: __('Verifying Tax Invoice...'),
+					freeze_message: __('Approving as Verified...'),
 				});
-				frappe.show_alert({ message: __('Verification complete.'), indicator: 'green' });
+				frappe.show_alert({ message: __('Approved as Verified.'), indicator: 'green' });
 				await frm.reload_doc();
 			}, TAX_INVOICE_OCR_GROUP);
 		}
