@@ -2766,8 +2766,11 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     local_path, content = _load_pdf_content_base64(file_url)
     endpoint = _build_google_vision_url(settings)
     language = settings.get("ocr_language") or "id"
-    max_pages = max(cint(settings.get("ocr_max_pages", 2)), 1)
+    # 🔥 FIX: Use default 5 (not 2) to ensure multi-page PDFs are fully processed
+    max_pages = max(cint(settings.get("ocr_max_pages") or 5), 1)
     headers = _get_google_vision_headers(settings)
+    
+    frappe.logger().info(f"[Google Vision] Processing PDF with max_pages={max_pages}")
 
     request_body: dict[str, Any] = {
         "requests": [
@@ -2807,11 +2810,14 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     # 🔥 LOG: Multi-page detection
     frappe.logger().info(f"[Google Vision] Received {len(responses)} top-level response(s) from API")
 
-    def _iter_entries(resp: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _iter_entries(resp: list[dict[str, Any]]):
         """
         Iterate through all response entries, handling both:
         1. Single-page: responses[0] contains fullTextAnnotation directly
         2. Multi-page PDF: responses[0].responses[] contains per-page annotations
+        
+        Yields:
+            dict: Each page's response entry
         """
         for entry in resp:
             # For files:annotate with multi-page PDFs, check if this is a wrapper response

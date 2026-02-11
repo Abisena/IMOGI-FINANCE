@@ -188,6 +188,115 @@ def parse_indonesian_currency(value_str: str) -> float:
 		return 0.0
 
 
+def _extract_summary_by_sequence(text: str, logger) -> Dict[str, float]:
+	"""
+	🔥 FALLBACK: Extract summary values using sequential matching.
+	
+	This handles Google Vision OCR output where labels and values are in 
+	SEPARATE sections (labels first, values second) instead of row-by-row.
+	
+	Algorithm:
+	1. Find where summary labels appear (Harga Jual, Potongan, DPP, PPN, PPnBM)
+	2. Count how many summary labels are found (typically 6)
+	3. Find all standalone amounts (lines that are ONLY numbers)
+	4. Take the LAST N amounts where N = number of labels
+	5. Match amounts to labels in ORDER (skip any item amounts before summary)
+	
+	Args:
+		text: Summary section OCR text
+		logger: Logger instance
+		
+	Returns:
+		Dict with harga_jual, dpp, ppn, potongan_harga, uang_muka, ppnbm
+	"""
+	lines = text.split('\n')
+	result: Dict[str, float] = {
+		'harga_jual': 0.0,
+		'dpp': 0.0,
+		'ppn': 0.0,
+		'potongan_harga': 0.0,
+		'uang_muka': 0.0,
+		'ppnbm': 0.0,
+	}
+	
+	# Step 1: Count how many summary labels are present (in order)
+	# The order MUST match the order on invoice:
+	# 1. Harga Jual / Penggantian / Uang Muka / Termin
+	# 2. Dikurangi Potongan Harga
+	# 3. Dikurangi Uang Muka yang telah diterima
+	# 4. Dasar Pengenaan Pajak
+	# 5. Jumlah PPN
+	# 6. Jumlah PPnBM
+	summary_labels = [
+		("harga_jual", r"Harga\s+Jual.*(?:Penggantian|Termin)"),
+		("potongan_harga", r"Dikurangi\s+Potongan\s+Harga"),
+		("uang_muka", r"Dikurangi\s+Uang\s+Muka"),
+		("dpp", r"Dasar\s+Pengenaan\s+Pajak"),
+		("ppn", r"Jumlah\s+PPN"),
+		("ppnbm", r"Jumlah\s+PPnBM|PPnBM"),
+	]
+	
+	# Find which labels are present and in what order
+	found_labels = []
+	for field_name, pattern in summary_labels:
+		for idx, line in enumerate(lines):
+			if re.search(pattern, line, re.IGNORECASE):
+				found_labels.append((field_name, idx))
+				break
+	
+	if len(found_labels) < 3:
+		logger.debug(f"Sequential extraction: Only {len(found_labels)} summary labels found (need >= 3)")
+		return result
+	
+	logger.info(f"Sequential extraction: Found {len(found_labels)} labels: {[f[0] for f in found_labels]}")
+	
+	# Step 2: Find ALL standalone amounts (lines that contain ONLY a number)
+	amount_pattern = re.compile(r'^[\s\-]*[\d\.\,]+[\s\-]*$')
+	standalone_amounts: List[tuple] = []
+	
+	for idx, line in enumerate(lines):
+		stripped = line.strip()
+		if not stripped or stripped == '-':
+			continue
+		# Check if line is just an amount (with possible trailing/leading spaces or dash)
+		if amount_pattern.match(stripped) or re.match(r'^[\d\.\,]+,\d{2}$', stripped):
+			amount = parse_indonesian_currency(stripped)
+			standalone_amounts.append((amount, idx))
+			logger.debug(f"  Found amount at line {idx}: {amount:,.2f}")
+	
+	logger.info(f"Sequential extraction: Found {len(standalone_amounts)} standalone amounts")
+	
+	# Step 3: Take the LAST N amounts where N = number of labels found
+	# This skips any item amounts that appear BEFORE the summary values
+	num_labels = len(found_labels)
+	
+	if len(standalone_amounts) < num_labels:
+		logger.warning(f"Sequential extraction: Only {len(standalone_amounts)} amounts, but {num_labels} labels")
+		# Use what we have
+		summary_amounts = standalone_amounts
+	else:
+		# Take LAST N amounts (skip item amounts before summary)
+		summary_amounts = standalone_amounts[-num_labels:]
+		if len(standalone_amounts) > num_labels:
+			skipped = len(standalone_amounts) - num_labels
+			logger.info(f"Sequential extraction: Skipping first {skipped} amounts (likely line items)")
+	
+	# Step 4: Match amounts to labels in order
+	for i, (field_name, label_idx) in enumerate(found_labels):
+		if i < len(summary_amounts):
+			result[field_name] = summary_amounts[i][0]
+			logger.info(f"  {field_name} = {result[field_name]:,.2f}")
+	
+	# Step 5: Additional validation - check DPP/PPN ratio
+	if result['dpp'] > 0 and result['ppn'] > 0:
+		ratio = result['ppn'] / result['dpp']
+		if not (0.08 <= ratio <= 0.15):
+			logger.warning(f"Sequential extraction: PPN/DPP ratio {ratio*100:.1f}% unusual (expected 8-15%)")
+	
+	logger.info(f"Sequential extraction result: {result}")
+	return result
+
+
 def extract_summary_values(ocr_text: str) -> Dict[str, float]:
 	"""
 	Extract summary section values from Indonesian tax invoice OCR text.
@@ -355,6 +464,28 @@ def extract_summary_values(ocr_text: str) -> Dict[str, float]:
 		'ppn': _find_value_after_label(summary_section, field_patterns['ppn'], 'ppn'),
 		'ppnbm': _find_value_after_label(summary_section, field_patterns['ppnbm'], 'ppnbm'),
 	}
+
+	# 🔥 FALLBACK: If standard label-based extraction failed, use sequential matching
+	# This handles Google Vision OCR output where labels and values are in separate columns
+	# (labels extracted first as a block, values extracted second as another block)
+	if result['dpp'] == 0 or result['ppn'] == 0:
+		logger.info("🔄 Standard label-based extraction incomplete, trying sequential value matching...")
+		fallback = _extract_summary_by_sequence(summary_section, logger)
+		
+		# Use fallback values only if they're better than current results
+		if fallback.get('dpp', 0) > 0 and result['dpp'] == 0:
+			result['dpp'] = fallback['dpp']
+			logger.info(f"✅ Fallback DPP: {result['dpp']:,.2f}")
+		if fallback.get('ppn', 0) > 0 and result['ppn'] == 0:
+			result['ppn'] = fallback['ppn']
+			logger.info(f"✅ Fallback PPN: {result['ppn']:,.2f}")
+		if fallback.get('harga_jual', 0) > 0 and result['harga_jual'] == 0:
+			result['harga_jual'] = fallback['harga_jual']
+			logger.info(f"✅ Fallback Harga Jual: {result['harga_jual']:,.2f}")
+		if fallback.get('potongan_harga', 0) >= 0 and result['potongan_harga'] == 0:
+			result['potongan_harga'] = fallback.get('potongan_harga', 0)
+		if fallback.get('ppnbm', 0) >= 0 and result['ppnbm'] == 0:
+			result['ppnbm'] = fallback.get('ppnbm', 0)
 
 	# 🔥 CRITICAL VALIDATION: Check if DPP and PPN were swapped
 	# PPN should always be smaller than DPP (typically 11-12% of DPP)
