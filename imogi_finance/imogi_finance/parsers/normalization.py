@@ -188,6 +188,75 @@ def parse_indonesian_currency(value_str: str) -> float:
 		return 0.0
 
 
+def _extract_from_structured_summary(text: str, logger) -> Dict[str, float]:
+	"""
+	Extract summary values from the STRUCTURED SUMMARY section appended by vision_helpers.
+	
+	This section has clean label: value format:
+		=== STRUCTURED SUMMARY ===
+		Harga Jual: 1.102.500,00
+		Dikurangi Potongan Harga: 0,00
+		Dasar Pengenaan Pajak: 1.010.625,00
+		Jumlah PPN: 121.275,00
+		Jumlah PPnBM: 0,00
+		=== END STRUCTURED SUMMARY ===
+	
+	Returns empty dict if section not found or parsing fails.
+	"""
+	result: Dict[str, float] = {}
+	
+	# Look for structured summary section
+	start_marker = "=== STRUCTURED SUMMARY ==="
+	end_marker = "=== END STRUCTURED SUMMARY ==="
+	
+	start_idx = text.find(start_marker)
+	end_idx = text.find(end_marker)
+	
+	if start_idx < 0 or end_idx < 0 or end_idx <= start_idx:
+		return result
+	
+	structured_section = text[start_idx + len(start_marker):end_idx].strip()
+	logger.info("Found STRUCTURED SUMMARY section, extracting values...")
+	
+	# Parse label: value pairs
+	for line in structured_section.split('\n'):
+		line = line.strip()
+		if not line or ':' not in line:
+			continue
+		
+		label, _, value = line.partition(':')
+		label = label.strip().lower()
+		value = value.strip()
+		
+		if value == '-':
+			continue
+		
+		parsed_value = parse_indonesian_currency(value)
+		if parsed_value == 0 and value not in ('0', '0,00', '-'):
+			continue  # Skip if parsing failed for non-zero values
+		
+		if 'harga jual' in label:
+			result['harga_jual'] = parsed_value
+			logger.debug(f"  Harga Jual: {parsed_value:,.2f}")
+		elif 'potongan' in label:
+			result['potongan'] = parsed_value
+			logger.debug(f"  Potongan: {parsed_value:,.2f}")
+		elif 'dasar pengenaan' in label or 'dpp' in label:
+			result['dpp'] = parsed_value
+			logger.debug(f"  DPP: {parsed_value:,.2f}")
+		elif 'ppn' in label and 'ppnbm' not in label:
+			result['ppn'] = parsed_value
+			logger.debug(f"  PPN: {parsed_value:,.2f}")
+		elif 'ppnbm' in label:
+			result['ppnbm'] = parsed_value
+			logger.debug(f"  PPnBM: {parsed_value:,.2f}")
+	
+	if result:
+		logger.info(f"Extracted from STRUCTURED SUMMARY: {result}")
+	
+	return result
+
+
 def _extract_summary_by_sequence(text: str, logger) -> Dict[str, float]:
 	"""
 	🔥 FALLBACK: Extract summary values using sequential matching.
@@ -468,6 +537,25 @@ def extract_summary_values(ocr_text: str) -> Dict[str, float]:
 		logger.debug(f"⚠️  Could not extract {field_name} - no matching pattern found")
 		return 0.0
 
+	# 🔥 PRIORITY 1: Try to extract from STRUCTURED SUMMARY section first
+	# This section is built by vision_helpers using bounding box coordinates
+	# and has clean "label: value" format that's reliable to parse
+	structured_result = _extract_from_structured_summary(ocr_text, logger)
+	if structured_result.get('dpp', 0) > 0 and structured_result.get('ppn', 0) > 0:
+		logger.info("✅ Extracted from STRUCTURED SUMMARY section - high confidence")
+		# Fill in missing fields with defaults
+		result = {
+			'harga_jual': structured_result.get('harga_jual', 0.0),
+			'potongan_harga': structured_result.get('potongan', 0.0),
+			'uang_muka': 0.0,
+			'dpp': structured_result.get('dpp', 0.0),
+			'ppn': structured_result.get('ppn', 0.0),
+			'ppnbm': structured_result.get('ppnbm', 0.0),
+		}
+		logger.info(f"📊 Summary values from structured section: {result}")
+		return result
+
+	# 🔥 FALLBACK: Standard label-based extraction from raw OCR text
 	# Extract all values FROM SUMMARY SECTION ONLY (not full text)
 	result = {
 		'harga_jual': _find_value_after_label(summary_section, field_patterns['harga_jual'], 'harga_jual'),

@@ -2889,6 +2889,17 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         frappe.logger().warning("[Google Vision] OCR returned empty text after processing all pages")
         return "", data, 0.0
 
+    # 🔥 ENHANCE: Add structured summary using bounding box coordinates
+    # This matches labels with values by Y coordinate to fix the column-reading issue
+    try:
+        from imogi_finance.imogi_finance.parsers.vision_helpers import (
+            enhance_ocr_text_with_structured_summary,
+        )
+        text = enhance_ocr_text_with_structured_summary(text, data)
+        frappe.logger().info("[Google Vision] ✅ Enhanced OCR text with structured summary section")
+    except Exception as e:
+        frappe.logger().warning(f"[Google Vision] ⚠️ Could not enhance OCR text: {e}")
+
     # 🔥 LOG: Final combined result
     frappe.logger().info(
         f"[Google Vision] ✅ Successfully combined text from {len(texts)} page(s): "
