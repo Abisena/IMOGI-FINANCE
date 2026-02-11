@@ -79,21 +79,7 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			frm.doc.ocr_status === 'Failed' || 
 			frm.doc.ocr_status === 'Pending';
 		
-		// Debug: Log conditions for troubleshooting
-		console.log('[Tax Invoice OCR Upload] Run OCR button conditions:', {
-			is_new: frm.is_new(),
-			__islocal: frm.doc.__islocal,
-			name: frm.doc.name,
-			has_pdf: !!frm.doc.tax_invoice_pdf,
-			provider_ready: providerReady,
-			ocr_status: frm.doc.ocr_status,
-			ocr_not_done: ocrNotDone,
-			enabled: enabled,
-			all_conditions_met: !frm.is_new() && frm.doc.tax_invoice_pdf && providerReady !== false && ocrNotDone
-		});
-		
 		if (!frm.is_new() && frm.doc.tax_invoice_pdf && providerReady !== false && ocrNotDone) {
-			console.log('[Tax Invoice OCR Upload] ✅ Adding Run OCR button');
 			frm.add_custom_button(__('Run OCR'), async () => {
 				await frappe.call({
 					method: 'imogi_finance.api.tax_invoice.run_ocr_for_upload',
@@ -104,8 +90,6 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 				frappe.show_alert({ message: __('OCR queued.'), indicator: 'green' });
 				await refreshUploadStatus(frm);
 			}, TAX_INVOICE_OCR_GROUP);
-		} else {
-			console.log('[Tax Invoice OCR Upload] ❌ Run OCR button not shown - conditions not met');
 		}
 
 		// Add Manual Verify button if verification needed
