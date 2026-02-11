@@ -19,8 +19,8 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import frappe
 
-# 🔥 FIX: Import Vision JSON unwrapping helper (relative import for ERPNext v15+ best practice)
-from .multirow_parser import _resolve_full_text_annotation
+# Import Vision JSON unwrapping helper
+from .vision_helpers import _resolve_full_text_annotation
 
 _logger = logging.getLogger(__name__)
 try:

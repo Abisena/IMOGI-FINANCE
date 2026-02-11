@@ -41,7 +41,7 @@ import frappe
 from frappe import _
 
 from .normalization import parse_indonesian_currency
-from .multirow_parser import _resolve_full_text_annotation  # 🔥 FIX: Use shared unwrapper
+from .vision_helpers import _resolve_full_text_annotation
 
 
 # =============================================================================
