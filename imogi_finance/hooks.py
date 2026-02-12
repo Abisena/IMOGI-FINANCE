@@ -234,6 +234,10 @@ doc_events = {
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
         ],
     },
+    "Sales Order": {
+        "validate": "imogi_finance.events.sales_order.compute_outstanding_amount",
+        "on_update_after_submit": "imogi_finance.events.sales_order.compute_outstanding_amount",
+    },
     "Expense Claim": {
         "on_submit": "imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances",
     },
@@ -345,6 +349,7 @@ doc_events = {
             "imogi_finance.events.payment_entry.on_submit",
             "imogi_finance.receipt_control.payment_entry_hooks.record_payment_entry",
             "imogi_finance.transfer_application.payment_entry_hooks.on_submit",
+            "imogi_finance.events.sales_order.update_sales_order_outstanding_from_payment",
         ],
         "on_update_after_submit": [
             "imogi_finance.events.payment_entry.on_update_after_submit",
@@ -356,6 +361,7 @@ doc_events = {
             "imogi_finance.events.payment_entry.on_cancel",
             "imogi_finance.receipt_control.payment_entry_hooks.remove_payment_entry",
             "imogi_finance.transfer_application.payment_entry_hooks.on_cancel",
+            "imogi_finance.events.sales_order.update_sales_order_outstanding_from_payment",
         ],
         "before_delete": "imogi_finance.events.payment_entry.before_delete",
         "on_trash": [
