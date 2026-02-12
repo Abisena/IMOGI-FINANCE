@@ -3032,7 +3032,12 @@ def _update_doc_after_ocr(
                 continue
             value = sanitized
 
-        setattr(doc, _get_fieldname(doctype, key), value)
+        # 🔥 FIX: For Tax Invoice OCR Upload, write "notes" explicitly to ocr_summary_json
+        # to avoid any framework field copying or validation issues
+        if doctype == "Tax Invoice OCR Upload" and key == "notes":
+            setattr(doc, "ocr_summary_json", value)
+        else:
+            setattr(doc, _get_fieldname(doctype, key), value)
 
     # Update notes if any
     if extra_notes:

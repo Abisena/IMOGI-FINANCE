@@ -97,6 +97,15 @@ def _resolve_tax_invoice_type(fp_no: str | None) -> tuple[str | None, str | None
 
 class TaxInvoiceOCRUpload(Document):
     def validate(self):
+        # 🔥 CRITICAL FIX: Skip ALL validation if this is OCR background job save
+        # This prevents verification_notes from being overwritten with auto-generated
+        # verification messages when OCR is saving parsed JSON data to ocr_summary_json
+        if self.flags.get("ignore_validate"):
+            return
+
+        # Original validation logic continues...
+        # Only runs on USER-initiated saves (from UI or API)
+        
         if not self.fp_no:
             frappe.throw(_("Tax Invoice Number is required."))
         if not self.tax_invoice_pdf:
