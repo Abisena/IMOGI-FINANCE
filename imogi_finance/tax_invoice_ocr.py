@@ -48,7 +48,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes", "ocr_error_log"}
 
 
 def _raise_validation_error(message: str):
