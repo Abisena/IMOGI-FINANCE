@@ -75,9 +75,9 @@ def _load_expense_request_descriptions(er_names: Sequence[str]) -> dict[str, str
     rows = frappe.get_all(
         "Expense Request",
         filters={"name": ("in", list(er_names))},
-        fields=["name", "description", "purpose"],
+        fields=["name", "description"],
     )
-    return {row["name"]: (row.get("description") or row.get("purpose") or row["name"]) for row in rows if row.get("name")}
+    return {row["name"]: (row.get("description") or row["name"]) for row in rows if row.get("name")}
 
 
 def _load_purchase_invoice_descriptions(names: Sequence[str]) -> dict[str, str]:
