@@ -9,6 +9,68 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from imogi_finance.imogi_finance.parsers.normalization import normalize_identifier_digits
+
+
+def _is_valid_fp_length(value: str, expected_fp_no: str | None = None) -> bool:
+    if expected_fp_no:
+        return len(value) == len(normalize_identifier_digits(expected_fp_no) or "")
+    return len(value) in (16, 17)
+
+
+def _extract_fp_number_from_ocr(ocr_text: str, expected_fp_no: str | None = None) -> str | None:
+    """Extract tax invoice number from OCR text with context-aware filtering.
+
+    Prevents false positives where 16-digit NPWP is detected as FP number.
+    """
+    if not ocr_text:
+        return None
+
+    expected_normalized = normalize_identifier_digits(expected_fp_no) or ""
+
+    # Highest confidence: number explicitly labeled as Faktur/NSFP.
+    labeled_patterns = [
+        r"(?:Kode\s+dan\s+Nomor\s+Seri\s+Faktur\s+Pajak|Nomor\s+Seri\s+Faktur\s+Pajak|Nomor\s+Faktur\s+Pajak|NSFP|Faktur\s+Pajak|Nomor|No\.?)[:\s]*([0-9.\s-]{16,24})",
+    ]
+    for pattern in labeled_patterns:
+        matches = re.findall(pattern, ocr_text, re.IGNORECASE)
+        for match in matches:
+            normalized = normalize_identifier_digits(match) or ""
+            if _is_valid_fp_length(normalized, expected_fp_no=expected_fp_no):
+                return normalized
+
+    # Fallback: generic 16-digit candidate with local context scoring.
+    candidate_pattern = re.compile(r"\b(\d{3}[.\s-]?\d{3}[.\s-]?\d{2}[.\s-]?\d{8,9})\b")
+    candidates: list[tuple[int, str]] = []
+    for m in candidate_pattern.finditer(ocr_text):
+        candidate = m.group(1)
+        normalized = normalize_identifier_digits(candidate) or ""
+        if not _is_valid_fp_length(normalized, expected_fp_no=expected_fp_no):
+            continue
+
+        start, end = m.span(1)
+        context = ocr_text[max(0, start - 80): min(len(ocr_text), end + 80)].lower()
+
+        score = 0
+        if any(k in context for k in ("faktur", "nomor seri", "nomor faktur", "nsfp", "tax invoice")):
+            score += 5
+        if "npwp" in context:
+            score -= 6
+
+        if expected_normalized:
+            if normalized == expected_normalized:
+                score += 20
+            elif normalized[:3] == expected_normalized[:3]:
+                score += 2
+
+        candidates.append((score, normalized))
+
+    if not candidates:
+        return None
+
+    best_score, best_value = max(candidates, key=lambda item: item[0])
+    return best_value if best_score > 0 else None
+
 
 def _resolve_tax_invoice_type(fp_no: str | None) -> tuple[str | None, str | None]:
     if not fp_no:
@@ -79,34 +141,19 @@ class TaxInvoiceOCRUpload(Document):
         
         # Only validate if OCR has run (ocr_text exists)
         if self.ocr_text:
-            # Extract FP number from OCR text
-            import re
-            
-            # Try to find FP number pattern in OCR text
-            # Pattern: 010.000-24.12345678 or variations
-            fp_patterns = [
-                r'\b(\d{3}[.\s-]?\d{3}[.\s-]?\d{2}[.\s-]?\d{8})\b',  # Full pattern
-                r'(?:Nomor|No\.?|NSFP)[:\s]*(\d{3}[.\s-]?\d{3}[.\s-]?\d{2}[.\s-]?\d{8})',  # With label
-            ]
-            
-            for pattern in fp_patterns:
-                matches = re.findall(pattern, self.ocr_text, re.IGNORECASE)
-                if matches:
-                    # Normalize extracted fp_no (remove spaces, keep dots and dashes)
-                    ocr_fp_no = re.sub(r'\s+', '', matches[0])
-                    break
+            ocr_fp_no = _extract_fp_number_from_ocr(self.ocr_text, expected_fp_no=self.fp_no)
             
             # Normalize both for comparison (remove dots, spaces, dashes)
             if ocr_fp_no:
-                fp_normalized = re.sub(r'[.\s-]', '', self.fp_no.upper())
-                ocr_normalized = re.sub(r'[.\s-]', '', ocr_fp_no.upper())
+                fp_normalized = normalize_identifier_digits(self.fp_no) or ""
+                ocr_normalized = normalize_identifier_digits(ocr_fp_no) or ""
                 
                 if fp_normalized == ocr_normalized:
                     fp_no_match = True
             else:
                 # Fallback: simple substring check
-                fp_normalized = re.sub(r'[.\s-]', '', self.fp_no.upper())
-                ocr_text_normalized = re.sub(r'[.\s-]', '', self.ocr_text.upper())
+                fp_normalized = normalize_identifier_digits(self.fp_no) or ""
+                ocr_text_normalized = re.sub(r'\D', '', self.ocr_text or "")
                 
                 if fp_normalized in ocr_text_normalized:
                     fp_no_match = True

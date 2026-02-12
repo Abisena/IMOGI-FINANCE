@@ -1308,6 +1308,14 @@ def clean_description(text: str) -> str:
 	return text
 
 
+
+def normalize_identifier_digits(value: str | None) -> str | None:
+	"""Normalize identifier-like values to digits-only format."""
+	if not value:
+		return None
+	digits = re.sub(r"\D", "", str(value))
+	return digits or None
+
 def extract_npwp(text: str) -> Optional[str]:
 	"""
 	Extract and normalize NPWP (Indonesian Tax ID).
@@ -1323,8 +1331,8 @@ def extract_npwp(text: str) -> Optional[str]:
 	if not text or not isinstance(text, str):
 		return None
 
-	# Remove dots, dashes, spaces
-	npwp = re.sub(r'[.\-\s]', '', text)
+	# Normalize to digits-only
+	npwp = normalize_identifier_digits(text) or ""
 
 	# Check if it's 15 digits
 	if re.match(r'^\d{15}$', npwp):
