@@ -221,5 +221,44 @@
 			{"action": "Cancel", "allow_self_approval": 0, "allowed": "All", "state": "Partially Paid", "next_state": "Cancelled"}
 		],
 		"workflow_state_field": "workflow_state"
+	},
+	{
+		"actions": [
+			{"action": "Submit for Finance Review", "allowed": "All"},
+			{"action": "Approve for Transfer", "allowed": "Finance Controller"},
+			{"action": "Reject", "allowed": "Finance Controller"},
+			{"action": "Confirm Bank Transfer", "allowed": "Finance Controller"},
+			{"action": "Mark as Paid", "allowed": "Finance Controller"},
+			{"action": "Cancel", "allowed": "Finance Controller"}
+		],
+		"docstatus": 0,
+		"doctype": "Workflow",
+		"document_type": "Transfer Application",
+		"is_active": 1,
+		"module": "Imogi Finance",
+		"name": "Transfer Application Workflow",
+		"workflow_name": "Transfer Application Workflow",
+		"notes": "Transfer Application workflow: Draft → Finance Review → Approved for Transfer → Awaiting Bank Confirmation → Paid. Submit for Finance Review submits the document (docstatus=1). Approval requires Finance Controller role assigned to the branch. Export Excel functionality available after approval. Payment Entry creation available via 'Create Payment Entry' button. Cancel is allowed only if no Payment Entry is linked or Payment Entry is cancelled.",
+		"override_status": 1,
+		"states": [
+			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Finance Review", "doc_status": "1", "allow_edit": "Finance Controller"},
+			{"state": "Approved for Transfer", "doc_status": "1", "allow_edit": "Finance Controller"},
+			{"state": "Awaiting Bank Confirmation", "doc_status": "1", "allow_edit": "Finance Controller"},
+			{"state": "Paid", "doc_status": "1", "allow_edit": "Finance Controller"},
+			{"state": "Rejected", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Cancelled", "doc_status": "2", "allow_edit": "Finance Controller"}
+		],
+		"transitions": [
+			{"action": "Submit for Finance Review", "allow_self_approval": 0, "allowed": "All", "state": "Draft", "next_state": "Finance Review"},
+			{"action": "Approve for Transfer", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Approved for Transfer"},
+			{"action": "Reject", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Rejected"},
+			{"action": "Confirm Bank Transfer", "allow_self_approval": 1, "allowed": "Finance Controller", "state": "Approved for Transfer", "next_state": "Awaiting Bank Confirmation"},
+			{"action": "Mark as Paid", "allow_self_approval": 1, "allowed": "Finance Controller", "state": "Awaiting Bank Confirmation", "next_state": "Paid"},
+			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Cancelled"},
+			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Approved for Transfer", "next_state": "Cancelled"},
+			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Awaiting Bank Confirmation", "next_state": "Cancelled"}
+		],
+		"workflow_state_field": "workflow_state"
 	}
 ]

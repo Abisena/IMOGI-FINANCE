@@ -34,5 +34,12 @@
     "name": "Expense Request Submitter",
     "role_name": "Expense Request Submitter",
     "desk_access": 1
+  },
+  {
+    "doctype": "Role",
+    "name": "Finance Controller",
+    "role_name": "Finance Controller",
+    "desk_access": 1,
+    "is_custom": 0
   }
 ]
