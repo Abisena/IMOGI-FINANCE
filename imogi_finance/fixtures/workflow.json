@@ -132,8 +132,7 @@
 			{"action": "Submit for Approval", "allowed": "All"},
 			{"action": "Approve", "allowed": "Accounts Manager"},
 			{"action": "Reject", "allowed": "Accounts Manager"},
-			{"action": "Post", "allowed": "Accounts Manager"},
-			{"action": "Cancel", "allowed": "Accounts Manager"}
+			{"action": "Post", "allowed": "Accounts Manager"}
 		],
 		"docstatus": 0,
 		"doctype": "Workflow",
@@ -142,7 +141,7 @@
 		"module": "Imogi Finance",
 		"name": "Administrative Payment Voucher Workflow",
 		"workflow_name": "Administrative Payment Voucher Workflow",
-		"notes": "Administrative Payment Voucher workflow: Draft → Pending Approval → Approved → Posted. Only creator can submit for approval. Only Accounts Manager can approve, post, or cancel. Posting creates Payment Entry automatically. Cancel attempts to cancel/delete linked Payment Entry. Validation and attachment policies are enforced in Python before_workflow_action hooks.",
+		"notes": "Administrative Payment Voucher workflow: Draft → Pending Approval → Approved → Posted. Only creator can submit for approval. Only Accounts Manager can approve or post. Posting creates Payment Entry automatically. Cancellation must be done via standard Cancel button (not workflow action). Validation and attachment policies are enforced in Python before_workflow_action hooks.",
 		"override_status": 1,
 		"states": [
 			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
@@ -156,8 +155,7 @@
 			{"action": "Submit for Approval", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Pending Approval"},
 			{"action": "Approve", "allowed": "Accounts Manager", "state": "Pending Approval", "next_state": "Approved"},
 			{"action": "Reject", "allowed": "Accounts Manager", "state": "Pending Approval", "next_state": "Rejected"},
-			{"action": "Post", "allowed": "Accounts Manager", "state": "Approved", "next_state": "Posted"},
-			{"action": "Cancel", "allowed": "Accounts Manager", "state": "Posted", "next_state": "Cancelled"}
+			{"action": "Post", "allowed": "Accounts Manager", "state": "Approved", "next_state": "Posted"}
 		],
 		"workflow_state_field": "workflow_state"
 	},
@@ -196,8 +194,7 @@
 	},
 	{
 		"actions": [
-			{"action": "Issue", "allowed": "All"},
-			{"action": "Cancel", "allowed": "All"}
+			{"action": "Issue", "allowed": "All"}
 		],
 		"docstatus": 0,
 		"doctype": "Workflow",
@@ -206,7 +203,7 @@
 		"module": "Imogi Finance",
 		"name": "Customer Receipt Workflow",
 		"workflow_name": "Customer Receipt Workflow",
-		"notes": "Customer Receipt workflow: Draft → Issued → Partially Paid → Paid. Issue action submits the receipt (docstatus=1), making items immutable. Payment status is automatically updated by Payment Entry hooks. Cancel is allowed only if no submitted Payment Entry is linked. Created/Issued/Paid timestamps are tracked automatically.",
+		"notes": "Customer Receipt workflow: Draft → Issued → Partially Paid → Paid. Issue action submits the receipt (docstatus=1), making items immutable. Payment status is automatically updated by Payment Entry hooks. Cancellation must be done via standard Cancel button (validates no linked Payment Entry). Created/Issued/Paid timestamps are tracked automatically.",
 		"override_status": 1,
 		"states": [
 			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
@@ -216,9 +213,7 @@
 			{"state": "Cancelled", "doc_status": "2", "allow_edit": "Accounts Manager"}
 		],
 		"transitions": [
-			{"action": "Issue", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Issued"},
-			{"action": "Cancel", "allow_self_approval": 0, "allowed": "All", "state": "Issued", "next_state": "Cancelled"},
-			{"action": "Cancel", "allow_self_approval": 0, "allowed": "All", "state": "Partially Paid", "next_state": "Cancelled"}
+			{"action": "Issue", "allow_self_approval": 1, "allowed": "All", "state": "Draft", "next_state": "Issued"}
 		],
 		"workflow_state_field": "workflow_state"
 	},
@@ -228,8 +223,7 @@
 			{"action": "Approve for Transfer", "allowed": "Finance Controller"},
 			{"action": "Reject", "allowed": "Finance Controller"},
 			{"action": "Confirm Bank Transfer", "allowed": "Finance Controller"},
-			{"action": "Mark as Paid", "allowed": "Finance Controller"},
-			{"action": "Cancel", "allowed": "Finance Controller"}
+			{"action": "Mark as Paid", "allowed": "Finance Controller"}
 		],
 		"docstatus": 0,
 		"doctype": "Workflow",
@@ -238,7 +232,7 @@
 		"module": "Imogi Finance",
 		"name": "Transfer Application Workflow",
 		"workflow_name": "Transfer Application Workflow",
-		"notes": "Transfer Application workflow: Draft → Finance Review → Approved for Transfer → Awaiting Bank Confirmation → Paid. Submit for Finance Review submits the document (docstatus=1). Approval requires Finance Controller role assigned to the branch. Export Excel functionality available after approval. Payment Entry creation available via 'Create Payment Entry' button. Cancel is allowed only if no Payment Entry is linked or Payment Entry is cancelled.",
+		"notes": "Transfer Application workflow: Draft → Finance Review → Approved for Transfer → Awaiting Bank Confirmation → Paid. Submit for Finance Review submits the document (docstatus=1). Approval requires Finance Controller role assigned to the branch. Export Excel functionality available after approval. Payment Entry creation available via 'Create Payment Entry' button. Cancellation must be done via standard Cancel button (validates no linked Payment Entry).",
 		"override_status": 1,
 		"states": [
 			{"state": "Draft", "doc_status": "0", "allow_edit": "All"},
@@ -254,10 +248,7 @@
 			{"action": "Approve for Transfer", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Approved for Transfer"},
 			{"action": "Reject", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Rejected"},
 			{"action": "Confirm Bank Transfer", "allow_self_approval": 1, "allowed": "Finance Controller", "state": "Approved for Transfer", "next_state": "Awaiting Bank Confirmation"},
-			{"action": "Mark as Paid", "allow_self_approval": 1, "allowed": "Finance Controller", "state": "Awaiting Bank Confirmation", "next_state": "Paid"},
-			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Finance Review", "next_state": "Cancelled"},
-			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Approved for Transfer", "next_state": "Cancelled"},
-			{"action": "Cancel", "allow_self_approval": 0, "allowed": "Finance Controller", "state": "Awaiting Bank Confirmation", "next_state": "Cancelled"}
+			{"action": "Mark as Paid", "allow_self_approval": 1, "allowed": "Finance Controller", "state": "Awaiting Bank Confirmation", "next_state": "Paid"}
 		],
 		"workflow_state_field": "workflow_state"
 	}
