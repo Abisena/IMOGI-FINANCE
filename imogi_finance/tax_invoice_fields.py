@@ -62,6 +62,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
         "tax_rate": "tax_rate",  # 🔥 FIX: Add tax_rate mapping for dynamic PPN validation
         "status": "verification_status",
         "notes": "ocr_summary_json",  # 🔥 FIX: OCR JSON summary goes to separate field, not verification_notes
+        "ocr_error_log": "ocr_error_log",  # 🔥 FIX: OCR technical errors go to dedicated field
         "duplicate_flag": "duplicate_flag",
         "npwp_match": "npwp_match",
         "ocr_status": "ocr_status",

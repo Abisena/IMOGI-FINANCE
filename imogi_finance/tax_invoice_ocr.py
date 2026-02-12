@@ -3036,11 +3036,17 @@ def _update_doc_after_ocr(
 
     # Update notes if any
     if extra_notes:
-        notes_field = _get_fieldname(doctype, "notes")
-        existing_notes = getattr(doc, notes_field, None) or ""
-        combined = f"{existing_notes}\n" if existing_notes else ""
-        combined += "\n".join(extra_notes)
-        setattr(doc, notes_field, combined)
+        # 🔥 FIX: For Tax Invoice OCR Upload, use dedicated error log field
+        # to avoid corrupting ocr_summary_json with plain text errors
+        if doctype == "Tax Invoice OCR Upload":
+            error_field = _get_fieldname(doctype, "ocr_error_log")
+            setattr(doc, error_field, "\n".join(extra_notes))
+        else:
+            notes_field = _get_fieldname(doctype, "notes")
+            existing_notes = getattr(doc, notes_field, None) or ""
+            combined = f"{existing_notes}\n" if existing_notes else ""
+            combined += "\n".join(extra_notes)
+            setattr(doc, notes_field, combined)
 
     # 🔥 FIX: Save ocr_raw_json (Vision API response for line items parsing)
     if raw_json is not None:
@@ -3093,9 +3099,10 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         if not (text or "").strip():
             error_msg = _("OCR returned empty text for file {0}.").format(file_url)
             frappe.logger().warning(f"[OCR] Empty text returned: {error_msg}")
+            error_field = "ocr_error_log" if target_doctype == "Tax Invoice OCR Upload" else "notes"
             update_payload = {
                 _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                _get_fieldname(target_doctype, "notes"): error_msg,
+                _get_fieldname(target_doctype, error_field): error_msg,
             }
             if raw_json is not None:
                 update_payload[_get_fieldname(target_doctype, "ocr_raw_json")] = json.dumps(raw_json, indent=2)
@@ -3244,10 +3251,11 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
         try:
             # Try to update status to Failed
             target_doc = frappe.get_doc(target_doctype, name)
+            error_field = "ocr_error_log" if target_doctype == "Tax Invoice OCR Upload" else "notes"
             target_doc.db_set(
                 {
                     _get_fieldname(target_doctype, "ocr_status"): "Failed",
-                    _get_fieldname(target_doctype, "notes"): error_message_short,
+                    _get_fieldname(target_doctype, error_field): error_message_short,
                 }
             )
             frappe.logger().info(f"[OCR] Status set to Failed for {name}")
@@ -3277,10 +3285,11 @@ def _enqueue_ocr(doc: Any, doctype: str):
     _validate_pdf_size(getattr(doc, pdf_field, None), cint(settings.get("ocr_file_max_mb", 10)))
 
     status_field = _get_fieldname(doctype, "ocr_status")
-    notes_field = _get_fieldname(doctype, "notes")
+    error_field = "ocr_error_log" if doctype == "Tax Invoice OCR Upload" else "notes"
+    error_field_name = _get_fieldname(doctype, error_field)
 
     # Set status to Queued first
-    doc.db_set({status_field: "Queued", notes_field: None})
+    doc.db_set({status_field: "Queued", error_field_name: None})
 
     provider = settings.get("ocr_provider", "Manual Only")
     method_path = f"{__name__}._run_ocr_job"
@@ -3305,7 +3314,7 @@ def _enqueue_ocr(doc: Any, doctype: str):
         frappe.logger().error(f"[OCR ENQUEUE FAILED] {job_name}: {enqueue_err}")
         doc.db_set({
             status_field: "Failed",
-            notes_field: f"Enqueue failed: {str(enqueue_err)[:200]}"
+            error_field_name: f"Enqueue failed: {str(enqueue_err)[:200]}"
         })
         raise
 
@@ -3572,11 +3581,15 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     else:
         _set_value(doc, doctype, "status", "Verified")
 
-    # 🔥 FIX: For Tax Invoice OCR Upload, verification notes should NOT use "notes" mapping
-    # because "notes" is now mapped to "ocr_summary_json" (for OCR parsing JSON result).
-    # Only write verification notes for non-Tax Invoice OCR Upload doctypes.
-    if notes and doctype != "Tax Invoice OCR Upload":
-        _set_value(doc, doctype, "notes", "\n".join(notes))
+    # 🔥 FIX: For Tax Invoice OCR Upload, write directly to verification_notes field
+    # because "notes" is mapped to "ocr_summary_json" (for OCR parsing JSON result).
+    if notes:
+        if doctype == "Tax Invoice OCR Upload":
+            # Write directly to verification_notes field (no mapping)
+            setattr(doc, "verification_notes", "\n".join(notes))
+        else:
+            # For other doctypes, use normal mapping
+            _set_value(doc, doctype, "notes", "\n".join(notes))
 
     doc.save(ignore_permissions=True)
     return {"status": _get_value(doc, doctype, "status"), "notes": notes}
@@ -3699,7 +3712,13 @@ def get_tax_invoice_ocr_monitoring(docname: str, doctype: str) -> dict[str, Any]
         "upload_name": upload_name,
         "ocr_status": _get_value(source_doc, source_doctype, "ocr_status"),
         "verification_status": _get_value(source_doc, source_doctype, "status"),
-        "verification_notes": _get_value(source_doc, source_doctype, "notes"),
+        # 🔥 FIX: Read from actual verification_notes field for Tax Invoice OCR Upload
+        # (not from "notes" which is mapped to ocr_summary_json)
+        "verification_notes": (
+            getattr(source_doc, "verification_notes", None) 
+            if source_doctype == "Tax Invoice OCR Upload"
+            else _get_value(source_doc, source_doctype, "notes")
+        ),
         "ocr_confidence": _get_value(source_doc, source_doctype, "ocr_confidence"),
         "fp_no": _get_value(source_doc, source_doctype, "fp_no"),
         "fp_date": _get_value(source_doc, source_doctype, "fp_date"),
@@ -4006,7 +4025,7 @@ def recover_stale_ocr_jobs(timeout_minutes: int = 10) -> dict[str, Any]:
                     doc_info.name,
                     {
                         "ocr_status": "Failed",
-                        "notes": f"Worker terminated unexpectedly after {timeout_minutes} minutes. Please retry OCR."
+                        "ocr_error_log": f"Worker terminated unexpectedly after {timeout_minutes} minutes. Please retry OCR."
                     },
                     update_modified=True
                 )

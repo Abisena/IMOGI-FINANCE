@@ -34,6 +34,7 @@
     "section_ocr",
     "ocr_status",
     "ocr_started_at",
+    "ocr_error_log",
     "ocr_confidence",
     "column_break_ocr",
     "ocr_text",
@@ -211,6 +212,14 @@
       "read_only": 1,
       "hidden": 1,
       "description": "Timestamp when OCR processing started (for crash recovery)"
+    },
+    {
+      "fieldname": "ocr_error_log",
+      "fieldtype": "Small Text",
+      "label": "OCR Error Log",
+      "read_only": 1,
+      "description": "Technical errors during OCR processing (API failures, worker crashes, parsing errors)",
+      "depends_on": "eval:doc.ocr_status=='Failed'"
     },
     {
       "fieldname": "ocr_confidence",
