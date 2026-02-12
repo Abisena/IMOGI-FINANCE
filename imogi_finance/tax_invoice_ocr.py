@@ -3223,9 +3223,10 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                             # Add layout parser audit trail
                             validation_notes = notes_obj.get("validation_notes", [])
                             validation_notes.append(
-                                f"Layout-aware parser corrected summary values: "
-                                f"DPP {old_dpp} → {layout_dpp}, "
-                                f"PPN {old_ppn} → {layout_ppn}"
+                                f"✅ Layout parser auto-correction applied successfully: "
+                                f"DPP corrected to Rp {layout_dpp:,.2f}, "
+                                f"PPN corrected to Rp {layout_ppn:,.2f} "
+                                f"(initial regex extraction was inaccurate due to multi-column layout)"
                             )
                             notes_obj["validation_notes"] = validation_notes
                             parsed["notes"] = json.dumps(notes_obj, ensure_ascii=False, indent=2)
