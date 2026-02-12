@@ -3572,7 +3572,10 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     else:
         _set_value(doc, doctype, "status", "Verified")
 
-    if notes:
+    # 🔥 FIX: For Tax Invoice OCR Upload, verification notes should NOT use "notes" mapping
+    # because "notes" is now mapped to "ocr_summary_json" (for OCR parsing JSON result).
+    # Only write verification notes for non-Tax Invoice OCR Upload doctypes.
+    if notes and doctype != "Tax Invoice OCR Upload":
         _set_value(doc, doctype, "notes", "\n".join(notes))
 
     doc.save(ignore_permissions=True)
