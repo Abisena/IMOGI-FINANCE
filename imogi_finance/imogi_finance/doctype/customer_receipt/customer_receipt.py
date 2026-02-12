@@ -105,7 +105,7 @@ class CustomerReceipt(Document):
                     frappe.throw(_("Row #{0}: Sales Invoice should not be filled when Receipt Purpose is 'Before Billing (Sales Order)'. Only Sales Order is allowed.").format(row.idx))
                 if not row.sales_order:
                     frappe.throw(_("Row #{0}: Sales Order is required when Receipt Purpose is 'Before Billing (Sales Order)'.").format(row.idx))
-            
+
             reference = row.sales_invoice if allowed_doctype == "Sales Invoice" else row.sales_order
             if not reference:
                 frappe.throw(_("Receipt items must have a reference document."))
@@ -210,7 +210,7 @@ class CustomerReceipt(Document):
             # Track when it became fully paid
             if self.paid_on:
                 update_dict["paid_on"] = self.paid_on
-            
+
             self.db_set(update_dict)
 
     def apply_stamp_policy(self):
@@ -309,7 +309,7 @@ class CustomerReceipt(Document):
         reference_date: Optional[str] = None,
     ):
         """Create Payment Entry from Customer Receipt.
-        
+
         Args:
             paid_amount: Amount to be paid
             mode_of_payment: Mode of Payment (e.g., Cash, Bank Transfer)
@@ -334,17 +334,17 @@ class CustomerReceipt(Document):
         pe.customer_receipt = self.name
         pe.received_amount = float(paid_amount)
         pe.paid_amount = float(paid_amount)
-        
+
         # Set mode of payment if provided
         if mode_of_payment:
             pe.mode_of_payment = mode_of_payment
-        
+
         # Set reference details if provided
         if reference_no:
             pe.reference_no = reference_no
         if reference_date:
             pe.reference_date = reference_date
-        
+
         # Get default receivable account for the customer (paid_from)
         party_account = frappe.get_value(
             "Party Account",
@@ -355,21 +355,21 @@ class CustomerReceipt(Document):
             party_account = frappe.get_value(
                 "Company", self.company, "default_receivable_account"
             )
-        
+
         if not party_account:
             frappe.throw(_("Default Receivable Account not found for customer {0}").format(self.customer))
-        
+
         pe.paid_from = party_account
         pe.paid_from_account_currency = frappe.get_value("Account", party_account, "account_currency")
-        
+
         # Set paid_to account (provided by user)
         pe.paid_to = paid_to_account
         pe.paid_to_account_currency = frappe.get_value("Account", paid_to_account, "account_currency")
-        
+
         # Set exchange rates
         pe.source_exchange_rate = 1.0
         pe.target_exchange_rate = 1.0
-        
+
         branch = resolve_branch(
             company=self.company,
             explicit_branch=getattr(self, "branch", None),
@@ -426,6 +426,23 @@ class CustomerReceipt(Document):
             })
             return {"message": _("Print tracked successfully")}
         return {"message": _("Already tracked")}
+
+
+@frappe.whitelist()
+def get_mode_of_payment_account(mode_of_payment: str, company: str) -> dict:
+    """
+    Get default account for a mode of payment and company.
+    This is a whitelisted function to avoid permission issues with child table access.
+    """
+    if not mode_of_payment or not company:
+        return {"default_account": None}
+
+    account = frappe.db.get_value(
+        "Mode of Payment Account",
+        {"parent": mode_of_payment, "company": company},
+        "default_account"
+    )
+    return {"default_account": account}
 
 
 @frappe.whitelist()

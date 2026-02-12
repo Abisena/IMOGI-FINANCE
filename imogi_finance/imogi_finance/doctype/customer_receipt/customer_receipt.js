@@ -22,7 +22,7 @@ frappe.ui.form.on('Customer Receipt', {
                 }
             };
         });
-        
+
         // Set query filter for Digital Stamp Template
         frm.set_query('digital_stamp_template', function() {
             return {
@@ -290,16 +290,12 @@ function show_payment_dialog(frm) {
                 onchange: function() {
                     let mode = dialog.get_value('mode_of_payment');
                     if (mode) {
-                        // Fetch default account for this mode of payment
+                        // Fetch default account for this mode of payment using whitelisted method
                         frappe.call({
-                            method: 'frappe.client.get_value',
+                            method: 'imogi_finance.imogi_finance.doctype.customer_receipt.customer_receipt.get_mode_of_payment_account',
                             args: {
-                                doctype: 'Mode of Payment Account',
-                                filters: {
-                                    parent: mode,
-                                    company: frm.doc.company
-                                },
-                                fieldname: 'default_account'
+                                mode_of_payment: mode,
+                                company: frm.doc.company
                             },
                             callback: function(r) {
                                 if (r.message && r.message.default_account) {
@@ -365,6 +361,6 @@ function show_payment_dialog(frm) {
             });
         }
     });
-    
+
     dialog.show();
 }
