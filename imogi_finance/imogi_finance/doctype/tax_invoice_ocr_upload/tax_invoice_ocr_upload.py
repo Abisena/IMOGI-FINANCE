@@ -171,11 +171,37 @@ class TaxInvoiceOCRUpload(Document):
         # 🆕 Auto-set verification status based on multiple checks
         verification_notes_parts = []
         
+        # ALWAYS show basic info first
+        verification_notes_parts.append(f"📄 FP Number: {self.fp_no}")
+        if self.fp_date:
+            verification_notes_parts.append(f"📅 FP Date: {self.fp_date}")
+        if self.npwp:
+            verification_notes_parts.append(f"🏢 NPWP: {self.npwp}")
+        
+        # ALWAYS show amounts 
+        verification_notes_parts.append("")
+        verification_notes_parts.append(f"Harga Jual: Rp {self.harga_jual:,.2f}" if self.harga_jual else "Harga Jual: Not set")
+        verification_notes_parts.append(f"DPP: Rp {self.dpp:,.2f}" if self.dpp else "DPP: Not set")
+        verification_notes_parts.append(f"PPN: Rp {self.ppn:,.2f}" if self.ppn is not None else "PPN: Not set")
+        if self.ppnbm:
+            verification_notes_parts.append(f"PPnBM: Rp {self.ppnbm:,.2f}")
+        
+        verification_notes_parts.append("")
+        
+        # Validation checks section
+        verification_notes_parts.append("🔍 VALIDATION CHECKS:")
+        
         if ppn_type_match:
-            verification_notes_parts.append("✅ PPN Type matches Tax Invoice Type")
+            verification_notes_parts.append("   ✅ PPN Type matches Tax Invoice Type")
+        elif not self.ppn_type:
+            verification_notes_parts.append("   ⚠️ PPN Type not set")
+        else:
+            verification_notes_parts.append("   ⚠️ PPN Type validation incomplete")
         
         if fp_no_match:
-            verification_notes_parts.append(f"✅ FP Number verified in OCR: {self.fp_no}")
+            verification_notes_parts.append(f"   ✅ FP Number verified in OCR")
+        elif not self.ocr_text:
+            verification_notes_parts.append("   ℹ️ OCR not yet run")
         elif ocr_fp_no and ocr_fp_no != self.fp_no:
             # ⚠️ CRITICAL: Mismatch between document name (autoname) and OCR result
             verification_notes_parts.append(
@@ -196,9 +222,13 @@ class TaxInvoiceOCRUpload(Document):
                 title=_("FP Number Verification Failed"),
                 indicator="red"
             )
+        else:
+            verification_notes_parts.append("   ⚠️ FP Number not verified in OCR text")
         
         if self.dpp and self.ppn:
-            verification_notes_parts.append("✅ DPP and PPN amounts present")
+            verification_notes_parts.append("   ✅ DPP and PPN amounts present")
+        else:
+            verification_notes_parts.append("   ⚠️ Missing DPP or PPN values")
         
         # 🆕 Validate PPN amount matches selected PPN Type
         ppn_amount_match = False
@@ -274,15 +304,21 @@ class TaxInvoiceOCRUpload(Document):
                         f"ℹ️ Custom PPN Type: Actual rate is {actual_rate:.2%}"
                     )
         
+        # Final status summary
+        verification_notes_parts.append("")
+        verification_notes_parts.append("─" * 50)
+        
         # Auto-verify if ALL conditions met
         if ppn_type_match and fp_no_match and ppn_amount_match and self.dpp and self.ppn is not None:
             self.verification_status = "Verified"
-            self.verification_notes = "\n".join(verification_notes_parts)
+            verification_notes_parts.append("✅ STATUS: Verified - All checks passed")
         elif self.verification_status != "Rejected":
             # Keep as "Needs Review" if not explicitly rejected
             self.verification_status = "Needs Review"
-            if verification_notes_parts:
-                self.verification_notes = "\n".join(verification_notes_parts)
+            verification_notes_parts.append("⚠️ STATUS: Needs Review - Please verify manually")
+        
+        # Always set verification notes
+        self.verification_notes = "\n".join(verification_notes_parts)
 
     def on_trash(self):
         """Clean up all links pointing to this OCR Upload before deletion.

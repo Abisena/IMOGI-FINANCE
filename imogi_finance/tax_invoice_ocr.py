@@ -3066,6 +3066,24 @@ def _update_doc_after_ocr(
     doc.save()
 
     frappe.logger().info(f"[OCR] Doc saved with ocr_status=Done, modified={doc.modified}")
+    
+    # 🆕 FIX: Generate verification notes after OCR completes
+    # Now that all OCR data is saved, run validate() to generate verification notes
+    if doctype == "Tax Invoice OCR Upload":
+        try:
+            # Reload to get fresh data
+            doc.reload()
+            # Temporarily enable validation to generate verification notes
+            doc.flags.ignore_validate = False
+            doc.validate()  # This will populate verification_notes field
+            # Save verification notes (skip validate to avoid recursion)
+            doc.flags.ignore_validate = True
+            doc.save()
+            frappe.logger().info(f"[OCR] Verification notes generated: {len(doc.verification_notes or '')} chars")
+        except Exception as e:
+            # Log error but don't fail OCR process
+            frappe.logger().error(f"[OCR] Failed to generate verification notes: {str(e)}")
+            frappe.log_error(title="OCR Verification Notes Generation Failed", message=frappe.get_traceback())
 
 
 
