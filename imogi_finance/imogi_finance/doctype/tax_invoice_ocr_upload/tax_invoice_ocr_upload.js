@@ -107,16 +107,16 @@ frappe.ui.form.on('Tax Invoice OCR Upload', {
 			}
 		}
 
-		// Add Force Verify button if verification needed
+		// Add Manual Approval button if verification needed
 		if (frm.doc.verification_status === 'Needs Review' && frm.doc.fp_no) {
-			frm.add_custom_button(__('✅ Force Verify (Approve)'), async () => {
+			frm.add_custom_button(__('✅ Approve Manually'), async () => {
 				await frappe.call({
 					method: 'imogi_finance.api.tax_invoice.verify_tax_invoice_upload',
 					args: { upload_name: frm.doc.name, force: true },
 					freeze: true,
-					freeze_message: __('Approving as Verified...'),
+					freeze_message: __('Verifying tax invoice...'),
 				});
-				frappe.show_alert({ message: __('Approved as Verified.'), indicator: 'green' });
+				frappe.show_alert({ message: __('Tax invoice verified successfully.'), indicator: 'green' });
 				await frm.reload_doc();
 			}, TAX_INVOICE_OCR_GROUP);
 		}

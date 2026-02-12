@@ -61,7 +61,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
         "ppn_type": "ppn_type",
         "tax_rate": "tax_rate",  # 🔥 FIX: Add tax_rate mapping for dynamic PPN validation
         "status": "verification_status",
-        "notes": "verification_notes",
+        "notes": "ocr_summary_json",  # 🔥 FIX: OCR JSON summary goes to separate field, not verification_notes
         "duplicate_flag": "duplicate_flag",
         "npwp_match": "npwp_match",
         "ocr_status": "ocr_status",

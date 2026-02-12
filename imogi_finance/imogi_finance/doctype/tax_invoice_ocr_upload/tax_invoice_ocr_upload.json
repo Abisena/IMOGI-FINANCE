@@ -29,6 +29,8 @@
     "verification_status",
     "section_verification_notes",
     "verification_notes",
+    "section_ocr_summary",
+    "ocr_summary_json",
     "section_ocr",
     "ocr_status",
     "ocr_started_at",
@@ -170,6 +172,20 @@
       "label": "Catatan Verifikasi",
       "read_only": 1,
       "description": "Hasil validasi otomatis: nomor faktur, format, dan kelengkapan data"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_ocr_summary",
+      "fieldtype": "Section Break",
+      "label": "📋 OCR Summary (JSON)"
+    },
+    {
+      "fieldname": "ocr_summary_json",
+      "fieldtype": "Code",
+      "label": "OCR Parsed Summary (JSON)",
+      "options": "JSON",
+      "read_only": 1,
+      "description": "Structured JSON hasil parsing OCR: faktur_pajak info dan ringkasan_pajak"
     },
     {
       "collapsible": 1,
