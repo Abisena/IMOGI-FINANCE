@@ -62,10 +62,17 @@ function setup_action_buttons(frm) {
 			}, __('Tax Operations'));
 		}
 		
-		// Period Statistics button
+		// Reports group
 		frm.add_custom_button(__('View Period Statistics'), () => {
 			show_period_statistics(frm);
 		}, __('Reports'));
+		
+		// Register details button (NEW in v15+)
+		if (frm.doc.register_snapshot) {
+			frm.add_custom_button(__('View Register Details'), () => {
+				show_register_details(frm);
+			}, __('Reports'));
+		}
 	}
 	
 	if (frm.doc.docstatus === 1) {
@@ -120,6 +127,28 @@ function show_status_indicators(frm) {
 				'orange'
 			);
 		}
+	}
+	
+	// Show register statistics if available
+	if (frm.doc.input_invoice_count || frm.doc.output_invoice_count) {
+		const total_invoices = (frm.doc.input_invoice_count || 0) + (frm.doc.output_invoice_count || 0);
+		frm.dashboard.add_indicator(
+			__('Verified Invoices: {0}', [total_invoices]),
+			'green'
+		);
+	}
+	
+	// Show data source indicator
+	if (frm.doc.data_source === 'fallback_empty') {
+		frm.dashboard.add_indicator(
+			__('Warning: Using fallback data'),
+			'red'
+		);
+	} else if (frm.doc.data_source === 'register_integration') {
+		frm.dashboard.add_indicator(
+			__('Data: Register Integration v15+'),
+			'green'
+		);
 	}
 	
 	// Show VAT netting indicator
@@ -523,4 +552,239 @@ function build_statistics_html(stats) {
 			</div>
 		`}
 	`;
+}
+
+// Register Integration - ERPNext v15+ Features
+
+function show_register_details(frm) {
+	if (!frm.doc.register_snapshot) {
+		frappe.msgprint(__('No register snapshot available'));
+		return;
+	}
+	
+	let snapshot;
+	try {
+		snapshot = JSON.parse(frm.doc.register_snapshot);
+	} catch (e) {
+		frappe.msgprint(__('Failed to parse register snapshot'));
+		return;
+	}
+	
+	const d = new frappe.ui.Dialog({
+		title: __('Register Details - {0}', [frm.doc.name]),
+		size: 'extra-large',
+		fields: [
+			{
+				fieldtype: 'HTML',
+				options: build_register_details_html(snapshot, frm.doc)
+			}
+		],
+		primary_action_label: __('Close'),
+		primary_action() {
+			d.hide();
+		}
+	});
+	
+	d.show();
+}
+
+function build_register_details_html(snapshot, doc) {
+	const meta = snapshot.meta || {};
+	const data_source = meta.data_source || 'unknown';
+	const data_source_badge = data_source === 'register_integration' 
+		? '<span class="badge badge-success">Register Integration v15+</span>'
+		: '<span class="badge badge-danger">Fallback Data</span>';
+	
+	return `
+		<div class="register-details-container">
+			<!-- Header Section -->
+			<div class="row mb-3">
+				<div class="col-md-12">
+					<div class="alert alert-info">
+						<div class="row">
+							<div class="col-md-4">
+								<strong>${__('Company:')}</strong> ${meta.company || '-'}<br>
+								<strong>${__('Period:')}</strong> ${meta.date_from || '-'} to ${meta.date_to || '-'}
+							</div>
+							<div class="col-md-4">
+								<strong>${__('Data Source:')}</strong> ${data_source_badge}<br>
+								<strong>${__('Verification:')}</strong> ${doc.verification_status || 'Verified'}
+							</div>
+							<div class="col-md-4">
+								<strong>${__('Generated:')}</strong> ${meta.generated_at ? frappe.datetime.str_to_user(meta.generated_at) : '-'}<br>
+								<strong>${__('By:')}</strong> ${meta.generated_by || '-'}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- VAT Summary -->
+			<div class="row mb-4">
+				<div class="col-md-4">
+					<div class="card">
+						<div class="card-header bg-primary text-white">
+							<strong>${__('Input VAT (Purchases)')}</strong>
+						</div>
+						<div class="card-body">
+							<table class="table table-sm table-borderless">
+								<tr>
+									<td>${__('Total Amount:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.input_vat_total || 0, 'IDR')}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('Invoice Count:')}</td>
+									<td class="text-right"><strong>${snapshot.input_invoice_count || 0}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('Avg per Invoice:')}</td>
+									<td class="text-right">${snapshot.input_invoice_count > 0 ? format_currency((snapshot.input_vat_total || 0) / snapshot.input_invoice_count, 'IDR') : '-'}</td>
+								</tr>
+							</table>
+						</div>
+					</div>
+				</div>
+				
+				<div class="col-md-4">
+					<div class="card">
+						<div class="card-header bg-success text-white">
+							<strong>${__('Output VAT (Sales)')}</strong>
+						</div>
+						<div class="card-body">
+							<table class="table table-sm table-borderless">
+								<tr>
+									<td>${__('Total Amount:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.output_vat_total || 0, 'IDR')}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('Invoice Count:')}</td>
+									<td class="text-right"><strong>${snapshot.output_invoice_count || 0}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('Avg per Invoice:')}</td>
+									<td class="text-right">${snapshot.output_invoice_count > 0 ? format_currency((snapshot.output_vat_total || 0) / snapshot.output_invoice_count, 'IDR') : '-'}</td>
+								</tr>
+							</table>
+						</div>
+					</div>
+				</div>
+				
+				<div class="col-md-4">
+					<div class="card">
+						<div class="card-header ${snapshot.vat_net >= 0 ? 'bg-warning' : 'bg-info'} text-white">
+							<strong>${__('VAT Net Position')}</strong>
+						</div>
+						<div class="card-body">
+							<table class="table table-sm table-borderless">
+								<tr>
+									<td>${__('Net Amount:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.vat_net || 0, 'IDR')}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('Direction:')}</td>
+									<td class="text-right">
+										${snapshot.vat_net > 0 ? '<span class="badge badge-warning">Payable</span>' : 
+										  snapshot.vat_net < 0 ? '<span class="badge badge-info">Receivable</span>' : 
+										  '<span class="badge badge-secondary">Zero</span>'}
+									</td>
+								</tr>
+								<tr>
+									<td>${__('Net Rate:')}</td>
+									<td class="text-right">${snapshot.output_vat_total > 0 ? ((snapshot.vat_net / snapshot.output_vat_total) * 100).toFixed(2) : '0.00'}%</td>
+								</tr>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Withholding Tax Summary -->
+			<div class="row mb-4">
+				<div class="col-md-6">
+					<div class="card">
+						<div class="card-header bg-secondary text-white">
+							<strong>${__('Withholding Tax (PPh)')}</strong>
+						</div>
+						<div class="card-body">
+							<table class="table table-sm table-borderless">
+								<tr>
+									<td>${__('Total Amount:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.pph_total || 0, 'IDR')}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('GL Entry Count:')}</td>
+									<td class="text-right"><strong>${snapshot.withholding_entry_count || 0}</strong></td>
+								</tr>
+							</table>
+							${build_withholding_breakdown(snapshot.withholding_by_account || {})}
+						</div>
+					</div>
+				</div>
+				
+				<div class="col-md-6">
+					<div class="card">
+						<div class="card-header bg-secondary text-white">
+							<strong>${__('Other Taxes')}</strong>
+						</div>
+						<div class="card-body">
+							<table class="table table-sm">
+								<tr>
+									<td>${__('PB1 Total:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.pb1_total || 0, 'IDR')}</strong></td>
+								</tr>
+								<tr>
+									<td>${__('BPJS Total:')}</td>
+									<td class="text-right"><strong>${format_currency(snapshot.bpjs_total || 0, 'IDR')}</strong></td>
+								</tr>
+							</table>
+							${build_pb1_breakdown(snapshot.pb1_breakdown || {})}
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Data Quality Indicators -->
+			${data_source === 'fallback_empty' ? `
+				<div class="alert alert-danger">
+					<strong>${__('Data Quality Warning:')}</strong><br>
+					${__('Register integration failed. Using fallback empty data.')}<br>
+					${meta.error ? `<small>${__('Error:')} ${meta.error}</small>` : ''}
+				</div>
+			` : ''}
+			
+			${(snapshot.input_invoice_count === 0 && snapshot.output_invoice_count === 0 && snapshot.withholding_entry_count === 0) ? `
+				<div class="alert alert-warning">
+					<strong>${__('Empty Period:')}</strong><br>
+					${__('No tax transactions found in this period. This may indicate a configuration issue or genuinely empty period.')}
+				</div>
+			` : ''}
+		</div>
+	`;
+}
+
+function build_withholding_breakdown(withholding_by_account) {
+	if (!withholding_by_account || Object.keys(withholding_by_account).length === 0) {
+		return '';
+	}
+	
+	let html = '<div class="mt-3"><strong>' + __('Breakdown by Account:') + '</strong><table class="table table-sm mt-2">';
+	for (const [account, amount] of Object.entries(withholding_by_account)) {
+		html += `<tr><td><small>${account}</small></td><td class="text-right"><small>${format_currency(amount, 'IDR')}</small></td></tr>`;
+	}
+	html += '</table></div>';
+	return html;
+}
+
+function build_pb1_breakdown(pb1_breakdown) {
+	if (!pb1_breakdown || Object.keys(pb1_breakdown).length === 0) {
+		return '';
+	}
+	
+	let html = '<div class="mt-3"><strong>' + __('PB1 by Branch:') + '</strong><table class="table table-sm mt-2">';
+	for (const [branch, amount] of Object.entries(pb1_breakdown)) {
+		const branch_label = branch === '_default' ? __('Default') : branch;
+		html += `<tr><td><small>${branch_label}</small></td><td class="text-right"><small>${format_currency(amount, 'IDR')}</small></td></tr>`;
+	}
+	html += '</table></div>';
+	return html;
 }

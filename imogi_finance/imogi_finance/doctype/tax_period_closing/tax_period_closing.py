@@ -62,6 +62,8 @@ class TaxPeriodClosing(Document):
         self._ensure_tax_profile()
         self._validate_period_unique()
         self._validate_status_progression()
+        self._validate_register_configuration()
+        self._validate_register_data()
 
     def before_insert(self):
         """Initialize document before first save."""
@@ -290,6 +292,99 @@ class TaxPeriodClosing(Document):
         self.vat_net = flt(data.get("vat_net"))
         self.pph_total = flt(data.get("pph_total"))
         self.pb1_total = flt(data.get("pb1_total"))
+        
+        # Update register-specific fields from v15+ snapshot
+        self.input_invoice_count = data.get("input_invoice_count", 0)
+        self.output_invoice_count = data.get("output_invoice_count", 0)
+        self.withholding_entry_count = data.get("withholding_entry_count", 0)
+        self.verification_status = data.get("verification_status", "Verified")
+        
+        # Extract metadata
+        meta = data.get("meta", {})
+        self.data_source = meta.get("data_source", "register_integration")
+    
+    def _validate_register_configuration(self):
+        """Validate that all register configurations are properly set up.
+        
+        This checks that Tax Invoice OCR Settings and Tax Profile have
+        the required accounts configured for register reports to work.
+        """
+        from imogi_finance.imogi_finance.utils.register_integration import validate_register_configuration
+        
+        if not self.company:
+            return
+        
+        try:
+            validation = validate_register_configuration(self.company)
+            
+            if not validation.get("valid"):
+                # Build detailed error message
+                vat_input = validation.get("vat_input", {})
+                vat_output = validation.get("vat_output", {})
+                withholding = validation.get("withholding", {})
+                
+                errors = []
+                if not vat_input.get("valid"):
+                    errors.append(f"VAT Input: {vat_input.get('message', 'Configuration error')}")
+                if not vat_output.get("valid"):
+                    errors.append(f"VAT Output: {vat_output.get('message', 'Configuration error')}")
+                if not withholding.get("valid"):
+                    errors.append(f"Withholding: {withholding.get('message', 'Configuration error')}")
+                
+                frappe.msgprint(
+                    _("Register configuration issues detected:<br>{0}").format("<br>".join(errors)),
+                    title=_("Configuration Warning"),
+                    indicator="orange"
+                )
+        except Exception as e:
+            frappe.log_error(
+                message=f"Failed to validate register configuration: {str(e)}",
+                title="Tax Period Closing: Configuration Validation Error"
+            )
+    
+    def _validate_register_data(self):
+        """Validate register snapshot data quality and consistency.
+        
+        Checks for:
+        - Data source (register_integration vs fallback)
+        - Invoice/entry counts (warn if zero)
+        - Verification status
+        - Metadata presence
+        """
+        if not self.register_snapshot:
+            return
+        
+        try:
+            data = json.loads(self.register_snapshot)
+        except Exception:
+            return
+        
+        meta = data.get("meta", {})
+        data_source = meta.get("data_source", "unknown")
+        
+        # Warn if using fallback data source
+        if data_source == "fallback_empty":
+            error_msg = meta.get("error", "Unknown error")
+            frappe.msgprint(
+                _("Warning: Register data could not be loaded. Using empty fallback data.<br>"
+                  "Error: {0}").format(error_msg),
+                title=_("Data Quality Warning"),
+                indicator="red"
+            )
+            return
+        
+        # Warn if all counts are zero (possible configuration issue)
+        input_count = data.get("input_invoice_count", 0)
+        output_count = data.get("output_invoice_count", 0)
+        withholding_count = data.get("withholding_entry_count", 0)
+        
+        if input_count == 0 and output_count == 0 and withholding_count == 0:
+            frappe.msgprint(
+                _("Warning: No tax transactions found in this period. "
+                  "This may indicate a configuration issue or genuinely empty period."),
+                title=_("Empty Period"),
+                indicator="orange"
+            )
 
     def generate_exports(self, save: bool = True) -> dict:
         """Generate CoreTax export files for input and output VAT.

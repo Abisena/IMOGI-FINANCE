@@ -30,6 +30,16 @@
     "pph_total",
     "column_break_pb1",
     "pb1_total",
+    "section_register_details",
+    "input_invoice_count",
+    "column_break_register_counts",
+    "output_invoice_count",
+    "column_break_withholding_count",
+    "withholding_entry_count",
+    "section_verification",
+    "verification_status",
+    "column_break_data_source",
+    "data_source",
     "section_snapshot",
     "last_refresh_on",
     "is_generating",
@@ -178,6 +188,67 @@
       "fieldtype": "Currency",
       "label": "PB1 Total",
       "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_register_details",
+      "fieldtype": "Section Break",
+      "label": "Register Statistics"
+    },
+    {
+      "fieldname": "input_invoice_count",
+      "fieldtype": "Int",
+      "label": "Input Invoice Count",
+      "read_only": 1,
+      "description": "Number of verified Purchase Invoices in this period"
+    },
+    {
+      "fieldname": "column_break_register_counts",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "output_invoice_count",
+      "fieldtype": "Int",
+      "label": "Output Invoice Count",
+      "read_only": 1,
+      "description": "Number of verified Sales Invoices in this period"
+    },
+    {
+      "fieldname": "column_break_withholding_count",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "withholding_entry_count",
+      "fieldtype": "Int",
+      "label": "Withholding Entry Count",
+      "read_only": 1,
+      "description": "Number of PPh GL entries in this period"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_verification",
+      "fieldtype": "Section Break",
+      "label": "Data Quality"
+    },
+    {
+      "fieldname": "verification_status",
+      "fieldtype": "Data",
+      "label": "Verification Status",
+      "read_only": 1,
+      "default": "Verified",
+      "description": "Filter applied to VAT registers (Verified/All)"
+    },
+    {
+      "fieldname": "column_break_data_source",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "data_source",
+      "fieldtype": "Data",
+      "label": "Data Source",
+      "read_only": 1,
+      "default": "register_integration",
+      "description": "Source of register data (register_integration/fallback_empty)"
     },
     {
       "collapsible": 1,

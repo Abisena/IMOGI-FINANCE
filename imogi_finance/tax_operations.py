@@ -16,9 +16,6 @@ from frappe.utils.xlsxutils import make_xlsx
 
 from imogi_finance import roles, tax_invoice_fields
 
-INPUT_VAT_REPORT = "imogi_finance.imogi_finance.report.vat_input_register_verified.vat_input_register_verified"
-OUTPUT_VAT_REPORT = "imogi_finance.imogi_finance.report.vat_output_register_verified.vat_output_register_verified"
-
 
 def _safe_throw(message: str, *, title: str | None = None):
     marker = getattr(frappe, "ThrowMarker", None)
@@ -63,38 +60,8 @@ def _get_tax_profile(company: str) -> frappe._dict:
     return frappe.get_cached_doc("Tax Profile", profile_name)  # type: ignore[return-value]
 
 
-def _run_report(report: str, filters: dict) -> list[dict]:
-    result = frappe.get_all(
-        "Report",
-        filters={"report_name": report.split(".")[-1]},
-        limit=1,
-        pluck="ref_doctype",
-    )
-    if not result:
-        return []
-
-    execute = frappe.get_attr(f"{report}.execute")
-    _, data = execute(filters)
-    return data or []
-
-
 def _sum_field(rows: Iterable[dict], field: str) -> float:
     return sum(flt(row.get(field)) for row in rows)
-
-
-def _get_vat_totals(company: str, date_from: date | str | None, date_to: date | str | None) -> tuple[float, float]:
-    # Get Tax Profile to retrieve VAT accounts
-    profile = _get_tax_profile(company)
-
-    # Query VAT Input (Asset account - use debit total)
-    input_account = getattr(profile, "ppn_input_account", None)
-    input_total = _get_gl_debit_total(company, [input_account], date_from, date_to) if input_account else 0.0
-
-    # Query VAT Output (Liability account - use credit - debit)
-    output_account = getattr(profile, "ppn_output_account", None)
-    output_total = _get_gl_total(company, [output_account], date_from, date_to) if output_account else 0.0
-
-    return input_total, output_total
 
 
 def _get_gl_total(company: str, accounts: list[str], date_from: date | str | None, date_to: date | str | None) -> float:
@@ -127,95 +94,144 @@ def _get_gl_total(company: str, accounts: list[str], date_from: date | str | Non
     return credit_total - debit_total
 
 
-def _get_gl_debit_total(company: str, accounts: list[str], date_from: date | str | None, date_to: date | str | None) -> float:
-    """Get total debit amount for asset/expense accounts (like PPN Input)"""
-    if not accounts:
-        return 0.0
-
-    filters = [
-        ["company", "=", company],
-        ["is_cancelled", "=", 0],
-        ["account", "in", accounts],
-    ]
-
-    if date_from and date_to:
-        filters.append(["posting_date", "between", [date_from, date_to]])
-    elif date_from:
-        filters.append(["posting_date", ">=", date_from])
-    elif date_to:
-        filters.append(["posting_date", "<=", date_to])
-
-    aggregates = frappe.get_all(
-        "GL Entry",
-        filters=filters,
-        fields=["sum(debit) as debit_total"],
-    )
-    if not aggregates:
-        return 0.0
-
-    debit_total = flt(aggregates[0].get("debit_total"))
-    return debit_total
-
-
 def build_register_snapshot(company: str, date_from: date | str | None, date_to: date | str | None) -> dict:
-    profile = _get_tax_profile(company)
-    input_total, output_total = _get_vat_totals(company, date_from, date_to)
-
-    pph_accounts = [row.payable_account for row in getattr(profile, "pph_accounts", []) or [] if row.payable_account]
-    pph_total = _get_gl_total(company, pph_accounts, date_from, date_to)
-
-    # Handle PB1 multi-branch or single account
-    pb1_total = 0.0
-    pb1_breakdown = {}
-
-    if getattr(profile, "enable_pb1_multi_branch", 0) and getattr(profile, "pb1_account_mappings", None):
-        # Multi-branch: calculate per branch and aggregate
-        for mapping in profile.pb1_account_mappings or []:
-            branch = getattr(mapping, "branch", None)
-            pb1_account = getattr(mapping, "pb1_payable_account", None)
-            if branch and pb1_account:
-                branch_total = _get_gl_total(company, [pb1_account], date_from, date_to)
-                pb1_breakdown[branch] = branch_total
-                pb1_total += branch_total
-
-        # Add default account if exists and not covered by mappings
-        default_account = getattr(profile, "pb1_payable_account", None)
-        if default_account:
-            mapped_accounts = {getattr(m, "pb1_payable_account", None) for m in profile.pb1_account_mappings or []}
-            if default_account not in mapped_accounts:
-                default_total = _get_gl_total(company, [default_account], date_from, date_to)
-                pb1_breakdown["_default"] = default_total
-                pb1_total += default_total
-    else:
-        # Single account (backward compatible)
-        pb1_account = getattr(profile, "pb1_payable_account", None)
-        pb1_total = _get_gl_total(company, [pb1_account], date_from, date_to) if pb1_account else 0.0
-
-    bpjs_account = getattr(profile, "bpjs_payable_account", None)
-    bpjs_total = _get_gl_total(company, [bpjs_account], date_from, date_to) if bpjs_account else 0.0
-
-    vat_net = output_total - input_total
-
-    snapshot = {
-        "input_vat_total": input_total,
-        "output_vat_total": output_total,
-        "vat_net": vat_net,
-        "pph_total": pph_total,
-        "pb1_total": pb1_total,
-        "bpjs_total": bpjs_total,
-        "meta": {
-            "company": company,
-            "date_from": str(date_from) if date_from else None,
-            "date_to": str(date_to) if date_to else None,
-            "profile": profile.name,
-        },
-    }
-
-    # Add pb1_breakdown if multi-branch
-    if pb1_breakdown:
-        snapshot["pb1_breakdown"] = pb1_breakdown
-
-    return snapshot
+	"""
+	Build tax register snapshot using modern register reports with verification filtering.
+	
+	This is the primary data source for Tax Period Closing, pulling from:
+	- VAT Input Register Verified (Purchase Invoices with GL validation)
+	- VAT Output Register Verified (Sales Invoices with GL validation)
+	- Withholding Register (GL Entry based PPh tracking)
+	
+	Only includes verified/validated transactions that are properly posted to GL.
+	
+	Args:
+		company: Company name
+		date_from: Period start date
+		date_to: Period end date
+		
+	Returns:
+		Snapshot dict with VAT totals, PPh totals, PB1, BPJS, and metadata
+	"""
+	from imogi_finance.imogi_finance.utils.register_integration import (
+		get_all_register_data,
+		RegisterIntegrationError
+	)
+	
+	profile = _get_tax_profile(company)
+	
+	# Get PPh accounts for withholding register
+	pph_accounts = [row.payable_account for row in getattr(profile, "pph_accounts", []) or [] if row.payable_account]
+	
+	# Get comprehensive register data with verification filtering
+	try:
+		register_data = get_all_register_data(
+			company=company,
+			from_date=date_from,
+			to_date=date_to,
+			verification_status="Verified",
+			withholding_accounts=pph_accounts if pph_accounts else None
+		)
+	except RegisterIntegrationError as e:
+		frappe.log_error(f"Register integration failed: {str(e)}", "Tax Period Closing")
+		# Fallback to empty data with error flag
+		register_data = {
+			"summary": {
+				"input_vat_total": 0.0,
+				"output_vat_total": 0.0,
+				"vat_net": 0.0,
+				"withholding_total": 0.0,
+				"input_invoice_count": 0,
+				"output_invoice_count": 0,
+				"withholding_entry_count": 0
+			},
+			"vat_input": {"invoices": []},
+			"vat_output": {"invoices": []},
+			"withholding": {"entries": [], "totals_by_account": {}},
+			"metadata": {
+				"error": str(e),
+				"company": company,
+				"from_date": date_from,
+				"to_date": date_to
+			}
+		}
+	
+	# Extract summary values
+	summary = register_data.get("summary", {})
+	input_total = summary.get("input_vat_total", 0.0)
+	output_total = summary.get("output_vat_total", 0.0)
+	vat_net = summary.get("vat_net", 0.0)
+	pph_total = summary.get("withholding_total", 0.0)
+	
+	# Handle PB1 multi-branch or single account (GL-based, not in registers)
+	pb1_total = 0.0
+	pb1_breakdown = {}
+	
+	if getattr(profile, "enable_pb1_multi_branch", 0) and getattr(profile, "pb1_account_mappings", None):
+		# Multi-branch: calculate per branch and aggregate
+		for mapping in profile.pb1_account_mappings or []:
+			branch = getattr(mapping, "branch", None)
+			pb1_account = getattr(mapping, "pb1_payable_account", None)
+			if branch and pb1_account:
+				branch_total = _get_gl_total(company, [pb1_account], date_from, date_to)
+				pb1_breakdown[branch] = branch_total
+				pb1_total += branch_total
+		
+		# Add default account if exists and not covered by mappings
+		default_account = getattr(profile, "pb1_payable_account", None)
+		if default_account:
+			mapped_accounts = {getattr(m, "pb1_payable_account", None) for m in profile.pb1_account_mappings or []}
+			if default_account not in mapped_accounts:
+				default_total = _get_gl_total(company, [default_account], date_from, date_to)
+				pb1_breakdown["_default"] = default_total
+				pb1_total += default_total
+	else:
+		# Single account (backward compatible)
+		pb1_account = getattr(profile, "pb1_payable_account", None)
+		pb1_total = _get_gl_total(company, [pb1_account], date_from, date_to) if pb1_account else 0.0
+	
+	# BPJS (GL-based, not in registers)
+	bpjs_account = getattr(profile, "bpjs_payable_account", None)
+	bpjs_total = _get_gl_total(company, [bpjs_account], date_from, date_to) if bpjs_account else 0.0
+	
+	# Build comprehensive snapshot
+	snapshot = {
+		"input_vat_total": input_total,
+		"output_vat_total": output_total,
+		"vat_net": vat_net,
+		"pph_total": pph_total,
+		"pb1_total": pb1_total,
+		"bpjs_total": bpjs_total,
+		# Register-specific fields (NEW in v15+)
+		"input_invoice_count": summary.get("input_invoice_count", 0),
+		"output_invoice_count": summary.get("output_invoice_count", 0),
+		"withholding_entry_count": summary.get("withholding_entry_count", 0),
+		"verification_status": summary.get("verification_status", "Verified"),
+		"vat_net_direction": summary.get("vat_net_direction", "zero"),
+		# Detailed breakdowns
+		"withholding_by_account": register_data.get("withholding", {}).get("totals_by_account", {}),
+		"meta": {
+			"company": company,
+			"date_from": str(date_from) if date_from else None,
+			"date_to": str(date_to) if date_to else None,
+			"profile": profile.name,
+			"generated_at": register_data.get("metadata", {}).get("generated_at"),
+			"generated_by": register_data.get("metadata", {}).get("generated_by"),
+			"data_source": "register_integration",
+			"register_version": "v15+"
+		},
+	}
+	
+	# Add pb1_breakdown if multi-branch
+	if pb1_breakdown:
+		snapshot["pb1_breakdown"] = pb1_breakdown
+	
+	# Add error flag if present
+	if "error" in register_data.get("metadata", {}):
+		snapshot["meta"]["error"] = register_data["metadata"]["error"]
+		snapshot["meta"]["data_source"] = "fallback_empty"
+	
+	return snapshot
 
 
 def _get_tax_invoice_fields(doctype: str) -> set[str]:

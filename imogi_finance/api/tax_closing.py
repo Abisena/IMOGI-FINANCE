@@ -97,6 +97,8 @@ def validate_can_close_period(closing_name: str) -> Dict[str, Any]:
     - Missing tax profile
     - Missing register snapshot
     - Open/draft transactions in period
+    - Register configuration validity (NEW in v15+)
+    - Data source quality (NEW in v15+)
     
     Args:
         closing_name: Name of Tax Period Closing document
@@ -106,12 +108,16 @@ def validate_can_close_period(closing_name: str) -> Dict[str, Any]:
             - can_close: bool - Whether period can be closed
             - errors: list - Blocking errors
             - warnings: list - Non-blocking warnings
+            - register_info: dict - Register data quality info
     """
+    import json
+    
     closing = frappe.get_doc("Tax Period Closing", closing_name)
     closing.check_permission("read")
     
     errors = []
     warnings = []
+    register_info = {}
     
     # Check tax profile
     if not closing.tax_profile:
@@ -120,6 +126,51 @@ def validate_can_close_period(closing_name: str) -> Dict[str, Any]:
     # Check register snapshot
     if not closing.register_snapshot:
         errors.append(_("Tax register snapshot not generated. Please refresh registers."))
+    else:
+        # Parse and validate register data
+        try:
+            snapshot = json.loads(closing.register_snapshot)
+            meta = snapshot.get("meta", {})
+            data_source = meta.get("data_source", "unknown")
+            
+            register_info = {
+                "data_source": data_source,
+                "input_invoice_count": snapshot.get("input_invoice_count", 0),
+                "output_invoice_count": snapshot.get("output_invoice_count", 0),
+                "withholding_entry_count": snapshot.get("withholding_entry_count", 0),
+                "verification_status": snapshot.get("verification_status", "Unknown")
+            }
+            
+            # Warn if using fallback data
+            if data_source == "fallback_empty":
+                errors.append(_("Register data could not be loaded. Error: {0}").format(
+                    meta.get("error", "Unknown error")
+                ))
+            
+            # Warn if all counts are zero
+            if (snapshot.get("input_invoice_count", 0) == 0 and 
+                snapshot.get("output_invoice_count", 0) == 0 and 
+                snapshot.get("withholding_entry_count", 0) == 0):
+                warnings.append(_("No tax transactions found in register snapshot. "
+                                 "Verify this is correct before closing."))
+        except Exception as e:
+            errors.append(_("Failed to parse register snapshot: {0}").format(str(e)))
+    
+    # Validate register configuration
+    from imogi_finance.imogi_finance.utils.register_integration import validate_register_configuration
+    
+    try:
+        config_validation = validate_register_configuration(closing.company)
+        if not config_validation.get("valid"):
+            config_errors = []
+            for register_type in ["vat_input", "vat_output", "withholding"]:
+                register_val = config_validation.get(register_type, {})
+                if not register_val.get("valid"):
+                    config_errors.append(f"{register_type}: {register_val.get('message', 'Invalid')}")
+            
+            warnings.append(_("Register configuration issues: {0}").format("; ".join(config_errors)))
+    except Exception as e:
+        warnings.append(_("Could not validate register configuration: {0}").format(str(e)))
     
     # Check for draft transactions
     if closing.company and closing.date_from and closing.date_to:
@@ -167,7 +218,8 @@ def validate_can_close_period(closing_name: str) -> Dict[str, Any]:
     return {
         "can_close": can_close,
         "errors": errors,
-        "warnings": warnings
+        "warnings": warnings,
+        "register_info": register_info
     }
 
 
