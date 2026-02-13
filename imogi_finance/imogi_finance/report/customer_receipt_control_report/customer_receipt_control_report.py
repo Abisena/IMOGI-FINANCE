@@ -10,6 +10,8 @@ def execute(filters: Dict | None = None) -> Tuple[List[Dict], List[Dict]]:
     filters = filters or {}
     columns = _get_columns()
     data = _get_data(filters)
+    # Enrich data with reference outstanding
+    data = _enrich_with_reference_outstanding(data)
     return columns, data
 
 
@@ -19,17 +21,68 @@ def _get_columns() -> List[Dict]:
         {"fieldname": "posting_date", "label": _("Posting Date"), "fieldtype": "Date", "width": 110},
         {"fieldname": "customer", "label": _("Customer"), "fieldtype": "Link", "options": "Customer", "width": 200},
         {"fieldname": "status", "label": _("Status"), "fieldtype": "Data", "width": 110},
+        {"fieldname": "payment_type", "label": _("Payment Type"), "fieldtype": "Data", "width": 120},
         {"fieldname": "receipt_purpose", "label": _("Purpose"), "fieldtype": "Data", "width": 130},
         {"fieldname": "customer_reference_no", "label": _("Customer Ref"), "fieldtype": "Data", "width": 160},
         {"fieldname": "sales_order_no", "label": _("Sales Order"), "fieldtype": "Data", "width": 200},
         {"fieldname": "sales_invoice_no", "label": _("Sales Invoice"), "fieldtype": "Data", "width": 200},
-        {"fieldname": "total_amount", "label": _("Total Amount"), "fieldtype": "Currency", "width": 130},
-        {"fieldname": "paid_amount", "label": _("Paid Amount"), "fieldtype": "Currency", "width": 130},
-        {"fieldname": "outstanding_amount", "label": _("Outstanding"), "fieldtype": "Currency", "width": 130},
+        {"fieldname": "total_amount", "label": _("CR Amount"), "fieldtype": "Currency", "width": 130},
+        {"fieldname": "paid_amount", "label": _("CR Paid"), "fieldtype": "Currency", "width": 130},
+        {"fieldname": "outstanding_amount", "label": _("CR Outstanding"), "fieldtype": "Currency", "width": 130},
+        {"fieldname": "ref_outstanding", "label": _("Ref Outstanding"), "fieldtype": "Currency", "width": 140},
         {"fieldname": "stamp_mode", "label": _("Stamp Mode"), "fieldtype": "Data", "width": 110},
         {"fieldname": "digital_stamp_status", "label": _("Digital Stamp Status"), "fieldtype": "Data", "width": 160},
         {"fieldname": "payment_entries", "label": _("Payment Entry"), "fieldtype": "Data", "width": 220},
     ]
+
+
+def _enrich_with_reference_outstanding(data: List[Dict]) -> List[Dict]:
+    """
+    Enrich report data with reference document outstanding.
+    This shows the ACTUAL outstanding in Sales Order/Invoice, not just Customer Receipt.
+    """
+    for row in data:
+        ref_outstanding = 0
+        payment_type = ""
+
+        # Get Sales Order outstanding
+        if row.get("sales_order_no"):
+            so_names = [s.strip() for s in row["sales_order_no"].split(",") if s.strip()]
+            for so_name in so_names:
+                so_data = frappe.db.get_value(
+                    "Sales Order", so_name,
+                    ["grand_total", "advance_paid", "rounded_total"],
+                    as_dict=True
+                )
+                if so_data:
+                    grand = so_data.get("rounded_total") or so_data.get("grand_total") or 0
+                    paid = so_data.get("advance_paid") or 0
+                    ref_outstanding += (grand - paid)
+
+        # Get Sales Invoice outstanding
+        if row.get("sales_invoice_no"):
+            si_names = [s.strip() for s in row["sales_invoice_no"].split(",") if s.strip()]
+            for si_name in si_names:
+                si_outstanding = frappe.db.get_value("Sales Invoice", si_name, "outstanding_amount") or 0
+                ref_outstanding += si_outstanding
+
+        row["ref_outstanding"] = ref_outstanding
+
+        # Determine payment type indicator
+        if row.get("status") == "Paid" and ref_outstanding > 0:
+            payment_type = "DP/Partial"
+        elif row.get("status") == "Paid" and ref_outstanding == 0:
+            payment_type = "Full Payment"
+        elif row.get("status") == "Partially Paid":
+            payment_type = "In Progress"
+        elif row.get("status") == "Issued":
+            payment_type = "Pending"
+        else:
+            payment_type = row.get("status", "")
+
+        row["payment_type"] = payment_type
+
+    return data
 
 
 def _get_conditions(filters: Dict) -> Tuple[str, Dict]:

@@ -27,5 +27,28 @@ frappe.query_reports["Customer Receipt Control Report"] = {
       fieldtype: "Select",
       options: "\nDraft\nRequested\nIssued\nFailed\nCancelled"
     }
-  ]
+  ],
+  formatter: function(value, row, column, data, default_formatter) {
+    value = default_formatter(value, row, column, data);
+
+    // Color code Payment Type column
+    if (column.fieldname === "payment_type") {
+      if (data.payment_type === "DP/Partial") {
+        value = `<span style="color: #e67e22; font-weight: bold;">${value}</span>`;
+      } else if (data.payment_type === "Full Payment") {
+        value = `<span style="color: #27ae60; font-weight: bold;">${value}</span>`;
+      } else if (data.payment_type === "Pending") {
+        value = `<span style="color: #3498db;">${value}</span>`;
+      } else if (data.payment_type === "In Progress") {
+        value = `<span style="color: #9b59b6;">${value}</span>`;
+      }
+    }
+
+    // Highlight Ref Outstanding if > 0
+    if (column.fieldname === "ref_outstanding" && data.ref_outstanding > 0) {
+      value = `<span style="color: #e74c3c; font-weight: bold;">${value}</span>`;
+    }
+
+    return value;
+  }
 };
