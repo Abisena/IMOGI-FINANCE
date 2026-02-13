@@ -239,7 +239,7 @@ doc_events = {
         "on_update_after_submit": "imogi_finance.events.sales_order.compute_outstanding_amount",
     },
     "Expense Claim": {
-        "on_submit": "imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances",
+        "on_submit": "imogi_finance.expense_claim_integration.expense_claim_advances.link_employee_advances",
     },
     "Expense Request": {
         "validate": [

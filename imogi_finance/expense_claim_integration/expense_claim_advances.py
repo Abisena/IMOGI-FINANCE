@@ -14,7 +14,7 @@ Installation:
   Add to hooks.py:
     doc_events = {
         "Expense Claim": {
-            "on_submit": "imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances"
+            "on_submit": "imogi_finance.expense_claim_integration.expense_claim_advances.link_employee_advances"
         }
     }
 """
@@ -251,7 +251,7 @@ frappe.ui.form.on('Expense Claim', {
 
 function get_employee_advances(frm) {
     frappe.call({
-        method: 'imogi_finance.advance_payment_native.expense_claim_advances.get_employee_advances',
+        method: 'imogi_finance.expense_claim_integration.expense_claim_advances.get_employee_advances',
         args: {
             employee: frm.doc.employee,
             company: frm.doc.company,

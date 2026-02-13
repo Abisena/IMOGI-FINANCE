@@ -18,7 +18,7 @@ Philosophy: Native First + Minimal Custom
 __version__ = "1.0.0"
 
 # Import main functions for easier access
-from imogi_finance.advance_payment_native.expense_claim_advances import (
+from imogi_finance.expense_claim_integration.expense_claim_advances import (
     get_employee_advances,
     allocate_advance_to_expense_claim,
     link_employee_advances

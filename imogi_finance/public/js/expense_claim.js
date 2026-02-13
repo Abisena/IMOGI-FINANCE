@@ -38,7 +38,7 @@ frappe.ui.form.on('Expense Claim', {
 
 function link_employee_advances(frm) {
 	frappe.call({
-		method: 'imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances',
+		method: 'imogi_finance.expense_claim_integration.expense_claim_advances.link_employee_advances',
 		args: {
 			doc: frm.doc
 		},
@@ -58,7 +58,7 @@ function load_employee_advances(frm) {
 	if (!frm.doc.employee) return;
 	
 	frappe.call({
-		method: 'imogi_finance.advance_payment_native.expense_claim_advances.get_employee_advances',
+		method: 'imogi_finance.expense_claim_integration.expense_claim_advances.get_employee_advances',
 		args: {
 			employee: frm.doc.employee,
 			company: frm.doc.company
@@ -87,7 +87,7 @@ function load_employee_advances(frm) {
 
 function show_advance_allocation(frm) {
 	frappe.call({
-		method: 'imogi_finance.advance_payment_native.expense_claim_advances.get_allocated_advances',
+		method: 'imogi_finance.expense_claim_integration.expense_claim_advances.get_allocated_advances',
 		args: {
 			expense_claim: frm.doc.name
 		},

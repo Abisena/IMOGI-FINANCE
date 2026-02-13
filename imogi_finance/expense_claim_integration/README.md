@@ -1,4 +1,4 @@
-# Advance Payment Native Module
+# Expense Claim Integration Module
 
 ## Overview
 
@@ -33,7 +33,7 @@ Modul ini sudah terdaftar di hooks.py:
 # Doc Events
 doc_events = {
     "Expense Claim": {
-        "on_submit": "imogi_finance.advance_payment_native.expense_claim_advances.link_employee_advances",
+        "on_submit": "imogi_finance.expense_claim_integration.expense_claim_advances.link_employee_advances",
     }
 }
 
@@ -87,7 +87,7 @@ doctype_js = {
 ### File Structure
 ```
 imogi_finance/
-├── advance_payment_native/
+├── expense_claim_integration/
 │   ├── __init__.py
 │   ├── advance_dashboard_report.py
 │   ├── expense_claim_advances.py
@@ -169,7 +169,7 @@ Hook function untuk auto-allocate advances saat expense claim submit
 ```python
 # Get employee advances
 frappe.call({
-    method: 'imogi_finance.advance_payment_native.expense_claim_advances.get_employee_advances',
+    method: 'imogi_finance.expense_claim_integration.expense_claim_advances.get_employee_advances',
     args: {
         employee: 'EMP-00001',
         company: 'My Company'
@@ -178,7 +178,7 @@ frappe.call({
 
 # Get allocated advances
 frappe.call({
-    method: 'imogi_finance.advance_payment_native.expense_claim_advances.get_allocated_advances',
+    method: 'imogi_finance.expense_claim_integration.expense_claim_advances.get_allocated_advances',
     args: {
         expense_claim: 'EXP-00001'
     }
