@@ -728,3 +728,103 @@ def create_vat_netting_entry(
 
     je.insert(ignore_permissions=True)
     return je.name
+
+
+def generate_vat_out_batch_excel(
+    batch_name: str,
+    *,
+    include_fp_numbers: bool = False,
+    for_upload: bool = True
+) -> str:
+    """Generate Excel file for VAT OUT Batch.
+    
+    Args:
+        batch_name: Name of VAT OUT Batch
+        include_fp_numbers: Whether to include FP numbers (for reconciliation)
+        for_upload: True for CoreTax upload, False for reconciliation
+        
+    Returns:
+        str: File URL
+    """
+    from imogi_finance.imogi_finance.doctype.coretax_template_settings.coretax_template_settings import (
+        CoreTaxTemplateSettings
+    )
+    
+    # Get batch
+    batch = frappe.get_doc("VAT OUT Batch", batch_name)
+    
+    # Get template
+    template_info = CoreTaxTemplateSettings.get_active_template()
+    
+    # Build data structure
+    # Faktur sheet: 1 row per group
+    faktur_data = []
+    for group in batch.groups:
+        faktur_row = {
+            "Group ID": group.group_id,
+            "Customer": group.customer,
+            "Customer NPWP": group.customer_npwp,
+            "Total DPP": group.total_dpp,
+            "Total PPN": group.total_ppn,
+        }
+        
+        if include_fp_numbers:
+            faktur_row["FP Number"] = group.fp_no or ""
+            faktur_row["FP Date"] = group.fp_date or ""
+        
+        faktur_data.append(faktur_row)
+    
+    # DetailFaktur sheet: 1 row per invoice
+    detail_data = []
+    for invoice in batch.invoices:
+        si = frappe.get_doc("Sales Invoice", invoice.sales_invoice)
+        
+        detail_row = {
+            "Group ID": invoice.group_id,
+            "Sales Invoice": invoice.sales_invoice,
+            "Invoice Date": si.posting_date,
+            "Item Description": ", ".join([item.item_name or item.item_code for item in si.items]),
+            "DPP": invoice.dpp,
+            "PPN": invoice.ppn,
+            "Remarks": invoice.remarks or ""
+        }
+        
+        detail_data.append(detail_row)
+    
+    # Create Excel file
+    from frappe.utils.xlsxutils import make_xlsx
+    
+    # Prepare sheets
+    sheets = {
+        "Faktur": faktur_data,
+        "DetailFaktur": detail_data
+    }
+    
+    # Generate filename
+    if for_upload:
+        filename = f"coretax-vat-out-{batch.company}-{batch.date_from}-{batch.date_to}"
+    else:
+        filename = f"reconciliation-vat-out-{batch.company}-{batch.date_from}-{batch.date_to}"
+    
+    # Create XLSX
+    xlsx_data = {}
+    for sheet_name, data in sheets.items():
+        if data:
+            headers = list(data[0].keys())
+            rows = [[row[h] for h in headers] for row in data]
+            xlsx_data[sheet_name] = {"columns": headers, "data": rows}
+    
+    # Serialize
+    xlsx_file = make_xlsx(xlsx_data, sheet_name="Faktur")
+    filedata = xlsx_file.getvalue()
+    
+    # Save as File
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": f"{filename}.xlsx",
+        "content": filedata,
+        "is_private": 1,
+    })
+    file_doc.save(ignore_permissions=True)
+    
+    return file_doc.file_url

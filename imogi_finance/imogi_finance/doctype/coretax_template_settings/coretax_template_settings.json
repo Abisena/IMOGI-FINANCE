@@ -1,0 +1,116 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2026-02-13 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "section_active",
+    "active_template_version",
+    "template_file",
+    "column_break_1",
+    "last_updated_by",
+    "last_updated_on",
+    "section_notes",
+    "version_notes",
+    "section_history",
+    "template_history"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_active",
+      "fieldtype": "Section Break",
+      "label": "Active Template"
+    },
+    {
+      "default": "1.0",
+      "fieldname": "active_template_version",
+      "fieldtype": "Data",
+      "label": "Active Template Version",
+      "reqd": 1
+    },
+    {
+      "fieldname": "template_file",
+      "fieldtype": "Attach",
+      "label": "Template File (Excel from DJP)",
+      "reqd": 1,
+      "description": "Upload official DJP CoreTax template Excel file"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "last_updated_by",
+      "fieldtype": "Link",
+      "label": "Last Updated By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_updated_on",
+      "fieldtype": "Datetime",
+      "label": "Last Updated On",
+      "read_only": 1
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_notes",
+      "fieldtype": "Section Break",
+      "label": "Version Notes"
+    },
+    {
+      "fieldname": "version_notes",
+      "fieldtype": "Text",
+      "label": "Version Notes",
+      "description": "Describe changes in this template version"
+    },
+    {
+      "collapsible": 1,
+      "fieldname": "section_history",
+      "fieldtype": "Section Break",
+      "label": "Template History"
+    },
+    {
+      "fieldname": "template_history",
+      "fieldtype": "Table",
+      "label": "Template History",
+      "options": "CoreTax Template History"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 0,
+  "issingle": 1,
+  "links": [],
+  "modified": "2026-02-13 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Imogi Finance",
+  "name": "CoreTax Template Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "read": 1,
+      "role": "Accounts Manager",
+      "write": 1
+    },
+    {
+      "read": 1,
+      "role": "Tax Reviewer"
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

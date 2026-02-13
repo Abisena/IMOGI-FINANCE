@@ -547,6 +547,41 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_batch_section",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_batch_section",
+    "fieldtype": "Section Break",
+    "insert_after": "out_fp_tax_invoice_pdf",
+    "label": "VAT OUT Batch",
+    "collapsible": 1,
+    "depends_on": "eval:doc.out_fp_batch"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_batch",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_batch",
+    "fieldtype": "Link",
+    "insert_after": "out_fp_batch_section",
+    "label": "VAT OUT Batch",
+    "options": "VAT OUT Batch",
+    "allow_on_submit": 1,
+    "read_only": 1,
+    "in_standard_filter": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_group_id",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_group_id",
+    "fieldtype": "Int",
+    "insert_after": "out_fp_batch",
+    "label": "Group ID",
+    "allow_on_submit": 1,
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Payment Entry-transfer_application",
     "dt": "Payment Entry",
     "fieldname": "transfer_application",

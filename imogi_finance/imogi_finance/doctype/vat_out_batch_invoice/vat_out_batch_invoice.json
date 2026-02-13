@@ -1,0 +1,77 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "autoincrement",
+  "creation": "2026-02-13 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "group_id",
+    "sales_invoice",
+    "column_break_1",
+    "dpp",
+    "ppn",
+    "column_break_2",
+    "remarks"
+  ],
+  "fields": [
+    {
+      "fieldname": "group_id",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Group ID",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sales_invoice",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Sales Invoice",
+      "options": "Sales Invoice",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fetch_from": "sales_invoice.out_fp_dpp",
+      "fieldname": "dpp",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "DPP",
+      "read_only": 1
+    },
+    {
+      "fetch_from": "sales_invoice.out_fp_ppn",
+      "fieldname": "ppn",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "PPN",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "remarks",
+      "fieldtype": "Small Text",
+      "label": "Remarks"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "is_submittable": 0,
+  "issingle": 0,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-02-13 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Imogi Finance",
+  "name": "VAT OUT Batch Invoice",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC"
+}

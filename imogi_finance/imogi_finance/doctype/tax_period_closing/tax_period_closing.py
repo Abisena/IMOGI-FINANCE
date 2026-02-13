@@ -583,3 +583,35 @@ def create_vat_netting_entry_for_closing(closing_name: str) -> str:
     closing.check_permission("write")
     
     return closing.create_vat_netting_journal_entry()
+
+
+def is_period_locked(company: str, check_date: str) -> bool:
+    """Check if a tax period is locked.
+    
+    Args:
+        company: Company name
+        check_date: Date to check (YYYY-MM-DD)
+        
+    Returns:
+        bool: True if period is locked (submitted closing exists)
+    """
+    from frappe.utils import getdate
+    
+    check_date = getdate(check_date)
+    
+    # Get month and year from check_date
+    period_month = check_date.month
+    period_year = check_date.year
+    
+    # Check if submitted closing exists for this period
+    locked = frappe.db.exists(
+        "Tax Period Closing",
+        {
+            "company": company,
+            "period_month": period_month,
+            "period_year": period_year,
+            "docstatus": 1
+        }
+    )
+    
+    return bool(locked)
