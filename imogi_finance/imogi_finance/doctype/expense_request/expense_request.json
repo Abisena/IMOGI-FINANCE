@@ -455,24 +455,23 @@
       "allow_on_submit": 1,
       "fieldname": "ti_fp_dpp",
       "fieldtype": "Currency",
-      "hidden": 1,
-      "label": "DPP",
-      "read_only": 1
+      "label": "DPP (dari OCR)",
+      "read_only": 1,
+      "description": "DPP amount from Tax Invoice OCR (for reference)"
     },
     {
       "allow_on_submit": 1,
       "fieldname": "ti_fp_ppn",
       "fieldtype": "Currency",
-      "hidden": 1,
-      "label": "PPN",
-      "read_only": 1
+      "label": "PPN (dari OCR)",
+      "read_only": 1,
+      "description": "PPN amount from Tax Invoice OCR (for reference)"
     },
     {
       "allow_on_submit": 1,
       "fieldname": "ti_fp_npwp",
       "fieldtype": "Data",
-      "hidden": 1,
-      "label": "NPWP",
+      "label": "NPWP (dari OCR)",
       "read_only": 1
     },
     {
@@ -521,19 +520,17 @@
       "allow_on_submit": 1,
       "fieldname": "ti_dpp_variance",
       "fieldtype": "Currency",
-      "hidden": 1,
       "label": "DPP Variance",
       "read_only": 1,
-      "description": "Difference between OCR DPP and Expected DPP (OCR - Expected). Can be negative or positive."
+      "description": "Difference between OCR DPP and Expected DPP (OCR - Expected). Used for variance line item in Purchase Invoice."
     },
     {
       "allow_on_submit": 1,
       "fieldname": "ti_ppn_variance",
       "fieldtype": "Currency",
-      "hidden": 1,
       "label": "PPN Variance",
       "read_only": 1,
-      "description": "Difference between OCR PPN and Expected PPN (OCR - Expected). Can be negative or positive."
+      "description": "Difference between OCR PPN and Expected PPN (OCR - Expected). For reference only."
     },
     {
       "fieldname": "tab_approval",

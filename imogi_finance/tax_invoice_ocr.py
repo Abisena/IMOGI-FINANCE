@@ -3354,13 +3354,9 @@ def _get_party_npwp(doc: Any, doctype: str) -> str | None:
     if not party:
         return None
 
-    for field in ("tax_id", "npwp"):
-        if not frappe.db.has_column(party_type, field):
-            continue
-        value = frappe.db.get_value(party_type, party, field)
-        if value:
-            return normalize_npwp(value)
-    return None
+    # ERPNext standard: use tax_id only
+    tax_id = frappe.db.get_value(party_type, party, "tax_id")
+    return normalize_npwp(tax_id) if tax_id else None
 
 
 def _build_filters(target_doctype: str, fp_no: str, company: str | None) -> dict[str, Any]:

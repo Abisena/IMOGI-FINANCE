@@ -149,7 +149,14 @@ function computeTotals(frm) {
     (sum, row) => sum + (row.is_pph_applicable ? flt(row.pph_base_amount || 0) : 0),
     0,
   );
-  const totalPpn = flt(frm.doc.ti_fp_ppn || frm.doc.ppn || 0);
+  
+  // Calculate PPN from items total using template rate (NOT from OCR)
+  let totalPpn = 0;
+  if (frm.doc.is_ppn_applicable) {
+    const ppnRate = flt(frm._ppn_rate || 0);
+    totalPpn = (totalExpense * ppnRate) / 100;
+  }
+  
   const totalPpnbm = flt(frm.doc.ti_fp_ppnbm || frm.doc.ppnbm || 0);
   const pphBaseTotal = itemPphTotal
     || (frm.doc.is_pph_applicable ? flt(frm.doc.pph_base_amount || 0) : 0);
@@ -202,7 +209,12 @@ function renderTotalsHtml(frm, totals) {
 }
 
 
-function updateTotalsSummary(frm) {
+async function updateTotalsSummary(frm) {
+  // Get PPN rate first if applicable
+  if (frm.doc.is_ppn_applicable && frm.doc.ppn_template) {
+    await getPpnRate(frm);
+  }
+  
   const totals = computeTotals(frm);
   const fields = {
     total_expense: totals.totalExpense,
@@ -634,6 +646,19 @@ frappe.ui.form.on('Expense Request', {
   items_remove(frm) {
     updateTotalsSummary(frm);
   },
+  async supplier(frm) {
+    // Manual fetch fallback if fetch_from doesn't trigger
+    if (frm.doc.supplier && !frm.doc.supplier_tax_id) {
+      try {
+        const { message } = await frappe.db.get_value('Supplier', frm.doc.supplier, 'tax_id');
+        if (message?.tax_id) {
+          frm.set_value('supplier_tax_id', message.tax_id);
+        }
+      } catch (error) {
+        // Ignore errors - field will remain empty
+      }
+    }
+  },
   ti_fp_ppn(frm) {
     updateTotalsSummary(frm);
   },
@@ -650,6 +675,11 @@ frappe.ui.form.on('Expense Request', {
   async is_ppn_applicable(frm) {
     await checkOcrEnabled(frm);
     updateTotalsSummary(frm);
+  },
+  async ppn_template(frm) {
+    // Clear cache when template changes
+    delete frm._ppn_rate;
+    await updateTotalsSummary(frm);
   },
 
   async ti_tax_invoice_upload(frm) {
