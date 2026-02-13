@@ -240,7 +240,7 @@
 			{"state": "Approved for Transfer", "doc_status": "1", "allow_edit": "Finance Controller"},
 			{"state": "Awaiting Bank Confirmation", "doc_status": "1", "allow_edit": "Finance Controller"},
 			{"state": "Paid", "doc_status": "1", "allow_edit": "Finance Controller"},
-			{"state": "Rejected", "doc_status": "0", "allow_edit": "All"},
+			{"state": "Rejected", "doc_status": "1", "allow_edit": "Finance Controller"},
 			{"state": "Cancelled", "doc_status": "2", "allow_edit": "Finance Controller"}
 		],
 		"transitions": [
