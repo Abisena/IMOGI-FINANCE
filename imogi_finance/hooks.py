@@ -161,9 +161,6 @@ fixtures = [
     {"doctype": "CoreTax Column Mapping"},
     {"doctype": "Tax Profile PPh Account"},
     {"doctype": "Tax Profile PB1 Account"},
-    # VAT OUT Batch and CoreTax Template Settings
-    {"doctype": "CoreTax Template Settings"},
-    {"doctype": "CoreTax Template History"},
     "fixtures/item.json",
 ]
 

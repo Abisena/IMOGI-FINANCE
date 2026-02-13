@@ -114,7 +114,7 @@ def get_columns():
 
 
 def get_data(filters):
-	"""Query and aggregate VAT OUT batch data"""
+	"""Query and aggregate VAT OUT batch data from Sales Invoices"""
 	conditions = get_conditions(filters)
 	
 	data = frappe.db.sql(f"""
@@ -129,17 +129,16 @@ def get_data(filters):
 				WHEN b.docstatus = 2 THEN 'Cancelled'
 			END as docstatus,
 			b.coretax_upload_status,
-			COUNT(DISTINCT g.group_id) as group_count,
-			COUNT(DISTINCT i.sales_invoice) as invoice_count,
-			COALESCE(SUM(g.total_dpp), 0) as total_dpp,
-			COALESCE(SUM(g.total_ppn), 0) as total_ppn,
+			COUNT(DISTINCT si.out_fp_group_id) as group_count,
+			COUNT(DISTINCT si.name) as invoice_count,
+			COALESCE(SUM(si.out_fp_dpp), 0) as total_dpp,
+			COALESCE(SUM(si.out_fp_ppn), 0) as total_ppn,
 			b.template_version,
 			b.exported_on,
 			b.owner as submitted_by,
 			b.modified as submitted_on
 		FROM `tabVAT OUT Batch` b
-		LEFT JOIN `tabVAT OUT Batch Group` g ON g.parent = b.name
-		LEFT JOIN `tabVAT OUT Batch Invoice` i ON i.parent = b.name
+		LEFT JOIN `tabSales Invoice` si ON si.out_fp_batch = b.name AND si.docstatus = 1
 		WHERE 1=1 {conditions}
 		GROUP BY b.name
 		ORDER BY b.date_from DESC, b.creation DESC

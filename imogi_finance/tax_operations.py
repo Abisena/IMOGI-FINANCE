@@ -746,50 +746,80 @@ def generate_vat_out_batch_excel(
     Returns:
         str: File URL
     """
-    from imogi_finance.imogi_finance.doctype.coretax_template_settings.coretax_template_settings import (
-        CoreTaxTemplateSettings
-    )
-    
     # Get batch
     batch = frappe.get_doc("VAT OUT Batch", batch_name)
     
-    # Get template
-    template_info = CoreTaxTemplateSettings.get_active_template()
+    # Get invoices from batch
+    invoices = batch.get_batch_invoices()
+    
+    # Group invoices by group_id
+    groups_map = {}
+    for inv in invoices:
+        gid = inv.out_fp_group_id or 0
+        if gid not in groups_map:
+            groups_map[gid] = {
+                "group_id": gid,
+                "customer": inv.customer,
+                "customer_name": inv.customer_name,
+                "customer_npwp": inv.out_fp_customer_npwp,
+                "total_dpp": 0,
+                "total_ppn": 0,
+                "fp_no": inv.out_fp_no or "",
+                "fp_no_seri": inv.out_fp_no_seri or "",
+                "fp_no_faktur": inv.out_fp_no_faktur or "",
+                "fp_date": inv.out_fp_date or "",
+                "invoices": []
+            }
+        
+        groups_map[gid]["total_dpp"] += inv.out_fp_dpp or 0
+        groups_map[gid]["total_ppn"] += inv.out_fp_ppn or 0
+        groups_map[gid]["invoices"].append(inv)
     
     # Build data structure
     # Faktur sheet: 1 row per group
     faktur_data = []
-    for group in batch.groups:
+    for gid in sorted(groups_map.keys()):
+        group = groups_map[gid]
+        
         faktur_row = {
-            "Group ID": group.group_id,
-            "Customer": group.customer,
-            "Customer NPWP": group.customer_npwp,
-            "Total DPP": group.total_dpp,
-            "Total PPN": group.total_ppn,
+            "Group ID": group["group_id"],
+            "Customer": group["customer_name"] or group["customer"],
+            "Customer NPWP": group["customer_npwp"] or "",
+            "Total DPP": group["total_dpp"],
+            "Total PPN": group["total_ppn"],
         }
         
         if include_fp_numbers:
-            faktur_row["FP Number"] = group.fp_no or ""
-            faktur_row["FP Date"] = group.fp_date or ""
+            faktur_row["FP No Seri"] = group["fp_no_seri"]
+            faktur_row["FP No Faktur"] = group["fp_no_faktur"]
+            faktur_row["FP Date"] = group["fp_date"]
         
         faktur_data.append(faktur_row)
     
     # DetailFaktur sheet: 1 row per invoice
     detail_data = []
-    for invoice in batch.invoices:
-        si = frappe.get_doc("Sales Invoice", invoice.sales_invoice)
+    for gid in sorted(groups_map.keys()):
+        group = groups_map[gid]
         
-        detail_row = {
-            "Group ID": invoice.group_id,
-            "Sales Invoice": invoice.sales_invoice,
-            "Invoice Date": si.posting_date,
-            "Item Description": ", ".join([item.item_name or item.item_code for item in si.items]),
-            "DPP": invoice.dpp,
-            "PPN": invoice.ppn,
-            "Remarks": invoice.remarks or ""
-        }
-        
-        detail_data.append(detail_row)
+        for inv in group["invoices"]:
+            # Get item descriptions
+            si_doc = frappe.get_doc("Sales Invoice", inv.name)
+            item_desc = ", ".join([
+                item.item_name or item.item_code 
+                for item in si_doc.items
+            ])
+            
+            detail_row = {
+                "Group ID": group["group_id"],
+                "Sales Invoice": inv.name,
+                "Invoice Date": inv.posting_date,
+                "Item Description": item_desc,
+                "DPP": inv.out_fp_dpp or 0,
+                "PPN": inv.out_fp_ppn or 0,
+                "Grand Total": inv.grand_total
+            }
+            
+            detail_data.append(detail_row)
     
     # Create Excel file
     from frappe.utils.xlsxutils import make_xlsx

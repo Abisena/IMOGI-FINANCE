@@ -5,8 +5,12 @@ frappe.ui.form.on('VAT OUT Batch', {
 	refresh: function(frm) {
 		// Add custom buttons based on status
 		if (frm.doc.docstatus === 0) {
-			// Draft state
+			// Draft state - Get Available Invoices button
 			if (!frm.doc.exported_on) {
+				frm.add_custom_button(__('Get Available Invoices'), function() {
+					get_available_invoices(frm);
+				}).css({'background-color': '#4CAF50', 'color': 'white', 'font-weight': 'bold'});
+				
 				frm.add_custom_button(__('Generate CoreTax Upload File'), function() {
 					generate_coretax_file(frm);
 				}, __('Actions'));
@@ -46,6 +50,13 @@ frappe.ui.form.on('VAT OUT Batch', {
 			}, __('Actions'));
 		}
 		
+		// View Invoices button
+		if (!frm.is_new()) {
+			frm.add_custom_button(__('View Batch Invoices'), function() {
+				show_batch_invoices(frm);
+			});
+		}
+		
 		// Clone button for cancelled batches
 		if (frm.doc.docstatus === 2) {
 			frm.add_custom_button(__('Clone Batch'), function() {
@@ -55,13 +66,67 @@ frappe.ui.form.on('VAT OUT Batch', {
 		
 		// Add instructions HTML
 		add_instructions_html(frm);
-	},
-	
-	onload: function(frm) {
-		// Set filters for groups and invoices
-		setup_filters(frm);
 	}
 });
+
+function get_available_invoices(frm) {
+	if (!frm.doc.company || !frm.doc.date_from || !frm.doc.date_to) {
+		frappe.msgprint(__('Please set Company, Date From, and Date To first.'));
+		return;
+	}
+	
+	frappe.call({
+		method: 'get_available_invoices',
+		doc: frm.doc,
+		freeze: true,
+		freeze_message: __('Auto-grouping invoices...'),
+		callback: function(r) {
+			if (r.message) {
+				frm.reload_doc();
+				
+				// Show summary dialog
+				let groups = r.message.groups || [];
+				let html = '<div style="margin-bottom: 15px;">';
+				html += `<p><strong>Total Invoices:</strong> ${r.message.total_invoices}</p>`;
+				html += `<p><strong>Total Groups:</strong> ${r.message.total_groups}</p>`;
+				html += '</div>';
+				
+				if (groups.length > 0) {
+					html += '<table class="table table-bordered table-sm">';
+					html += '<thead><tr>';
+					html += '<th>Group</th><th>Customer</th><th>NPWP</th><th>Invoices</th><th>DPP</th><th>PPN</th>';
+					html += '</tr></thead><tbody>';
+					
+					groups.forEach(function(g) {
+						html += '<tr>';
+						html += `<td>${g.group_id}</td>`;
+						html += `<td>${g.customer_name || g.customer}</td>`;
+						html += `<td>${g.customer_npwp || '-'}</td>`;
+						html += `<td>${g.invoice_count}</td>`;
+						html += `<td>${format_currency(g.total_dpp)}</td>`;
+						html += `<td>${format_currency(g.total_ppn)}</td>`;
+						html += '</tr>';
+					});
+					
+					html += '</tbody></table>';
+				}
+				
+				frappe.msgprint({
+					title: __('Invoices Grouped Successfully'),
+					message: html,
+					indicator: 'green'
+				});
+			}
+		}
+	});
+}
+
+function show_batch_invoices(frm) {
+	frappe.route_options = {
+		"out_fp_batch": frm.doc.name
+	};
+	frappe.set_route("List", "Sales Invoice");
+}
 
 function generate_coretax_file(frm) {
 	frappe.confirm(
@@ -81,16 +146,124 @@ function generate_coretax_file(frm) {
 							indicator: 'green'
 						}, 5);
 						frm.reload_doc();
-						
-						// Download file
-						if (r.message.file_url) {
-							window.open(r.message.file_url, '_blank');
-						}
 					}
 				}
 			});
 		}
 	);
+}
+
+function mark_upload_status(frm, status) {
+	frm.set_value('coretax_upload_status', status);
+	
+	if (status === 'Completed') {
+		frm.set_value('uploaded_on', frappe.datetime.now_datetime());
+	}
+	
+	frm.save();
+}
+
+function show_import_dialog(frm) {
+	let d = new frappe.ui.Dialog({
+		title: __('Import FP Numbers from CoreTax'),
+		fields: [
+			{
+				fieldname: 'fp_file',
+				fieldtype: 'Attach',
+				label: __('FP Numbers Excel File'),
+				reqd: 1,
+				description: __('Upload the Excel file downloaded from CoreTax DJP after generating FP numbers')
+			},
+			{
+				fieldname: 'instructions',
+				fieldtype: 'HTML',
+				options: `
+					<div class="alert alert-info" style="margin-top: 10px;">
+						<strong>Instructions:</strong><br>
+						1. Upload Excel file from CoreTax DJP<br>
+						2. Must contain columns: Group ID, FP No Seri, FP No Faktur, FP Date<br>
+						3. FP numbers will be matched by Group ID
+					</div>
+				`
+			}
+		],
+		primary_action_label: __('Import'),
+		primary_action: function(values) {
+			frappe.call({
+				method: 'imogi_finance.vat_out_batch_api.import_fp_numbers_from_file',
+				args: {
+					batch_name: frm.doc.name,
+					file_url: values.fp_file
+				},
+				freeze: true,
+				freeze_message: __('Importing FP numbers...'),
+				callback: function(r) {
+					if (r.message && r.message.status === 'success') {
+						frappe.show_alert({
+							message: __('FP numbers imported: {0}', [r.message.imported_count]),
+							indicator: 'green'
+						}, 5);
+						d.hide();
+						frm.reload_doc();
+					}
+				}
+			});
+		}
+	});
+	
+	d.show();
+}
+
+function show_pdf_upload_dialog(frm) {
+	let d = new frappe.ui.Dialog({
+		title: __('Bulk Upload FP PDFs'),
+		fields: [
+			{
+				fieldname: 'pdf_zip',
+				fieldtype: 'Attach',
+				label: __('ZIP File with FP PDFs'),
+				reqd: 1,
+				description: __('Upload ZIP file containing FP PDFs. Filename format: [FP Number].pdf')
+			},
+			{
+				fieldname: 'instructions',
+				fieldtype: 'HTML',
+				options: `
+					<div class="alert alert-info" style="margin-top: 10px;">
+						<strong>Instructions:</strong><br>
+						1. Download FP PDFs from CoreTax DJP<br>
+						2. Create ZIP file with all PDFs<br>
+						3. Filename must be: [16-digit FP Number].pdf<br>
+						Example: 0109876543210001.pdf
+					</div>
+				`
+			}
+		],
+		primary_action_label: __('Upload'),
+		primary_action: function(values) {
+			frappe.call({
+				method: 'imogi_finance.vat_out_batch_api.bulk_upload_pdfs',
+				args: {
+					batch_name: frm.doc.name,
+					zip_file_url: values.pdf_zip
+				},
+				freeze: true,
+				freeze_message: __('Processing PDF uploads...'),
+				callback: function(r) {
+					if (r.message && r.message.status === 'success') {
+						frappe.show_alert({
+							message: __('PDFs uploaded: {0}', [r.message.uploaded_count]),
+							indicator: 'green'
+						}, 5);
+						d.hide();
+						frm.reload_doc();
+					}
+				}
+			});
+		}
+	});
+	
+	d.show();
 }
 
 function generate_reconciliation_file(frm) {
@@ -108,268 +281,57 @@ function generate_reconciliation_file(frm) {
 					indicator: 'green'
 				}, 5);
 				frm.reload_doc();
-				
-				// Download file
-				if (r.message.file_url) {
-					window.open(r.message.file_url, '_blank');
-				}
 			}
 		}
 	});
-}
-
-function mark_upload_status(frm, status) {
-	let notes = '';
-	
-	frappe.prompt({
-		label: __('Notes'),
-		fieldname: 'notes',
-		fieldtype: 'Text'
-	}, function(values) {
-		notes = values.notes;
-		
-		frappe.call({
-			method: 'imogi_finance.imogi_finance.doctype.vat_out_batch.vat_out_batch.mark_upload_status',
-			args: {
-				batch_name: frm.doc.name,
-				status: status,
-				notes: notes
-			},
-			callback: function(r) {
-				if (r.message && r.message.status === 'success') {
-					frappe.show_alert({
-						message: __('Upload status updated'),
-						indicator: 'blue'
-					}, 3);
-					frm.reload_doc();
-				}
-			}
-		});
-	}, __('Update Upload Status'));
-}
-
-function show_import_dialog(frm) {
-	let d = new frappe.ui.Dialog({
-		title: __('Import FP Numbers'),
-		fields: [
-			{
-				fieldtype: 'HTML',
-				options: `
-					<div class="alert alert-info">
-						<strong>${__('Import Format:')}</strong><br>
-						${__('Upload CSV/Excel with columns: Group ID, FP Number, FP Date')}<br>
-						${__('Optional fallback columns: Customer NPWP, Total DPP, Total PPN')}
-					</div>
-				`
-			},
-			{
-				label: __('Upload File'),
-				fieldname: 'import_file',
-				fieldtype: 'Attach',
-				reqd: 1
-			}
-		],
-		primary_action_label: __('Import'),
-		primary_action: function(values) {
-			// Parse uploaded file
-			parse_import_file(frm, values.import_file, d);
-		}
-	});
-	
-	d.show();
-}
-
-function parse_import_file(frm, file_url, dialog) {
-	// For simplicity, we'll require user to paste JSON data
-	// In production, you'd parse CSV/Excel on server side
-	
-	frappe.prompt({
-		label: __('Import Data (JSON)'),
-		fieldname: 'import_data',
-		fieldtype: 'Code',
-		options: 'JSON',
-		default: '[\n  {"group_id": 1, "fp_no": "0123456789012345", "fp_date": "2026-02-01"}\n]'
-	}, function(values) {
-		frappe.call({
-			method: 'imogi_finance.vat_out_batch_api.import_fp_numbers_from_file',
-			args: {
-				batch_name: frm.doc.name,
-				file_data: values.import_data
-			},
-			freeze: true,
-			freeze_message: __('Importing FP numbers...'),
-			callback: function(r) {
-				if (r.message) {
-					let msg = `${__('Success')}: ${r.message.success_count}<br>`;
-					msg += `${__('Failed')}: ${r.message.failed_count}`;
-					
-					if (r.message.warnings && r.message.warnings.length > 0) {
-						msg += '<br><br><strong>' + __('Warnings:') + '</strong><br>';
-						msg += r.message.warnings.slice(0, 5).join('<br>');
-						if (r.message.warnings.length > 5) {
-							msg += '<br>...' + __('and {0} more', [r.message.warnings.length - 5]);
-						}
-					}
-					
-					frappe.msgprint({
-						title: __('Import Summary'),
-						message: msg,
-						indicator: r.message.status === 'success' ? 'green' : 'orange'
-					});
-					
-					frm.reload_doc();
-					dialog.hide();
-				}
-			}
-		});
-	}, __('Paste Import Data'));
-}
-
-function show_pdf_upload_dialog(frm) {
-	let d = new frappe.ui.Dialog({
-		title: __('Upload Tax Invoice PDFs'),
-		fields: [
-			{
-				fieldtype: 'HTML',
-				options: `
-					<div class="alert alert-info">
-						<strong>${__('PDF Filename Pattern:')}</strong><br>
-						${__('FP-{16 digit number}.pdf or Group-{Group ID}.pdf')}
-					</div>
-				`
-			},
-			{
-				label: __('Upload PDFs'),
-				fieldname: 'pdf_files',
-				fieldtype: 'Attach',
-				reqd: 1
-			}
-		],
-		primary_action_label: __('Upload'),
-		primary_action: function(values) {
-			// Collect file URLs
-			let file_urls = [values.pdf_files];
-			
-			frappe.call({
-				method: 'imogi_finance.vat_out_batch_api.bulk_upload_pdfs',
-				args: {
-					batch_name: frm.doc.name,
-					pdf_files: JSON.stringify(file_urls)
-				},
-				freeze: true,
-				freeze_message: __('Uploading PDFs...'),
-				callback: function(r) {
-					if (r.message) {
-						frappe.msgprint({
-							title: __('Upload Summary'),
-							message: `${__('Uploaded')}: ${r.message.success_count}<br>${__('Failed')}: ${r.message.failed_count}`,
-							indicator: r.message.status === 'success' ? 'green' : 'orange'
-						});
-						
-						frm.reload_doc();
-						d.hide();
-					}
-				}
-			});
-		}
-	});
-	
-	d.show();
 }
 
 function clone_batch(frm) {
-	frappe.confirm(
-		__('Clone this cancelled batch? This will create a new batch with the same groups and invoices.'),
-		function() {
-			frappe.call({
-				method: 'imogi_finance.imogi_finance.doctype.vat_out_batch.vat_out_batch.clone_batch',
-				args: {
-					source_batch_name: frm.doc.name
-				},
-				freeze: true,
-				freeze_message: __('Cloning batch...'),
-				callback: function(r) {
-					if (r.message && r.message.status === 'success') {
-						frappe.show_alert({
-							message: __('Batch cloned successfully'),
-							indicator: 'green'
-						}, 5);
-						
-						// Navigate to new batch
-						frappe.set_route('Form', 'VAT OUT Batch', r.message.new_batch);
-					}
-				}
-			});
-		}
-	);
+	frappe.model.with_doctype('VAT OUT Batch', function() {
+		let new_doc = frappe.model.copy_doc(frm.doc);
+		new_doc.docstatus = 0;
+		new_doc.status = 'Draft';
+		new_doc.exported_on = null;
+		new_doc.coretax_export_file = null;
+		new_doc.reconciliation_file = null;
+		new_doc.coretax_upload_status = 'Not Started';
+		new_doc.uploaded_on = null;
+		new_doc.submit_on = null;
+		
+		frappe.set_route('Form', 'VAT OUT Batch', new_doc.name);
+	});
 }
 
 function add_instructions_html(frm) {
-	// Add instructions for CoreTax upload process
-	if (frm.doc.exported_on && frm.doc.docstatus === 0) {
-		let html = `
+	if (frm.doc.docstatus === 0 && !frm.doc.exported_on) {
+		frm.dashboard.add_comment(`
 			<div class="alert alert-info">
-				<h5>📋 ${__('CoreTax DJP Upload Instructions')}</h5>
-				<ol>
-					<li>${__('Download the Excel template from the export file above')}</li>
-					<li>${__('Open DJP Converter application')}</li>
-					<li>${__('Browse and select the Excel file')}</li>
-					<li>${__('Choose type: "Faktur Pajak Keluaran" (Output Tax Invoice)')}</li>
-					<li>${__('Click Save to generate XML file')}</li>
-					<li>${__('Login to')} <a href="https://coretax.pajak.go.id" target="_blank">coretax.pajak.go.id</a></li>
-					<li>${__('Go to: Faktur Keluaran → Impor Data')}</li>
-					<li>${__('Upload the XML file')}</li>
-					<li>${__('Monitor progress in: XML Monitoring menu')}</li>
-					<li>${__('Wait for status: "Creating Invoice Finished"')}</li>
-					<li>${__('Select invoices and click "Upload Faktur"')}</li>
-					<li>${__('Complete digital signature process')}</li>
-					<li>${__('Mark upload status as "Completed" above')}</li>
-				</ol>
-				
-				<h5>📥 ${__('Download FP Numbers & PDFs')}</h5>
-				<ol>
-					<li>${__('Login to CoreTax → e-Faktur → Pajak Keluaran')}</li>
-					<li>${__('Filter by tax period (masa pajak)')}</li>
-					<li>${__('Click PDF icon to download each invoice')}</li>
-					<li>${__('Use "Import FP Numbers" button above to bulk import')}</li>
-					<li>${__('Upload PDFs using "Upload PDFs" button')}</li>
-				</ol>
+				<strong>Workflow:</strong><br>
+				1. Set date range and save<br>
+				2. Click <strong>"Get Available Invoices"</strong> to auto-group<br>
+				3. Generate CoreTax upload file<br>
+				4. Upload to CoreTax DJP manually<br>
+				5. Import FP numbers back<br>
+				6. Submit batch
 			</div>
-		`;
-		
-		// Check if instructions already added
-		if (!frm.fields_dict.section_export.$wrapper.find('.coretax-instructions').length) {
-			frm.fields_dict.section_export.$wrapper.prepend(
-				$('<div class="coretax-instructions"></div>').html(html)
-			);
-		}
+		`, 'blue', true);
+	}
+	
+	if (frm.doc.exported_on && frm.doc.docstatus === 0) {
+		frm.dashboard.add_comment(`
+			<div class="alert alert-warning">
+				<strong>Next Steps:</strong><br>
+				1. Upload Excel file to <a href="https://coretax.pajak.go.id" target="_blank">CoreTax DJP</a><br>
+				2. Generate FP numbers in CoreTax<br>
+				3. Download result Excel from CoreTax<br>
+				4. Click <strong>"Import FP Numbers"</strong> to import back<br>
+				5. Verify all invoices have FP numbers<br>
+				6. Submit batch to finalize
+			</div>
+		`, 'orange', true);
 	}
 }
 
-function setup_filters(frm) {
-	// Filter for groups - unique customers only
-	frm.set_query('customer', 'groups', function() {
-		let existing_customers = [];
-		if (frm.doc.groups) {
-			existing_customers = frm.doc.groups.map(g => g.customer).filter(Boolean);
-		}
-		
-		return {
-			filters: {
-				name: ['not in', existing_customers]
-			}
-		};
-	});
-	
-	// Filter for invoices - only verified, not in other batches
-	frm.set_query('sales_invoice', 'invoices', function() {
-		return {
-			filters: {
-				docstatus: 1,
-				company: frm.doc.company,
-				out_fp_status: 'Verified',
-				out_fp_batch: ['in', ['', null, frm.doc.name]]
-			}
-		};
-	});
+function format_currency(value) {
+	return frappe.format(value, {fieldtype: 'Currency'});
 }

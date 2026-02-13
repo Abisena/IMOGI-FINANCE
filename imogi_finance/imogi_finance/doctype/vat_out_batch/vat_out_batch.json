@@ -14,10 +14,6 @@
     "column_break_basic",
     "template_version",
     "status",
-    "section_groups",
-    "groups",
-    "section_invoices",
-    "invoices",
     "section_export",
     "coretax_upload_status",
     "upload_notes",
@@ -78,30 +74,6 @@
       "label": "Status",
       "options": "Draft\nExported\nImporting\nReady to Submit\nSubmitted",
       "read_only": 1
-    },
-    {
-      "collapsible": 0,
-      "fieldname": "section_groups",
-      "fieldtype": "Section Break",
-      "label": "Invoice Groups (Faktur Pajak Gabungan)"
-    },
-    {
-      "fieldname": "groups",
-      "fieldtype": "Table",
-      "label": "Groups",
-      "options": "VAT OUT Batch Group"
-    },
-    {
-      "collapsible": 0,
-      "fieldname": "section_invoices",
-      "fieldtype": "Section Break",
-      "label": "Sales Invoices"
-    },
-    {
-      "fieldname": "invoices",
-      "fieldtype": "Table",
-      "label": "Invoices",
-      "options": "VAT OUT Batch Invoice"
     },
     {
       "collapsible": 1,

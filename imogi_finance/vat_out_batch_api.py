@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import now
+from frappe.utils import now, getdate
 
 from imogi_finance.tax_operations import generate_vat_out_batch_excel
 
@@ -27,15 +27,14 @@ def generate_coretax_upload_file(batch_name: str):
 	
 	# Check if already exported
 	if batch.exported_on:
-		frappe.throw(_("Batch already exported on {0}. Use regenerate if needed.").format(
+		frappe.throw(_("Batch already exported on {0}. Cancel and create new batch if needed.").format(
 			frappe.format(batch.exported_on, {"fieldtype": "Datetime"})
 		))
 	
-	# Get template version
-	from imogi_finance.imogi_finance.doctype.coretax_template_settings.coretax_template_settings import (
-		CoreTaxTemplateSettings
-	)
-	template_info = CoreTaxTemplateSettings.get_active_template()
+	# Check if batch has invoices
+	invoices = batch.get_batch_invoices()
+	if not invoices:
+		frappe.throw(_("No invoices found in batch. Please use 'Get Available Invoices' first."))
 	
 	# Generate file
 	file_url = generate_vat_out_batch_excel(
@@ -46,15 +45,15 @@ def generate_coretax_upload_file(batch_name: str):
 	
 	# Update batch
 	batch.coretax_export_file = file_url
-	batch.template_version = template_info["version"]
+	batch.template_version = "DJP 2024"  # Static version
 	batch.exported_on = now()
-	batch.flags.ignore_export_lock = True
 	batch.save(ignore_permissions=True)
 	
 	return {
 		"status": "success",
 		"file_url": file_url,
-		"message": _("Export file generated successfully")
+		"invoice_count": len(invoices),
+		"message": _("Export file generated successfully with {0} invoices").format(len(invoices))
 	}
 
 
@@ -90,214 +89,242 @@ def generate_reconciliation_file(batch_name: str):
 
 
 @frappe.whitelist()
-def import_fp_numbers_from_file(batch_name: str, file_data: str):
-	"""Import FP numbers from uploaded CSV/Excel file.
+def import_fp_numbers_from_file(batch_name: str, file_url: str):
+	"""Import FP numbers from uploaded Excel file.
+	
+	Matches rows by Group ID and updates Sales Invoices.
 	
 	Args:
 		batch_name: VAT OUT Batch name
-		file_data: JSON string with import data
-			Format: [{"group_id": 1, "fp_no": "...", "fp_date": "..."}]
-			
+		file_url: Uploaded file URL
+		
 	Returns:
 		dict: Import summary with success/failed counts
 	"""
-	import json
+	import openpyxl
+	from frappe.utils.file_manager import get_file_path
 	
 	batch = frappe.get_doc("VAT OUT Batch", batch_name)
 	batch.check_permission("write")
 	
-	# Parse file data
+	# Read Excel file
 	try:
-		import_rows = json.loads(file_data)
-	except:
-		frappe.throw(_("Invalid file data format"))
+		file_path = get_file_path(file_url)
+		wb = openpyxl.load_workbook(file_path, data_only=True)
+		ws = wb.active
+	except Exception as e:
+		frappe.throw(_("Could not read file: {0}").format(str(e)))
 	
-	# Build group map
-	group_map = {g.group_id: g for g in batch.groups}
+	# Parse header row
+	headers = {}
+	for idx, cell in enumerate(ws[1], start=1):
+		if cell.value:
+			headers[str(cell.value).lower().strip()] = idx
+	
+	# Required columns
+	required = ["group id", "fp no seri", "fp no faktur", "fp date"]
+	missing = [r for r in required if r not in headers]
+	if missing:
+		frappe.throw(_("Missing required columns: {0}").format(", ".join(missing)))
+	
+	# Get batch invoices grouped by group_id
+	invoices = batch.get_batch_invoices()
+	group_invoices = {}
+	for inv in invoices:
+		gid = inv.out_fp_group_id
+		if gid not in group_invoices:
+			group_invoices[gid] = []
+		group_invoices[gid].append(inv)
 	
 	success_count = 0
 	failed_count = 0
 	warnings = []
 	
-	for row in import_rows:
+	# Process data rows
+	for row_idx in range(2, ws.max_row + 1):
 		try:
-			# Primary match by group_id
-			group_id = row.get("group_id")
-			fp_no = row.get("fp_no")
-			fp_date = row.get("fp_date")
+			row = ws[row_idx]
 			
-			if not group_id or not fp_no or not fp_date:
+			# Extract values
+			group_id = row[headers["group id"] - 1].value
+			fp_no_seri = row[headers["fp no seri"] - 1].value
+			fp_no_faktur = row[headers["fp no faktur"] - 1].value
+			fp_date = row[headers["fp date"] - 1].value
+			
+			if not group_id or not fp_no_seri or not fp_no_faktur or not fp_date:
 				failed_count += 1
-				warnings.append(f"Row missing required fields: {row}")
+				warnings.append(f"Row {row_idx}: Missing required fields")
+				continue
+			
+			# Convert group_id to int
+			try:
+				group_id = int(group_id)
+			except:
+				failed_count += 1
+				warnings.append(f"Row {row_idx}: Invalid Group ID: {group_id}")
 				continue
 			
 			# Validate FP number format
-			if not _validate_fp_number(fp_no):
+			fp_no_clean = str(fp_no_faktur).replace("-", "").replace(".", "").replace(" ", "")
+			if len(fp_no_clean) != 16 or not fp_no_clean.isdigit():
 				failed_count += 1
-				warnings.append(f"Invalid FP Number format: {fp_no}")
+				warnings.append(f"Row {row_idx}: Invalid FP Number format: {fp_no_faktur}")
 				continue
 			
-			# Check if group exists
-			if group_id not in group_map:
-				# Fallback: match by customer + totals
-				fallback_group = _find_group_by_fallback(batch, row)
-				if fallback_group:
-					group_id = fallback_group.group_id
-					warnings.append(f"Matched Group {group_id} by customer/totals fallback")
-				else:
-					failed_count += 1
-					warnings.append(f"No matching group for: {row}")
-					continue
+			# Build full FP number
+			fp_no_full = f"{fp_no_seri}-{fp_no_faktur}"
 			
-			# Update group
-			group = group_map[group_id]
-			group.fp_no = fp_no
-			group.fp_date = fp_date
+			# Parse date
+			if isinstance(fp_date, str):
+				fp_date = getdate(fp_date)
+			
+			# Find invoices in this group
+			if group_id not in group_invoices:
+				failed_count += 1
+				warnings.append(f"Row {row_idx}: No invoices found for Group {group_id}")
+				continue
+			
+			# Update all invoices in group with same FP number
+			for inv in group_invoices[group_id]:
+				frappe.db.set_value(
+					"Sales Invoice",
+					inv.name,
+					{
+						"out_fp_no": fp_no_full,
+						"out_fp_no_seri": fp_no_seri,
+						"out_fp_no_faktur": fp_no_faktur,
+						"out_fp_date": fp_date
+					},
+					update_modified=False
+				)
+			
 			success_count += 1
 			
 		except Exception as e:
 			failed_count += 1
-			warnings.append(f"Error processing row {row}: {str(e)}")
+			warnings.append(f"Row {row_idx}: {str(e)}")
 	
-	# Save batch
+	frappe.db.commit()
+	
+	# Add comment to batch
 	if success_count > 0:
-		batch.save(ignore_permissions=True)
 		batch.add_comment("Info", _("Imported {0} FP numbers").format(success_count))
 	
 	return {
 		"status": "success" if failed_count == 0 else "partial",
-		"success_count": success_count,
+		"imported_count": success_count,
 		"failed_count": failed_count,
-		"warnings": warnings,
-		"message": _("Imported {0} of {1} records").format(success_count, len(import_rows))
+		"warnings": warnings[:10],  # Limit warnings
+		"message": _("Imported {0} FP numbers, {1} failed").format(success_count, failed_count)
 	}
 
 
-def _validate_fp_number(fp_no: str) -> bool:
-	"""Validate FP number is 16 digits."""
-	if not fp_no:
-		return False
-	
-	# Remove any formatting
-	fp_clean = fp_no.replace("-", "").replace(".", "").replace(" ", "")
-	
-	# Check if 16 digits
-	return len(fp_clean) == 16 and fp_clean.isdigit()
-
-
-def _find_group_by_fallback(batch, row):
-	"""Find group by customer NPWP and totals (fallback matching).
-	
-	Args:
-		batch: VAT OUT Batch document
-		row: Import row with customer_npwp, total_dpp, total_ppn
-		
-	Returns:
-		Group document or None
-	"""
-	customer_npwp = row.get("customer_npwp")
-	total_dpp = row.get("total_dpp")
-	total_ppn = row.get("total_ppn")
-	
-	if not customer_npwp:
-		return None
-	
-	# Find matching group
-	for group in batch.groups:
-		if group.customer_npwp != customer_npwp:
-			continue
-		
-		# Check totals with tolerance
-		if total_dpp is not None:
-			if abs((group.total_dpp or 0) - float(total_dpp)) > 0.01:
-				continue
-		
-		if total_ppn is not None:
-			if abs((group.total_ppn or 0) - float(total_ppn)) > 0.01:
-				continue
-		
-		return group
-	
-	return None
-
-
 @frappe.whitelist()
-def bulk_upload_pdfs(batch_name: str, pdf_files: str):
-	"""Upload multiple PDF files and match to groups.
+def bulk_upload_pdfs(batch_name: str, zip_file_url: str):
+	"""Extract ZIP file and attach PDFs to Sales Invoices by FP number.
 	
 	Args:
 		batch_name: VAT OUT Batch name
-		pdf_files: JSON string with list of file URLs
-			
+		zip_file_url: URL of uploaded ZIP file
+		
 	Returns:
 		dict: Upload summary
 	"""
-	import json
+	import zipfile
+	import os
 	import re
+	from frappe.utils.file_manager import get_file_path, save_file
 	
 	batch = frappe.get_doc("VAT OUT Batch", batch_name)
 	batch.check_permission("write")
 	
-	# Parse file list
-	try:
-		file_urls = json.loads(pdf_files)
-	except:
-		frappe.throw(_("Invalid file data format"))
+	# Get batch invoices
+	invoices = batch.get_batch_invoices()
+	fp_invoice_map = {}
+	for inv in invoices:
+		if inv.out_fp_no_faktur:
+			fp_invoice_map[inv.out_fp_no_faktur] = inv
 	
-	# Build group map by FP number
-	fp_group_map = {}
-	for group in batch.groups:
-		if group.fp_no:
-			fp_group_map[group.fp_no] = group
+	# Extract ZIP
+	try:
+		zip_path = get_file_path(zip_file_url)
+		extract_dir = "/tmp/vat_out_pdfs"
+		os.makedirs(extract_dir, exist_ok=True)
+		
+		with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+			zip_ref.extractall(extract_dir)
+	except Exception as e:
+		frappe.throw(_("Could not extract ZIP file: {0}").format(str(e)))
 	
 	success_count = 0
 	failed_count = 0
 	warnings = []
 	
-	for file_url in file_urls:
-		try:
-			# Extract FP number from filename
-			# Pattern: FP-{16digits}.pdf or Group-{id}.pdf
-			filename = file_url.split("/")[-1]
+	# Process extracted PDFs
+	for root, dirs, files in os.walk(extract_dir):
+		for filename in files:
+			if not filename.lower().endswith('.pdf'):
+				continue
 			
-			# Try FP number pattern
-			fp_match = re.search(r'(\d{16})', filename)
-			if fp_match:
-				fp_no = fp_match.group(1)
-				if fp_no in fp_group_map:
-					group = fp_group_map[fp_no]
-					group.tax_invoice_pdf = file_url
-					success_count += 1
-					continue
-			
-			# Try Group ID pattern
-			group_match = re.search(r'Group-(\d+)', filename, re.IGNORECASE)
-			if group_match:
-				group_id = int(group_match.group(1))
-				for group in batch.groups:
-					if group.group_id == group_id:
-						group.tax_invoice_pdf = file_url
-						success_count += 1
-						break
-				else:
+			try:
+				# Extract FP number from filename (16 digits)
+				fp_match = re.search(r'(\d{16})', filename)
+				if not fp_match:
 					failed_count += 1
-					warnings.append(f"No group found for: {filename}")
-			else:
-				failed_count += 1
-				warnings.append(f"Could not match filename pattern: {filename}")
+					warnings.append(f"No FP number in filename: {filename}")
+					continue
 				
-		except Exception as e:
-			failed_count += 1
-			warnings.append(f"Error processing {file_url}: {str(e)}")
+				fp_no_faktur = fp_match.group(1)
+				
+				# Find matching invoice
+				if fp_no_faktur not in fp_invoice_map:
+					failed_count += 1
+					warnings.append(f"No invoice found for FP: {fp_no_faktur}")
+					continue
+				
+				inv = fp_invoice_map[fp_no_faktur]
+				
+				# Attach PDF to Sales Invoice
+				file_path = os.path.join(root, filename)
+				with open(file_path, 'rb') as f:
+					file_content = f.read()
+				
+				file_doc = save_file(
+					fname=f"FP_{fp_no_faktur}.pdf",
+					content=file_content,
+					dt="Sales Invoice",
+					dn=inv.name,
+					is_private=0
+				)
+				
+				# Update Sales Invoice
+				frappe.db.set_value(
+					"Sales Invoice",
+					inv.name,
+					"out_fp_tax_invoice_pdf",
+					file_doc.file_url,
+					update_modified=False
+				)
+				
+				success_count += 1
+				
+			except Exception as e:
+				failed_count += 1
+				warnings.append(f"Error processing {filename}: {str(e)}")
 	
-	# Save batch
-	if success_count > 0:
-		batch.save(ignore_permissions=True)
+	# Cleanup
+	try:
+		import shutil
+		shutil.rmtree(extract_dir)
+	except:
+		pass
+	
+	frappe.db.commit()
 	
 	return {
 		"status": "success" if failed_count == 0 else "partial",
-		"success_count": success_count,
+		"uploaded_count": success_count,
 		"failed_count": failed_count,
-		"warnings": warnings,
-		"message": _("Uploaded {0} of {1} PDFs").format(success_count, len(file_urls))
+		"warnings": warnings[:10],
+		"message": _("Uploaded {0} PDFs, {1} failed").format(success_count, failed_count)
 	}

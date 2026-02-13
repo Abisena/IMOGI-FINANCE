@@ -547,11 +547,23 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_combine",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_combine",
+    "fieldtype": "Check",
+    "insert_after": "out_fp_tax_invoice_pdf",
+    "label": "Combine with other invoices",
+    "default": "0",
+    "allow_on_submit": 1,
+    "description": "Check this to combine multiple invoices into one Faktur Pajak (Faktur Pajak Gabungan)"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Sales Invoice-out_fp_batch_section",
     "dt": "Sales Invoice",
     "fieldname": "out_fp_batch_section",
     "fieldtype": "Section Break",
-    "insert_after": "out_fp_tax_invoice_pdf",
+    "insert_after": "out_fp_combine",
     "label": "VAT OUT Batch",
     "collapsible": 1,
     "depends_on": "eval:doc.out_fp_batch"
