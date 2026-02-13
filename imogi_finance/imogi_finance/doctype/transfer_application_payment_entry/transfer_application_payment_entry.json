@@ -18,7 +18,7 @@
     "account_number",
     "column_break_details",
     "amount",
-    "docstatus",
+    "pe_status",
     "posting_date"
   ],
   "fields": [
@@ -62,9 +62,9 @@
       "options": "currency"
     },
     {
-      "fieldname": "docstatus",
+      "fieldname": "pe_status",
       "fieldtype": "Select",
-      "label": "Status",
+      "label": "PE Status",
       "options": "Draft\nSubmitted\nCancelled",
       "in_list_view": 1,
       "read_only": 1,

@@ -29,7 +29,7 @@ class TransferApplication(Document):
             frappe.throw(_("Company is required before submission."))
         if not self.posting_date:
             frappe.throw(_("Posting Date is required before submission."))
-        
+
         # Set timestamps
         if not self.submit_on:
             self.submit_on = now_datetime()
@@ -47,7 +47,7 @@ class TransferApplication(Document):
         """
         Validation hook before workflow action is applied.
         Called by Frappe workflow engine.
-        
+
         Args:
             action: The action being performed (e.g., 'Submit for Finance Review')
             workflow_state: The target workflow state
@@ -56,19 +56,19 @@ class TransferApplication(Document):
         # Validate items exist before finance review submission
         if workflow_state == "Finance Review" and not self.items:
             frappe.throw(_("Cannot submit for Finance Review without transfer items."))
-        
+
         # Validate paid_from_account before submission
         if workflow_state == "Finance Review" and not self.paid_from_account:
             frappe.throw(_("Paid From Account is required before submission."))
-        
+
         # Validate Finance Controller role for approval actions
         if action in ["Approve for Transfer"] and workflow_state == "Approved for Transfer":
             if not frappe.has_role(["Finance Controller"]):
                 frappe.throw(_("Only Finance Controller can approve transfers."))
-            
+
             # TODO: Validate Finance Controller is assigned to this branch
             # This will be implemented when branch assignment logic is ready
-        
+
         # Validate cancellation - check if Payment Entry exists and is submitted
         if workflow_state == "Cancelled":
             if self.payment_entry:
@@ -83,7 +83,7 @@ class TransferApplication(Document):
         """
         Hook called after workflow action is applied.
         Sync status with workflow_state.
-        
+
         Args:
             workflow_state: The new workflow state
             action: The action that was performed
@@ -91,22 +91,22 @@ class TransferApplication(Document):
         # Sync status to workflow_state
         self.status = workflow_state
         self.db_set("status", workflow_state, update_modified=False)
-        
+
         # Additional actions based on state
         if workflow_state == "Finance Review" and not self.submit_on:
             self.db_set("submit_on", now_datetime(), update_modified=False)
             self.db_set("created_by_user", frappe.session.user, update_modified=False)
-        
+
         # Auto-create notification or comment for state changes
         if workflow_state == "Approved for Transfer":
             self.add_comment("Workflow", _("Transfer approved and ready for bank processing."))
-        
+
         elif workflow_state == "Awaiting Bank Confirmation":
             self.add_comment("Workflow", _("Bank transfer initiated. Awaiting confirmation."))
-        
+
         elif workflow_state == "Paid":
             self.add_comment("Workflow", _("Transfer marked as paid. All beneficiaries should receive funds."))
-        
+
         elif workflow_state == "Rejected":
             self.add_comment("Workflow", _("Transfer application rejected during finance review."))
 
@@ -131,7 +131,7 @@ class TransferApplication(Document):
         """Validate that each item has required party/beneficiary details"""
         if not self.items:
             frappe.throw(_("Please add at least one item to the Transfer Application."))
-        
+
         for idx, item in enumerate(self.items, start=1):
             if not item.beneficiary_name:
                 frappe.throw(_("Row {0}: Beneficiary Name is required").format(idx))
@@ -139,7 +139,7 @@ class TransferApplication(Document):
                 frappe.throw(_("Row {0}: Bank Name is required").format(idx))
             if not item.account_number:
                 frappe.throw(_("Row {0}: Account Number is required").format(idx))
-            
+
             # Sync party_type from party if set
             if item.party and not item.party_type:
                 party_type = frappe.db.get_value("Party", item.party, "party_type")
@@ -150,11 +150,11 @@ class TransferApplication(Document):
         """Calculate total amount and expected amount from items"""
         total_amount = 0.0
         total_expected = 0.0
-        
+
         for item in self.items or []:
             total_amount += flt(item.amount)
             total_expected += flt(item.expected_amount or item.amount)
-        
+
         self.amount = total_amount
         self.expected_amount = total_expected
 
@@ -192,38 +192,38 @@ class TransferApplication(Document):
         total_draft = 0
         total_cancelled = 0
         total_paid_amount = 0
-        
+
         # Update status for each PE row
         for pe_row in self.payment_entries:
             if not pe_row.payment_entry:
                 continue
-                
+
             pe_info = frappe.db.get_value(
                 "Payment Entry",
                 pe_row.payment_entry,
                 ["docstatus", "posting_date", "paid_amount"],
                 as_dict=True,
             )
-            
+
             if not pe_info:
                 continue
-            
+
             # Update row status
             if pe_info.docstatus == 0:
-                pe_row.docstatus = "Draft"
+                pe_row.pe_status = "Draft"
                 total_draft += 1
             elif pe_info.docstatus == 1:
-                pe_row.docstatus = "Submitted"
+                pe_row.pe_status = "Submitted"
                 pe_row.posting_date = pe_info.posting_date
                 total_submitted += 1
                 total_paid_amount += frappe.utils.flt(pe_info.paid_amount)
             elif pe_info.docstatus == 2:
-                pe_row.docstatus = "Cancelled"
+                pe_row.pe_status = "Cancelled"
                 total_cancelled += 1
-        
+
         # Update parent payment status
         self.total_paid_amount = total_paid_amount
-        
+
         total_pes = len(self.payment_entries)
         if total_submitted == total_pes and total_pes > 0:
             # All PEs submitted
@@ -258,7 +258,7 @@ class TransferApplication(Document):
     def create_payment_entry(self, submit: int | str = 0):
         if self.docstatus == 2:
             frappe.throw(_("Cannot create a Payment Entry from a cancelled Transfer Application."))
-        
+
         if not self.paid_from_account:
             frappe.throw(_("Paid From Account is required to create Payment Entry."))
 
@@ -267,7 +267,7 @@ class TransferApplication(Document):
             self, submit=submit_flag
         )
         self.reload()
-        
+
         # Return list of created PE names
         pe_names = [pe.name for pe in payment_entries]
         return {
@@ -283,23 +283,23 @@ class TransferApplication(Document):
         Only available for Finance Controller after approval.
         """
         from frappe import roles as frappe_roles
-        
+
         # Check role permission
         if not frappe.has_role(["Finance Controller", "System Manager"]):
             frappe.throw(_("Only Finance Controller can export transfer list."))
-        
+
         # Check workflow state
         if self.workflow_state not in ["Approved for Transfer", "Awaiting Bank Confirmation", "Paid"]:
             frappe.throw(_("Export is only available after transfer is approved."))
-        
+
         # Build Excel data
         import xlsxwriter
         from io import BytesIO
-        
+
         output = BytesIO()
         workbook = xlsxwriter.Workbook(output, {'in_memory': True})
         worksheet = workbook.add_worksheet('Transfer List')
-        
+
         # Define formats
         header_format = workbook.add_format({
             'bold': True,
@@ -308,18 +308,18 @@ class TransferApplication(Document):
             'align': 'center',
             'valign': 'vcenter'
         })
-        
+
         cell_format = workbook.add_format({
             'border': 1,
             'valign': 'top'
         })
-        
+
         number_format = workbook.add_format({
             'border': 1,
             'num_format': '#,##0.00',
             'valign': 'top'
         })
-        
+
         # Write header
         headers = [
             'No',
@@ -331,10 +331,10 @@ class TransferApplication(Document):
             'Amount',
             'Purpose / Description'
         ]
-        
+
         for col, header in enumerate(headers):
             worksheet.write(0, col, header, header_format)
-        
+
         # Set column widths
         worksheet.set_column('A:A', 5)   # No
         worksheet.set_column('B:B', 30)  # Beneficiary Name
@@ -344,7 +344,7 @@ class TransferApplication(Document):
         worksheet.set_column('F:F', 20)  # Branch
         worksheet.set_column('G:G', 15)  # Amount
         worksheet.set_column('H:H', 40)  # Purpose
-        
+
         # Write data rows
         row = 1
         for idx, item in enumerate(self.items or [], start=1):
@@ -355,30 +355,30 @@ class TransferApplication(Document):
             worksheet.write(row, 4, item.account_holder_name or '', cell_format)
             worksheet.write(row, 5, item.bank_branch or '', cell_format)
             worksheet.write(row, 6, flt(item.amount), number_format)
-            
+
             # Purpose: use description or reference info
             purpose = item.description or ''
             if item.reference_doctype and item.reference_name:
                 purpose = f"{item.reference_doctype} - {item.reference_name}: {purpose}"
             worksheet.write(row, 7, purpose, cell_format)
-            
+
             row += 1
-        
+
         # Write total row
         worksheet.write(row, 5, 'TOTAL:', header_format)
         worksheet.write(row, 6, flt(self.amount), number_format)
-        
+
         workbook.close()
         output.seek(0)
-        
+
         # Generate filename
         filename = f"Transfer_List_{self.name}_{frappe.utils.now_datetime().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        
+
         # Return file data
         frappe.response['filename'] = filename
         frappe.response['filecontent'] = output.read()
         frappe.response['type'] = 'binary'
-        
+
         return {
             'filename': filename,
             'success': True
@@ -388,9 +388,9 @@ class TransferApplication(Document):
         """Group items by beneficiary for cleaner print format.
         Returns a list of dicts with beneficiary info and their items."""
         from collections import OrderedDict
-        
+
         grouped = OrderedDict()
-        
+
         for item in self.items or []:
             # Create unique key for each beneficiary
             key = (
@@ -400,7 +400,7 @@ class TransferApplication(Document):
                 item.account_holder_name or "",
                 item.bank_branch or ""
             )
-            
+
             if key not in grouped:
                 grouped[key] = {
                     "beneficiary_name": item.beneficiary_name,
@@ -414,11 +414,11 @@ class TransferApplication(Document):
                     "total_amount": 0.0,
                     "total_expected": 0.0
                 }
-            
+
             grouped[key]["items"].append(item)
             grouped[key]["total_amount"] += flt(item.amount)
             grouped[key]["total_expected"] += flt(item.expected_amount or item.amount)
-        
+
         return list(grouped.values())
 
 

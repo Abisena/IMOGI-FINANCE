@@ -42,7 +42,7 @@ def create_payment_entry_for_transfer_application(
         paid_from = transfer_application.paid_from_account
     else:
         paid_from = _resolve_paid_from_account(transfer_application.company, settings=settings)
-    
+
     if not paid_from:
         frappe.throw(
             _("Please set Paid From Account in Transfer Application or configure a default bank/cash account for {0} in Transfer Application Settings.").format(
@@ -52,19 +52,19 @@ def create_payment_entry_for_transfer_application(
 
     # Group items by beneficiary (beneficiary_name + bank_name + account_number)
     beneficiary_groups = _group_items_by_beneficiary(transfer_application.items)
-    
+
     if not beneficiary_groups:
         frappe.throw(_("No items found to create Payment Entries."))
 
     posting_date = posting_date or transfer_application.requested_transfer_date or transfer_application.posting_date or today()
-    
+
     created_pes = []
-    
+
     # Create one Payment Entry per beneficiary group
     for beneficiary_key, items in beneficiary_groups.items():
         total_amount = sum(frappe.utils.flt(item.amount) for item in items)
         first_item = items[0]
-        
+
         # Determine paid_to account
         paid_to = None
         if first_item.party_type and first_item.party:
@@ -72,10 +72,10 @@ def create_payment_entry_for_transfer_application(
                 paid_to = get_party_account(first_item.party_type, first_item.party, transfer_application.company)
             except Exception:
                 pass
-        
+
         if not paid_to:
             paid_to = _resolve_paid_to_account_from_settings(settings, transfer_application.company)
-        
+
         if not paid_to:
             frappe.throw(
                 _("Could not determine the destination account for beneficiary {0}. Please set party or configure default payable account.").format(
@@ -92,19 +92,19 @@ def create_payment_entry_for_transfer_application(
         payment_entry.paid_to = paid_to
         payment_entry.paid_amount = total_amount
         payment_entry.received_amount = total_amount
-        
+
         if transfer_application.transfer_method and frappe.db.exists("Mode of Payment", transfer_application.transfer_method):
             payment_entry.mode_of_payment = transfer_application.transfer_method
-        
+
         payment_entry.reference_no = f"{transfer_application.name} - {first_item.beneficiary_name}"
         payment_entry.reference_date = posting_date
-        
+
         # Build remarks with all items for this beneficiary
         item_descriptions = [item.description or f"Item {idx+1}" for idx, item in enumerate(items)]
         payment_entry.remarks = _(
             "Transfer Application {0} | Beneficiary: {1} | Items: {2}"
         ).format(
-            transfer_application.name, 
+            transfer_application.name,
             first_item.beneficiary_name,
             ", ".join(item_descriptions[:3]) + ("..." if len(item_descriptions) > 3 else "")
         )
@@ -141,7 +141,7 @@ def create_payment_entry_for_transfer_application(
             payment_entry.submit()
 
         created_pes.append(payment_entry)
-        
+
         # Add to parent's payment_entries child table
         transfer_application.append("payment_entries", {
             "payment_entry": payment_entry.name,
@@ -149,14 +149,14 @@ def create_payment_entry_for_transfer_application(
             "bank_name": first_item.bank_name,
             "account_number": first_item.account_number,
             "amount": total_amount,
-            "docstatus": "Submitted" if payment_entry.docstatus == 1 else "Draft",
+            "pe_status": "Submitted" if payment_entry.docstatus == 1 else "Draft",
             "posting_date": payment_entry.posting_date
         })
-    
+
     # Save parent to persist payment_entries child table
     transfer_application.flags.ignore_validate_update_after_submit = True
     transfer_application.save(ignore_permissions=ignore_permissions)
-    
+
     return created_pes
 
 
@@ -166,20 +166,20 @@ def _group_items_by_beneficiary(items):
     Returns dict with key = (beneficiary_name, bank_name, account_number)
     """
     from collections import defaultdict
-    
+
     grouped = defaultdict(list)
-    
+
     for item in items or []:
         if not item.beneficiary_name:
             continue
-            
+
         key = (
             item.beneficiary_name or "",
             item.bank_name or "",
             item.account_number or ""
         )
         grouped[key].append(item)
-    
+
     return dict(grouped)
 
 
