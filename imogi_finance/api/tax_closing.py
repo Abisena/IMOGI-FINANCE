@@ -157,7 +157,7 @@ def validate_can_close_period(closing_name: str) -> Dict[str, Any]:
             errors.append(_("Failed to parse register snapshot: {0}").format(str(e)))
     
     # Validate register configuration
-    from imogi_finance.imogi_finance.utils.register_integration import validate_register_configuration
+    from imogi_finance.imogi_finance.utils_register.register_integration import validate_register_configuration
     
     try:
         config_validation = validate_register_configuration(closing.company)

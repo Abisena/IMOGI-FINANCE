@@ -14,7 +14,7 @@ import frappe
 from frappe.utils import getdate, add_months
 from datetime import datetime, date
 
-from imogi_finance.imogi_finance.utils.register_integration import (
+from imogi_finance.imogi_finance.utils_register.register_integration import (
 	get_vat_input_from_register,
 	get_vat_output_from_register,
 	get_withholding_from_register,

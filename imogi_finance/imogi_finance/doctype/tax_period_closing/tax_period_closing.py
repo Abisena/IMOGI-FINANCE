@@ -309,7 +309,7 @@ class TaxPeriodClosing(Document):
         This checks that Tax Invoice OCR Settings and Tax Profile have
         the required accounts configured for register reports to work.
         """
-        from imogi_finance.imogi_finance.utils.register_integration import validate_register_configuration
+        from imogi_finance.imogi_finance.utils_register.register_integration import validate_register_configuration
         
         if not self.company:
             return

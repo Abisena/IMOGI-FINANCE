@@ -113,7 +113,7 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 	Returns:
 		Snapshot dict with VAT totals, PPh totals, PB1, BPJS, and metadata
 	"""
-	from imogi_finance.imogi_finance.utils.register_integration import (
+	from imogi_finance.imogi_finance.utils_register.register_integration import (
 		get_all_register_data,
 		RegisterIntegrationError
 	)
