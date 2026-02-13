@@ -3,7 +3,7 @@ frappe.query_reports["Customer Receipt Control Report"] = {
     { fieldname: "date_from", label: "From Date", fieldtype: "Date" },
     { fieldname: "date_to", label: "To Date", fieldtype: "Date" },
     { fieldname: "receipt_no", label: "Receipt No", fieldtype: "Link", options: "Customer Receipt" },
-    { fieldname: "status", label: "Status", fieldtype: "Select", options: "\nDraft\nIssued\nPartially Paid\nPaid\nCancelled" },
+    { fieldname: "payment_status", label: "Payment Status", fieldtype: "Select", options: "\nDraft\nPending\nIn Progress\nDP/Partial\nFull Payment\nCancelled" },
     { fieldname: "customer", label: "Customer", fieldtype: "Link", options: "Customer" },
     { fieldname: "customer_reference_no", label: "Customer Ref No", fieldtype: "Data" },
     { fieldname: "sales_order_no", label: "Sales Order", fieldtype: "Link", options: "Sales Order" },
@@ -31,16 +31,18 @@ frappe.query_reports["Customer Receipt Control Report"] = {
   formatter: function(value, row, column, data, default_formatter) {
     value = default_formatter(value, row, column, data);
 
-    // Color code Payment Type column
-    if (column.fieldname === "payment_type") {
-      if (data.payment_type === "DP/Partial") {
+    // Color code Payment Status column
+    if (column.fieldname === "payment_status") {
+      if (data.payment_status === "DP/Partial") {
         value = `<span style="color: #e67e22; font-weight: bold;">${value}</span>`;
-      } else if (data.payment_type === "Full Payment") {
+      } else if (data.payment_status === "Full Payment") {
         value = `<span style="color: #27ae60; font-weight: bold;">${value}</span>`;
-      } else if (data.payment_type === "Pending") {
+      } else if (data.payment_status === "Pending") {
         value = `<span style="color: #3498db;">${value}</span>`;
-      } else if (data.payment_type === "In Progress") {
+      } else if (data.payment_status === "In Progress") {
         value = `<span style="color: #9b59b6;">${value}</span>`;
+      } else if (data.payment_status === "Cancelled") {
+        value = `<span style="color: #95a5a6;">${value}</span>`;
       }
     }
 
