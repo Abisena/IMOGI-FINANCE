@@ -159,16 +159,19 @@ class TransferApplication(Document):
         self.expected_amount = total_expected
 
     def validate_reference_fields(self):
-        if self.reference_name and not self.reference_doctype:
-            frappe.throw(_("Please choose a Reference Doctype when Reference Name is set."))
-        if self.reference_doctype and not self.reference_name:
-            # Allow empty name for Other/manual
-            if self.reference_doctype != "Other":
-                frappe.throw(_("Please select a Reference Name for the chosen Reference Doctype."))
-
+        """Validate reference fields on child items"""
         allowed = set(get_reference_doctype_options())
-        if self.reference_doctype and self.reference_doctype not in allowed:
-            frappe.throw(_("Reference Doctype {0} is not available in this site.").format(self.reference_doctype))
+
+        for item in self.items:
+            if item.reference_name and not item.reference_doctype:
+                frappe.throw(_("Row {0}: Please choose a Reference Doctype when Reference Name is set.").format(item.idx))
+            if item.reference_doctype and not item.reference_name:
+                # Allow empty name for Other/manual
+                if item.reference_doctype != "Other":
+                    frappe.throw(_("Row {0}: Please select a Reference Name for the chosen Reference Doctype.").format(item.idx))
+
+            if item.reference_doctype and item.reference_doctype not in allowed:
+                frappe.throw(_("Row {0}: Reference Doctype {1} is not available in this site.").format(item.idx, item.reference_doctype))
 
     def update_amount_in_words(self):
         if flt(self.amount) and self.currency:
