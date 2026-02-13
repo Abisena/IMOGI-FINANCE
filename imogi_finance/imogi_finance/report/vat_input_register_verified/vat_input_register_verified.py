@@ -14,7 +14,7 @@ from frappe.query_builder.functions import Sum, Coalesce
 from frappe.utils import flt, getdate
 from typing import Optional, Dict, List, Any
 
-from imogi_finance.utils.tax_report_utils import (
+from imogi_finance.imogi_finance.utils.tax_report_utils import (
 	validate_vat_input_configuration,
 	build_date_conditions,
 	get_columns_with_width,

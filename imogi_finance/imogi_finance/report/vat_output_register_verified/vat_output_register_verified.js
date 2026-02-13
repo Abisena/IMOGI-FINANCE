@@ -65,7 +65,7 @@ frappe.query_reports["VAT Output Register Verified"] = {
 	"onload": function(report) {
 		// Validate configuration on load
 		frappe.call({
-			method: "imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
+			method: "imogi_finance.imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
 			args: {
 				register_type: "output",
 				company: frappe.query_report.get_filter_value("company")
@@ -101,7 +101,7 @@ function check_configuration(report) {
 	}
 	
 	frappe.call({
-		method: "imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
+		method: "imogi_finance.imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
 		args: {
 			register_type: "output",
 			company: company

@@ -83,7 +83,7 @@ frappe.query_reports["Withholding Register"] = {
 		const company = frappe.query_report.get_filter_value("company");
 		if (company) {
 			frappe.call({
-				method: "imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
+				method: "imogi_finance.imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
 				args: {
 					register_type: "withholding",
 					company: company
@@ -124,7 +124,7 @@ function check_configuration(report) {
 	}
 	
 	frappe.call({
-		method: "imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
+		method: "imogi_finance.imogi_finance.utils.tax_report_utils.validate_tax_register_configuration",
 		args: {
 			register_type: "withholding",
 			company: company

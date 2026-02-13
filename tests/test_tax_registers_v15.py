@@ -13,7 +13,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import today, add_days, flt
 
-from imogi_finance.utils.tax_report_utils import (
+from imogi_finance.imogi_finance.utils.tax_report_utils import (
 	validate_vat_input_configuration,
 	validate_vat_output_configuration,
 	validate_withholding_configuration,
