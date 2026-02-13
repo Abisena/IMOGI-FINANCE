@@ -4,6 +4,26 @@
 """Shared utilities for Imogi Finance.
 
 This package contains utility modules used across multiple reports and features.
+
+NOTE: ERPNext v15+ Compatibility
+---------------------------------
+This module has been updated to follow ERPNext v15+ best practices:
+- Uses frappe.db.exists() instead of deprecated frappe.reload_doc()
+- Relies on fixtures for Property Setters (no programmatic creation)
+- No manual transaction commits in migration hooks
+
+Structure:
+----------
+/imogi_finance/                     # App root (hooks.py, setup.py)
+  ├── utils.py                      # Compatibility shim for hooks
+  └── imogi_finance/                # Python package (actual code)
+      └── utils/                    # THIS MODULE
+          ├── __init__.py           # Re-exports + migration hooks
+          └── tax_report_utils.py  # Tax utilities
+
+The nested structure exists because app_name == "imogi_finance" requires
+imogi_finance/imogi_finance/ to avoid hook path conflicts.
+See imogi_finance/utils.py for the compatibility shim that makes this work.
 """
 
 from __future__ import annotations
@@ -23,77 +43,52 @@ def ensure_coretax_export_doctypes():
     """Ensure CoreTax Export DocTypes exist.
 
     This is called from hooks after_install and after_migrate.
+    
+    ERPNext v15+ Compatibility:
+    - Uses frappe.db.exists() instead of deprecated frappe.reload_doc()
+    - Bench migrate automatically syncs DocTypes from JSON files
+    - This function only validates they exist post-migration
     """
     import frappe
-    from pathlib import Path
 
-    doctype_map = {
-        "CoreTax Export Settings": "coretax_export_settings",
-        "CoreTax Column Mapping": "coretax_column_mapping",
-        "Tax Profile PPh Account": "tax_profile_pph_account",
-    }
+    required_doctypes = [
+        "CoreTax Export Settings",
+        "CoreTax Column Mapping",
+        "Tax Profile PPh Account",
+    ]
 
-    doctype_root = Path(frappe.get_app_path("imogi_finance", "imogi_finance", "doctype"))
-    for doctype, module_name in doctype_map.items():
-        doctype_definition = doctype_root / module_name / f"{module_name}.json"
-        if doctype_definition.exists():
-            frappe.reload_doc("imogi_finance", "doctype", module_name)
-        else:
-            frappe.log_error(
-                message=f"Skipped reload for missing CoreTax DocType definition: {doctype_definition}",
-                title="CoreTax DocType definition not found",
-            )
+    missing = []
+    for doctype in required_doctypes:
+        if not frappe.db.exists("DocType", doctype):
+            missing.append(doctype)
+
+    if missing:
+        error_msg = f"Missing CoreTax DocTypes after migration: {', '.join(missing)}"
+        frappe.log_error(
+            message=error_msg,
+            title="CoreTax DocType Validation Failed",
+        )
+        frappe.throw(
+            frappe._("Required CoreTax DocTypes not found. Please run 'bench migrate' again.")
+        )
 
 
 def ensure_advances_allow_on_submit():
     """
-    Create Property Setters to allow updating 'advances' child table after submit.
-    This is required when Payment Entry references submitted invoices/expense claims.
+    Ensure 'advances' field allows updates after submit.
+
+    ERPNext v15+ Compatibility:
+    - Property Setters are managed via fixtures/property_setter.json
+    - Bench migrate applies them automatically
+    - This function is retained for backwards compatibility but performs no action
+    
+    The following Property Setters are defined in fixtures:
+    - Purchase Invoice.advances.allow_on_submit = 1
+    - Sales Invoice.advances.allow_on_submit = 1
+    - Expense Claim.advances.allow_on_submit = 1
     """
-    import frappe
-
-    property_setters = [
-        {
-            "doctype_or_field": "DocField",
-            "doc_type": "Purchase Invoice",
-            "field_name": "advances",
-            "property": "allow_on_submit",
-            "property_type": "Check",
-            "value": "1",
-        },
-        {
-            "doctype_or_field": "DocField",
-            "doc_type": "Sales Invoice",
-            "field_name": "advances",
-            "property": "allow_on_submit",
-            "property_type": "Check",
-            "value": "1",
-        },
-        {
-            "doctype_or_field": "DocField",
-            "doc_type": "Expense Claim",
-            "field_name": "advances",
-            "property": "allow_on_submit",
-            "property_type": "Check",
-            "value": "1",
-        },
-    ]
-
-    for ps_data in property_setters:
-        ps_name = f"{ps_data['doc_type']}-{ps_data['field_name']}-{ps_data['property']}"
-        if not frappe.db.exists("Property Setter", ps_name):
-            ps = frappe.new_doc("Property Setter")
-            ps.name = ps_name
-            ps.doctype_or_field = ps_data["doctype_or_field"]
-            ps.doc_type = ps_data["doc_type"]
-            ps.field_name = ps_data["field_name"]
-            ps.property = ps_data["property"]
-            ps.property_type = ps_data["property_type"]
-            ps.value = ps_data["value"]
-            ps.module = "Imogi Finance"
-            ps.flags.ignore_permissions = True
-            ps.insert()
-            frappe.db.commit()
+    # No-op: Fixtures handle this automatically
+    pass
 
 
 __all__ = [
