@@ -161,6 +161,9 @@ fixtures = [
     {"doctype": "CoreTax Column Mapping"},
     {"doctype": "Tax Profile PPh Account"},
     {"doctype": "Tax Profile PB1 Account"},
+    # VAT OUT Batch and CoreTax Template Settings
+    {"doctype": "CoreTax Template Settings"},
+    {"doctype": "CoreTax Template History"},
     "fixtures/item.json",
 ]
 
@@ -241,6 +244,7 @@ doc_events = {
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
         ],
+        "on_update_after_submit": "imogi_finance.events.sales_invoice.on_update_after_submit",
     },
     "Sales Order": {
         "validate": "imogi_finance.events.sales_order.compute_outstanding_amount",
