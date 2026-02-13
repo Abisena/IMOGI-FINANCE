@@ -22,7 +22,7 @@ from imogi_finance.imogi_finance.utils_register.register_integration import (
 	validate_register_configuration,
 	RegisterIntegrationError
 )
-from imogi_finance.utils.tax_report_utils import get_tax_amounts_batch
+from imogi_finance.imogi_finance.utils.tax_report_utils import get_tax_amounts_batch
 
 
 class TestRegisterIntegration:

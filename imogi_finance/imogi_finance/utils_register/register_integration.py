@@ -312,7 +312,7 @@ def validate_register_configuration(company: str) -> Dict[str, Any]:
 	Returns:
 		Dict with validation results for each register type
 	"""
-	from imogi_finance.utils.tax_report_utils import (
+	from imogi_finance.imogi_finance.utils.tax_report_utils import (
 		validate_vat_input_configuration,
 		validate_vat_output_configuration,
 		validate_withholding_configuration
