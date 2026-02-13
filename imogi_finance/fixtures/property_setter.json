@@ -1,0 +1,29 @@
+[
+  {
+    "doctype": "Property Setter",
+    "doc_type": "Purchase Invoice",
+    "field_name": "advances",
+    "property": "allow_on_submit",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
+  },
+  {
+    "doctype": "Property Setter",
+    "doc_type": "Sales Invoice",
+    "field_name": "advances",
+    "property": "allow_on_submit",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
+  },
+  {
+    "doctype": "Property Setter",
+    "doc_type": "Expense Claim",
+    "field_name": "advances",
+    "property": "allow_on_submit",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
+  }
+]

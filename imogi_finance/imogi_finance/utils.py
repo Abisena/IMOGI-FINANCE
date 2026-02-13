@@ -26,3 +26,52 @@ def ensure_coretax_export_doctypes() -> None:
 				message=f"Skipped reload for missing CoreTax DocType definition: {doctype_definition}",
 				title="CoreTax DocType definition not found",
 			)
+
+
+def ensure_advances_allow_on_submit() -> None:
+	"""
+	Create Property Setters to allow updating 'advances' child table after submit.
+	This is required when Payment Entry references submitted invoices/expense claims.
+	"""
+	property_setters = [
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Purchase Invoice",
+			"field_name": "advances",
+			"property": "allow_on_submit",
+			"property_type": "Check",
+			"value": "1",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Invoice",
+			"field_name": "advances",
+			"property": "allow_on_submit",
+			"property_type": "Check",
+			"value": "1",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Expense Claim",
+			"field_name": "advances",
+			"property": "allow_on_submit",
+			"property_type": "Check",
+			"value": "1",
+		},
+	]
+
+	for ps_data in property_setters:
+		ps_name = f"{ps_data['doc_type']}-{ps_data['field_name']}-{ps_data['property']}"
+		if not frappe.db.exists("Property Setter", ps_name):
+			ps = frappe.new_doc("Property Setter")
+			ps.name = ps_name
+			ps.doctype_or_field = ps_data["doctype_or_field"]
+			ps.doc_type = ps_data["doc_type"]
+			ps.field_name = ps_data["field_name"]
+			ps.property = ps_data["property"]
+			ps.property_type = ps_data["property_type"]
+			ps.value = ps_data["value"]
+			ps.module = "Imogi Finance"
+			ps.flags.ignore_permissions = True
+			ps.insert()
+			frappe.db.commit()

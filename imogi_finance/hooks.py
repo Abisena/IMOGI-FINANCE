@@ -126,6 +126,14 @@ after_install = "imogi_finance.utils.ensure_coretax_export_doctypes"
 
 fixtures = [
     {"doctype": "Custom Field", "filters": {"module": "Imogi Finance"}},
+    {
+        "doctype": "Property Setter",
+        "filters": {
+            "doc_type": ["in", ["Purchase Invoice", "Sales Invoice", "Expense Claim"]],
+            "property": "allow_on_submit",
+            "field_name": "advances"
+        }
+    },
     {"doctype": "Role", "filters": {"name": ["in", ["Expense Approver", "Branch Approver"]]}},
     {"doctype": "Workflow State", "filters": {"name": ["like", "Imogi%"]}},
     {
@@ -430,7 +438,10 @@ before_migrate = [
     "imogi_finance.fixtures.sanitize_fixture_files",
     "imogi_finance.utils.ensure_coretax_export_doctypes",
 ]
-after_migrate = "imogi_finance.utils.ensure_coretax_export_doctypes"
+after_migrate = [
+    "imogi_finance.utils.ensure_coretax_export_doctypes",
+    "imogi_finance.utils.ensure_advances_allow_on_submit",
+]
 
 # Overriding Methods
 # ------------------------------

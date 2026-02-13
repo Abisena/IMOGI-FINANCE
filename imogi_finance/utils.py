@@ -9,6 +9,6 @@ paths expect ``imogi_finance.utils`` to resolve, so re-export the helpers here.
 
 from __future__ import annotations
 
-from .imogi_finance.utils import ensure_coretax_export_doctypes
+from .imogi_finance.utils import ensure_advances_allow_on_submit, ensure_coretax_export_doctypes
 
-__all__ = ["ensure_coretax_export_doctypes"]
+__all__ = ["ensure_coretax_export_doctypes", "ensure_advances_allow_on_submit"]
