@@ -9,7 +9,6 @@ const DEFAULT_COPY_KEYS = [
   'dpp',
   'ppn',
   'ppnbm',
-  'ppn_type',
   'status',
   'notes',
   'duplicate_flag',
@@ -22,7 +21,6 @@ const DEFAULT_ER_FIELDS = {
   dpp: 'ti_fp_dpp',
   ppn: 'ti_fp_ppn',
   ppnbm: 'ti_fp_ppnbm',
-  ppn_type: 'ti_fp_ppn_type',
   status: 'ti_verification_status',
   notes: 'ti_verification_notes',
   duplicate_flag: 'ti_duplicate_flag',
@@ -39,7 +37,6 @@ const DEFAULT_UPLOAD_FIELDS = {
   dpp: 'dpp',
   ppn: 'ppn',
   ppnbm: 'ppnbm',
-  ppn_type: 'ppn_type',
   status: 'verification_status',
   notes: 'verification_notes',
   duplicate_flag: 'duplicate_flag',
@@ -208,6 +205,35 @@ function renderTotalsHtml(frm, totals) {
   return `<table class="table table-bordered table-sm"><tbody>${cells}</tbody></table>`;
 }
 
+
+// Cache for PPN rate to avoid repeated DB calls
+let ppnRateCache = {};
+
+async function getPpnRate(frm) {
+  if (!frm.doc.ppn_template) {
+    frm.doc.__ppn_rate = 0;
+    return 0;
+  }
+  
+  // Check cache first
+  const cacheKey = frm.doc.ppn_template;
+  if (ppnRateCache[cacheKey] !== undefined) {
+    frm.doc.__ppn_rate = ppnRateCache[cacheKey];
+    return ppnRateCache[cacheKey];
+  }
+  
+  try {
+    const template = await frappe.db.get_doc('Indonesia Tax Templates', frm.doc.ppn_template);
+    const rate = template.rate || 0;
+    ppnRateCache[cacheKey] = rate;
+    frm.doc.__ppn_rate = rate;
+    return rate;
+  } catch (error) {
+    console.error('Error fetching PPN rate:', error);
+    frm.doc.__ppn_rate = 0;
+    return 0;
+  }
+}
 
 async function updateTotalsSummary(frm) {
   // Get PPN rate first if applicable
@@ -678,7 +704,10 @@ frappe.ui.form.on('Expense Request', {
   },
   async ppn_template(frm) {
     // Clear cache when template changes
-    delete frm._ppn_rate;
+    const oldTemplate = frm.doc.ppn_template;
+    if (oldTemplate && ppnRateCache[oldTemplate] !== undefined) {
+      delete ppnRateCache[oldTemplate];
+    }
     await updateTotalsSummary(frm);
   },
 
