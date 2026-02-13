@@ -324,8 +324,20 @@ doc_events = {
         "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
     },
     "Tax Period Closing": {
-        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
-        "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
+        "validate": [
+            "imogi_finance.events.metadata_fields.set_created_by",
+            "imogi_finance.events.tax_period_closing.validate_period_completeness",
+        ],
+        "before_submit": [
+            "imogi_finance.events.tax_period_closing.before_submit_checks",
+        ],
+        "on_submit": [
+            "imogi_finance.events.metadata_fields.set_submit_on",
+            "imogi_finance.events.tax_period_closing.on_period_closed",
+        ],
+        "on_cancel": [
+            "imogi_finance.events.tax_period_closing.on_period_reopened",
+        ],
     },
     "Transfer Application": {
         "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
