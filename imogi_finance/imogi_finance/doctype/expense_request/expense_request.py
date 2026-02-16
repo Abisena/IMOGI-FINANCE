@@ -427,12 +427,52 @@ class ExpenseRequest(Document):
         ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
         ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
 
-        # Calculate & save variance (NO error/warning)
+        # Calculate & save variance
+        dpp_variance = 0
         if ocr_dpp > 0:
-            self.ti_dpp_variance = ocr_dpp - expected_dpp
+            dpp_variance = ocr_dpp - expected_dpp
+            self.ti_dpp_variance = dpp_variance
 
         if ocr_ppn > 0:
             self.ti_ppn_variance = ocr_ppn - expected_ppn
+
+        # ========== 3. OCR CONSISTENCY VALIDATION (WARNING) ==========
+        # Validate that OCR PPN matches OCR DPP × tax rate
+        if ocr_dpp > 0 and ocr_ppn > 0:
+            ppn_rate = self._get_ppn_rate()
+            if ppn_rate > 0:
+                expected_ppn_from_ocr_dpp = ocr_dpp * ppn_rate / 100
+                ocr_consistency_variance = abs(ocr_ppn - expected_ppn_from_ocr_dpp)
+                
+                # Show warning if OCR data is internally inconsistent
+                if ocr_consistency_variance > 0.01:  # More than 1 cent difference
+                    frappe.msgprint(
+                        _("⚠️ OCR Data Inconsistency Detected: PPN from OCR ({0}) does not match "
+                          "DPP from OCR ({1}) × {2}% = {3}. "
+                          "Difference: {4}. Please verify the tax invoice manually.").format(
+                            frappe.format_value(ocr_ppn, {"fieldtype": "Currency"}),
+                            frappe.format_value(ocr_dpp, {"fieldtype": "Currency"}),
+                            ppn_rate,
+                            frappe.format_value(expected_ppn_from_ocr_dpp, {"fieldtype": "Currency"}),
+                            frappe.format_value(ocr_consistency_variance, {"fieldtype": "Currency"})
+                        ),
+                        indicator="orange",
+                        title=_("OCR Consistency Warning")
+                    )
+
+        # ========== 4. VARIANCE ACCOUNT VALIDATION (BLOCKING) ==========
+        # Check if variance account is configured when variance exists
+        if dpp_variance != 0:
+            variance_account = settings.get("dpp_variance_account")
+            if not variance_account:
+                frappe.throw(
+                    _("DPP Variance detected ({0}) but Variance Account is not configured. "
+                      "Please configure 'DPP Variance Account' in Tax Invoice OCR Settings "
+                      "before submitting this Expense Request.").format(
+                        frappe.format_value(dpp_variance, {"fieldtype": "Currency"})
+                    ),
+                    title=_("Variance Account Not Configured")
+                )
 
     def validate_deferred_expense(self):
         """Validate deferred expense configuration."""

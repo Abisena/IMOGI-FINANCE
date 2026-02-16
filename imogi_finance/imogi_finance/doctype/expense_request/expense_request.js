@@ -149,9 +149,15 @@ function computeTotals(frm) {
   
   // Calculate PPN from items total using template rate (NOT from OCR)
   let totalPpn = 0;
-  if (frm.doc.is_ppn_applicable) {
-    const ppnRate = flt(frm._ppn_rate || 0);
-    totalPpn = (totalExpense * ppnRate) / 100;
+  if (frm.doc.docstatus === 0) {
+    // Draft mode: Calculate PPN from items total using template rate
+    if (frm.doc.is_ppn_applicable) {
+      const ppnRate = flt(frm._ppn_rate || 0);
+      totalPpn = (totalExpense * ppnRate) / 100;
+    }
+  } else {
+    // Submitted/Cancelled: Use saved backend value
+    totalPpn = flt(frm.doc.total_ppn || 0);
   }
   
   const totalPpnbm = flt(frm.doc.ti_fp_ppnbm || frm.doc.ppnbm || 0);
