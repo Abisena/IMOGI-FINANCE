@@ -263,10 +263,6 @@ class BranchExpenseRequest(Document):
         # Note: Branch Expense Request does not have supplier field,
         # so NPWP validation against supplier is not applicable
         
-        # 1. Validate DPP, PPN, PPnBM with tolerance
-        # Get tolerance from settings (percentage-based for fairness across amounts)
-        tolerance_pct = flt(settings.get("tolerance_percentage", 2.0))  # Default 2%
-        
         # Get PPN type - only validate amounts for Standard PPN
         ppn_type = getattr(self, "ti_fp_ppn_type", None)
         if ppn_type and ppn_type != "Standard":
@@ -278,6 +274,9 @@ class BranchExpenseRequest(Document):
                     title=_("Tax Invoice Validation Error")
                 )
             return
+        
+        # Hardcoded tolerance 2% - consistent with PPN Type validation
+        tolerance_pct = 2.0
         
         # Get OCR values
         ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
@@ -306,8 +305,7 @@ class BranchExpenseRequest(Document):
         
         expected_ppn = expected_dpp * ppn_rate / 100
         
-        # Check DPP difference
-        # Use both fixed IDR tolerance and percentage tolerance (whichever is more lenient)
+        # Check DPP difference using percentage tolerance only
         if ocr_dpp > 0 and expected_dpp > 0:
             # Calculate variance (OCR - Expected) - can be negative or positive
             dpp_variance = ocr_dpp - expected_dpp
@@ -317,52 +315,31 @@ class BranchExpenseRequest(Document):
             # Save variance for tax operations (will be used for PPN payable calculation)
             self.ti_dpp_variance = dpp_variance
             
-            # Validate using tolerance from settings
-            if dpp_diff > tolerance and dpp_diff_pct > tolerance_pct:
+            # Validate using percentage tolerance (2%)
+            if dpp_diff_pct > tolerance_pct:
                 errors.append(
-                    _("DPP dari OCR ({0}) berbeda dengan Total Expense ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4} atau {5}%)").format(
+                    _("DPP dari OCR ({0}) berbeda dengan Total Expense ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4}%)").format(
                         frappe.format_value(ocr_dpp, {"fieldtype": "Currency"}),
                         frappe.format_value(expected_dpp, {"fieldtype": "Currency"}),
                         frappe.format_value(dpp_variance, {"fieldtype": "Currency"}),
                         dpp_diff_pct,
-                        frappe.format_value(tolerance, {"fieldtype": "Currency"}),
                         tolerance_pct
                     )
                 )
-            elif dpp_diff > tolerance or dpp_diff_pct > tolerance_pct:
-                # Warning zone: exceeds one tolerance but not both
-                warnings.append(
-                    _("⚠️ DPP dari OCR berbeda {0} atau {1:.2f}% (masih dalam toleransi)").format(
-                        frappe.format_value(dpp_variance, {"fieldtype": "Currency"}),
-                        dpp_diff_pct
-                    )
-                )
         
-        # Check PPN difference
+        # Check PPN difference using percentage tolerance only
         if ocr_ppn > 0:
             ppn_diff = abs(ocr_ppn - expected_ppn)
             ppn_diff_pct = (ppn_diff / expected_ppn * 100) if expected_ppn > 0 else 0
             
-            # Allow up to 1% difference OR fixed tolerance (whichever is more lenient)
-            max_pct_tolerance = 1.0  # 1%
-            
-            if ppn_diff > tolerance and ppn_diff_pct > max_pct_tolerance:
+            if ppn_diff_pct > tolerance_pct:
                 errors.append(
-                    _("PPN dari OCR ({0}) berbeda dengan PPN yang dihitung ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4} atau {5}%)").format(
+                    _("PPN dari OCR ({0}) berbeda dengan PPN yang dihitung ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4}%)").format(
                         frappe.format_value(ocr_ppn, {"fieldtype": "Currency"}),
                         frappe.format_value(expected_ppn, {"fieldtype": "Currency"}),
                         frappe.format_value(ppn_diff, {"fieldtype": "Currency"}),
                         ppn_diff_pct,
-                        frappe.format_value(tolerance, {"fieldtype": "Currency"}),
-                        max_pct_tolerance
-                    )
-                )
-            elif ppn_diff > tolerance or ppn_diff_pct > max_pct_tolerance:
-                # Warning zone: exceeds one tolerance but not both
-                warnings.append(
-                    _("⚠️ PPN dari OCR berbeda {0} atau {1:.2f}% (masih dalam toleransi)").format(
-                        frappe.format_value(ppn_diff, {"fieldtype": "Currency"}),
-                        ppn_diff_pct
+                        tolerance_pct
                     )
                 )
         

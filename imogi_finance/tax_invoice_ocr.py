@@ -40,11 +40,7 @@ DEFAULT_SETTINGS = {
     "require_verification_before_submit_pi": 1,
     "require_verification_before_create_pi_from_expense_request": 1,
     "npwp_normalize": 1,
-    "tolerance_idr": 10000,
-    "tolerance_percentage": 1.0,
     "block_duplicate_fp_no": 1,
-    "default_ppn_type": "Standard",
-    "use_tax_rule_effective_date": 1,
     "google_vision_service_account_file": None,
     "google_vision_endpoint": "https://vision.googleapis.com/v1/files:annotate",
     "tesseract_cmd": None,
@@ -3541,54 +3537,6 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                 ).format(actual_rate))
     else:
         notes.append(_("PPN Type is required. Please select the appropriate PPN type."))
-
-    # ============================================================================
-    # CALCULATE EXPECTED PPN (based on user-selected PPN Type)
-    # ============================================================================
-    expected_ppn = None
-    if ppn_type and ("Standard 11%" in ppn_type or "Standard 12%" in ppn_type):
-        template_rate = None
-        taxes = getattr(doc, "taxes", []) or []
-        for row in taxes:
-            try:
-                rate = getattr(row, "rate", None)
-                if rate is not None:
-                    template_rate = rate
-                    break
-            except Exception:
-                continue
-        
-        # Determine rate from PPN Type selection
-        if "Standard 11%" in ppn_type:
-            rate = template_rate if template_rate is not None else 11
-        elif "Standard 12%" in ppn_type:
-            rate = template_rate if template_rate is not None else 12
-        else:
-            rate = template_rate if template_rate is not None else 11
-        
-        expected_ppn = dpp * rate / 100
-    elif ppn_type and "Digital 1.1%" in ppn_type:
-        expected_ppn = dpp * 1.1 / 100
-    else:
-        # Zero Rated, Tidak Dipungut, Dibebaskan, Bukan Objek PPN
-        expected_ppn = 0
-
-    # Use percentage-based tolerance (2% default)
-    tolerance_pct = flt(settings.get("tolerance_percentage", 2)) / 100
-    tolerance = expected_ppn * tolerance_pct if expected_ppn > 0 else 0
-
-    if expected_ppn is not None:
-        actual_ppn = flt(_get_value(doc, doctype, "ppn", 0))
-        diff = abs(actual_ppn - expected_ppn)
-        if diff > tolerance:
-            message = _(
-                "PPN amount differs from expected by more than {0}. Difference: {1}"
-            ).format(
-                format_value(tolerance, "Currency"), format_value(diff, "Currency")
-            )
-            if not force:
-                _raise_validation_error(message)
-            notes.append(message)
 
     # PPnBM validation (if present)
     if ppnbm_value > 0 and dpp > 0:

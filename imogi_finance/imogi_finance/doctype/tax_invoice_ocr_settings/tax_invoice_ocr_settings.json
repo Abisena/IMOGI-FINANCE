@@ -25,13 +25,7 @@
     "section_verification",
     "require_verification_before_submit_pi",
     "require_verification_before_create_pi_from_expense_request",
-    "tolerance_percentage",
-    "block_duplicate_fp_no",
-    "section_templates",
-    "default_ppn_type",
-    "use_tax_rule_effective_date",
-    "default_ppn_tax_template",
-    "zero_ppn_tax_template"
+    "block_duplicate_fp_no"
   ],
   "fields": [
     {
@@ -135,57 +129,10 @@
       "label": "Require Verification before Create PI from Expense Request"
     },
     {
-      "default": 10,
-      "fieldname": "tolerance_idr",
-      "fieldtype": "Currency",
-      "label": "Tolerance (IDR) [DEPRECATED]",
-      "description": "DEPRECATED: Use Tolerance (%) instead. This field will be removed in future versions.",
-      "hidden": 1,
-      "read_only": 1
-    },
-    {
-      "default": 2.0,
-      "fieldname": "tolerance_percentage",
-      "fieldtype": "Percent",
-      "label": "Validation Tolerance (%)",
-      "description": "Maximum allowed difference for DPP/PPN validation. Default 2% covers all tax rates including low-rate PPN (1.1%, 2%, etc.). Scales fairly for all invoice amounts.",
-      "precision": 2
-    },
-    {
       "default": "1",
       "fieldname": "block_duplicate_fp_no",
       "fieldtype": "Check",
       "label": "Block Duplicate Tax Invoice No"
-    },
-    {
-      "fieldname": "section_templates",
-      "fieldtype": "Section Break",
-      "label": "Tax Templates"
-    },
-    {
-      "default": "Standard",
-      "fieldname": "default_ppn_type",
-      "fieldtype": "Select",
-      "label": "Default PPN Type",
-      "options": "Standard\nZero Rated\nExempt/Not PPN"
-    },
-    {
-      "default": "1",
-      "fieldname": "use_tax_rule_effective_date",
-      "fieldtype": "Check",
-      "label": "Use Tax Rule Effective Date"
-    },
-    {
-      "fieldname": "default_ppn_tax_template",
-      "fieldtype": "Link",
-      "label": "Default PPN Tax Template",
-      "options": "Purchase Taxes and Charges Template"
-    },
-    {
-      "fieldname": "zero_ppn_tax_template",
-      "fieldtype": "Link",
-      "label": "Zero PPN Tax Template",
-      "options": "Purchase Taxes and Charges Template"
     }
   ],
   "hide_toolbar": 0,
