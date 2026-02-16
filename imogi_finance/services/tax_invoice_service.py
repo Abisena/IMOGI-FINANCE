@@ -32,7 +32,7 @@ def _safe_getattr(obj, key: str):
 
 def _get_sales_invoice_npwp(si) -> str | None:
     candidates: Iterable[str] = (
-        _safe_getattr(si, "out_fp_npwp"),
+        _safe_getattr(si, "out_fp_customer_npwp"),
         _safe_getattr(si, "out_buyer_tax_id"),
         _safe_getattr(si, "tax_id"),
     )
@@ -79,7 +79,7 @@ def _prepare_sales_invoice_updates(upload) -> dict[str, object]:
         "synch_status": SYNC_SUCCESS,
         "out_fp_no": upload.tax_invoice_no,
         "out_fp_date": upload.tax_invoice_date,
-        "out_fp_npwp": upload.customer_npwp,
+        "out_fp_customer_npwp": upload.customer_npwp,
         "out_buyer_tax_id": upload.customer_npwp,
         "out_fp_dpp": upload.dpp,
         "out_fp_ppn": upload.ppn,

@@ -412,11 +412,50 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_no_seri",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_no_seri",
+    "fieldtype": "Data",
+    "insert_after": "out_fp_no",
+    "label": "FP No Seri",
+    "read_only": 1,
+    "allow_on_submit": 1,
+    "description": "Faktur Pajak series number (e.g., 010.001-26)"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_no_faktur",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_no_faktur",
+    "fieldtype": "Data",
+    "insert_after": "out_fp_no_seri",
+    "label": "FP No Faktur",
+    "read_only": 1,
+    "allow_on_submit": 1,
+    "length": 16,
+    "description": "16-digit Faktur Pajak number for PDF filename matching"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Sales Invoice-out_fp_customer_npwp",
+    "dt": "Sales Invoice",
+    "fieldname": "out_fp_customer_npwp",
+    "fieldtype": "Data",
+    "insert_after": "out_fp_no_faktur",
+    "label": "Customer NPWP (for VAT OUT)",
+    "read_only": 1,
+    "allow_on_submit": 1,
+    "fetch_from": "customer.tax_id",
+    "fetch_if_empty": 1,
+    "description": "Customer's tax ID for grouping and validation"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Sales Invoice-out_fp_date",
     "dt": "Sales Invoice",
     "fieldname": "out_fp_date",
     "fieldtype": "Date",
-    "insert_after": "out_fp_no",
+    "insert_after": "out_fp_customer_npwp",
     "label": "Tanggal Faktur Pajak",
     "allow_on_submit": 1
   },
@@ -520,19 +559,6 @@
     "default": "Pending Sync",
     "allow_on_submit": 1,
     "read_only": 1
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Sales Invoice-out_fp_npwp",
-    "dt": "Sales Invoice",
-    "fieldname": "out_fp_npwp",
-    "fieldtype": "Data",
-    "insert_after": "out_buyer_tax_id",
-    "label": "Output Tax Invoice NPWP",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "fetch_from": "customer.tax_id",
-    "fetch_if_empty": 1
   },
   {
     "doctype": "Custom Field",

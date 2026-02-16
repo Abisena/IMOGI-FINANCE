@@ -69,7 +69,7 @@ FIELDS_BRANCH_ER = {
 FIELDS_SI = {
     "fp_no": "out_fp_no",
     "fp_date": "out_fp_date",
-    "npwp": "out_fp_npwp",
+    "npwp": "out_fp_customer_npwp",
     "dpp": "out_fp_dpp",
     "ppn": "out_fp_ppn",
     "ppn_type": "out_fp_ppn_type",

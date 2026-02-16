@@ -33,7 +33,7 @@ DEFAULT_FIELD_MAP: dict[str, dict[str, str]] = {
     "Sales Invoice": {
         "fp_no": "out_fp_no",
         "fp_date": "out_fp_date",
-        "npwp": "out_fp_npwp",
+        "npwp": "out_fp_customer_npwp",
         "harga_jual": "out_fp_harga_jual",
         "dpp": "out_fp_dpp",
         "ppn": "out_fp_ppn",

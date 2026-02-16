@@ -76,7 +76,7 @@ def get_columns() -> List[Dict[str, Any]]:
 		},
 		{
 			"label": _("Buyer NPWP"),
-			"fieldname": "out_fp_npwp",
+			"fieldname": "out_fp_customer_npwp",
 			"fieldtype": "Data",
 			"width": 150
 		},
@@ -197,12 +197,12 @@ def get_data(filters: Dict[str, Any], ppn_output_account: str) -> List[Dict[str,
 			company=invoice.company
 		)
 		
-		# Use out_fp_npwp or fallback to out_buyer_tax_id
-		npwp = invoice.get("out_fp_npwp") or invoice.get("out_buyer_tax_id")
+		# Use out_fp_customer_npwp or fallback to out_buyer_tax_id
+		npwp = invoice.get("out_fp_customer_npwp") or invoice.get("out_buyer_tax_id")
 		
 		data.append({
 			**invoice,
-			"out_fp_npwp": npwp,
+			"out_fp_customer_npwp": npwp,
 			"tax_amount_gl": tax_amount_gl
 		})
 	

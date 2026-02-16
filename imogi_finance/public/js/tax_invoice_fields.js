@@ -56,7 +56,7 @@
     'Sales Invoice': {
       fp_no: 'out_fp_no',
       fp_date: 'out_fp_date',
-      npwp: 'out_fp_npwp',
+      npwp: 'out_fp_customer_npwp',
       dpp: 'out_fp_dpp',
       ppn: 'out_fp_ppn',
       ppnbm: 'out_fp_ppnbm',

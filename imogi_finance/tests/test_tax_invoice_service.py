@@ -123,7 +123,7 @@ def make_sales_invoice(name="SI-1", npwp=None):
         doctype="Sales Invoice",
         name=name,
         synch_status=None,
-        out_fp_npwp=npwp,
+        out_fp_customer_npwp=npwp,
         out_buyer_tax_id=npwp,
     )
     sales_invoices[name] = si
@@ -140,7 +140,7 @@ def test_sync_updates_sales_invoice_fields():
 
     assert result["status"] == tax_invoice_service.SYNC_SUCCESS
     assert sales_invoice.out_fp_no == upload.tax_invoice_no
-    assert sales_invoice.out_fp_npwp == upload.customer_npwp
+    assert sales_invoice.out_fp_customer_npwp == upload.customer_npwp
     assert sales_invoice.out_buyer_tax_id == upload.customer_npwp
     assert sales_invoice.out_fp_tax_invoice_pdf == upload.invoice_pdf
     assert upload.status == tax_invoice_service.SYNC_SUCCESS

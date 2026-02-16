@@ -74,18 +74,25 @@ class VATOUTBatch(Document):
 			self.status = "Cancelled"
 	
 	@frappe.whitelist()
-	def get_available_invoices(self):
-		"""Get Sales Invoices available for this batch and auto-group them."""
-		# Query Sales Invoices
+	def get_available_invoices(self, force_rebuild=False):
+		"""Get Sales Invoices available for this batch and auto-group them.
+		
+		Args:
+			force_rebuild: If True, reset all grouping. If False, preserve manual edits.
+		"""
+		# Query Sales Invoices with idempotent filter
 		invoices = frappe.db.get_all(
 			"Sales Invoice",
 			filters={
 				"docstatus": 1,
 				"company": self.company,
 				"posting_date": ["between", [self.date_from, self.date_to]],
-				"out_fp_status": "Verified",
-				"out_fp_batch": ["is", "not set"]
+				"out_fp_status": "Verified"
 			},
+			or_filters=[
+				["out_fp_batch", "is", "not set"],
+				["out_fp_batch", "=", self.name]
+			],
 			fields=[
 				"name",
 				"posting_date",
@@ -96,7 +103,9 @@ class VATOUTBatch(Document):
 				"out_fp_ppn",
 				"out_fp_dpp",
 				"out_fp_combine",
-				"out_fp_customer_npwp"
+				"out_fp_customer_npwp",
+				"out_fp_batch",
+				"out_fp_group_id"
 			],
 			order_by="posting_date, customer"
 		)
@@ -109,7 +118,7 @@ class VATOUTBatch(Document):
 		groups = self._auto_group_invoices(invoices)
 		
 		# Assign group IDs and link to batch
-		self._assign_and_link_groups(groups)
+		self._assign_and_link_groups(groups, force_rebuild=force_rebuild)
 		
 		return {
 			"total_invoices": len(invoices),
@@ -165,13 +174,22 @@ class VATOUTBatch(Document):
 		
 		return groups
 	
-	def _assign_and_link_groups(self, groups):
-		"""Assign sequential group IDs and link Sales Invoices to this batch."""
+	def _assign_and_link_groups(self, groups, force_rebuild=False):
+		"""Assign sequential group IDs and link Sales Invoices to this batch.
+		
+		Args:
+			groups: List of group dictionaries with invoices
+			force_rebuild: If True, overwrite existing assignments. If False, preserve manual edits.
+		"""
 		for idx, group in enumerate(groups, start=1):
 			group_id = idx
 			
 			# Update all invoices in group
 			for inv in group["invoices"]:
+				# Preserve manual edits unless force_rebuild
+				if not force_rebuild and inv.out_fp_batch == self.name and inv.out_fp_group_id:
+					continue
+				
 				frappe.db.set_value(
 					"Sales Invoice",
 					inv.name,
@@ -225,11 +243,196 @@ class VATOUTBatch(Document):
 					"invoice_count": 0,
 					"total_dpp": 0,
 					"total_ppn": 0,
-					"fp_number": inv.out_fp_no or ""
+					"fp_number": inv.out_fp_no or "",
+					"invoices": []
 				}
 			
 			groups_map[gid]["invoice_count"] += 1
 			groups_map[gid]["total_dpp"] += inv.out_fp_dpp or 0
 			groups_map[gid]["total_ppn"] += inv.out_fp_ppn or 0
+			groups_map[gid]["invoices"].append(inv.name)
 		
 		return list(groups_map.values())
+	
+	def _validate_not_exported(self):
+		"""Validate that batch has not been exported (groups not locked)."""
+		if self.exported_on:
+			frappe.throw(_"Groups locked after export. Cannot modify grouping."))
+	
+	@frappe.whitelist()
+	def add_invoice_to_group(self, invoice_name, group_id):
+		"""Add an invoice to a specific group.
+		
+		Args:
+			invoice_name: Sales Invoice name
+			group_id: Target group ID
+		"""
+		# Permission check
+		self.check_permission("write")
+		
+		# Validate not exported
+		self._validate_not_exported()
+		
+		# Validate invoice
+		invoice = frappe.get_doc("Sales Invoice", invoice_name)
+		if invoice.docstatus != 1:
+			frappe.throw(_("Invoice {0} must be submitted").format(invoice_name))
+		
+		if invoice.out_fp_status != "Verified":
+			frappe.throw(_("Invoice {0} must have Verified tax invoice status").format(invoice_name))
+		
+		# Check if already in another batch
+		if invoice.out_fp_batch and invoice.out_fp_batch != self.name:
+			frappe.throw(_("Invoice {0} is already in batch {1}").format(invoice_name, invoice.out_fp_batch))
+		
+		# Validate customer match with target group
+		group_customer = frappe.db.get_value(
+			"Sales Invoice",
+			{"out_fp_batch": self.name, "out_fp_group_id": group_id},
+			"customer",
+			limit=1
+		)
+		if group_customer and group_customer != invoice.customer:
+			frappe.throw(_("Customer mismatch: Invoice customer {0} does not match group customer {1}").format(
+				invoice.customer, group_customer
+			))
+		
+		# Assign to group
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_name,
+			{"out_fp_batch": self.name, "out_fp_group_id": group_id},
+			update_modified=False
+		)
+		
+		# Audit trail
+		self.add_comment(
+			"Info",
+			f"Added {invoice_name} to group {group_id} by {frappe.session.user}"
+		)
+		
+		return self.get_groups_summary()
+	
+	@frappe.whitelist()
+	def create_new_group_with_invoice(self, invoice_name):
+		"""Create a new group and add invoice to it.
+		
+		Args:
+			invoice_name: Sales Invoice name
+		"""
+		# Permission check
+		self.check_permission("write")
+		
+		# Validate not exported
+		self._validate_not_exported()
+		
+		# Validate invoice
+		invoice = frappe.get_doc("Sales Invoice", invoice_name)
+		if invoice.docstatus != 1:
+			frappe.throw(_("Invoice {0} must be submitted").format(invoice_name))
+		
+		if invoice.out_fp_status != "Verified":
+			frappe.throw(_("Invoice {0} must have Verified tax invoice status").format(invoice_name))
+		
+		# Check if already in another batch
+		if invoice.out_fp_batch and invoice.out_fp_batch != self.name:
+			frappe.throw(_("Invoice {0} is already in batch {1}").format(invoice_name, invoice.out_fp_batch))
+		
+		# Calculate next group ID
+		max_group_id = frappe.db.get_value(
+			"Sales Invoice",
+			{"out_fp_batch": self.name},
+			"max(out_fp_group_id)"
+		) or 0
+		next_group_id = max_group_id + 1
+		
+		# Assign to new group
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_name,
+			{"out_fp_batch": self.name, "out_fp_group_id": next_group_id},
+			update_modified=False
+		)
+		
+		# Audit trail
+		self.add_comment(
+			"Info",
+			f"Created new group {next_group_id} with {invoice_name} by {frappe.session.user}"
+		)
+		
+		return {"group_id": next_group_id, "groups": self.get_groups_summary()}
+	
+	@frappe.whitelist()
+	def remove_invoice_from_batch(self, invoice_name):
+		"""Remove an invoice from this batch.
+		
+		Args:
+			invoice_name: Sales Invoice name
+		"""
+		# Permission check
+		self.check_permission("write")
+		
+		# Validate not exported
+		self._validate_not_exported()
+		
+		# Clear batch and group
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_name,
+			{"out_fp_batch": None, "out_fp_group_id": None},
+			update_modified=False
+		)
+		
+		# Audit trail
+		self.add_comment(
+			"Info",
+			f"Removed {invoice_name} from batch by {frappe.session.user}"
+		)
+		
+		return self.get_groups_summary()
+	
+	@frappe.whitelist()
+	def move_invoice_to_group(self, invoice_name, new_group_id):
+		"""Move an invoice to a different group.
+		
+		Args:
+			invoice_name: Sales Invoice name
+			new_group_id: Target group ID
+		"""
+		# Permission check
+		self.check_permission("write")
+		
+		# Validate not exported
+		self._validate_not_exported()
+		
+		# Get current invoice data
+		invoice = frappe.get_doc("Sales Invoice", invoice_name)
+		old_group_id = invoice.out_fp_group_id
+		
+		# Validate customer match with target group
+		group_customer = frappe.db.get_value(
+			"Sales Invoice",
+			{"out_fp_batch": self.name, "out_fp_group_id": new_group_id},
+			"customer",
+			limit=1
+		)
+		if group_customer and group_customer != invoice.customer:
+			frappe.throw(_("Customer mismatch: Invoice customer {0} does not match group customer {1}").format(
+				invoice.customer, group_customer
+			))
+		
+		# Move to new group
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_name,
+			{"out_fp_batch": self.name, "out_fp_group_id": new_group_id},
+			update_modified=False
+		)
+		
+		# Audit trail
+		self.add_comment(
+			"Info",
+			f"Moved {invoice_name} from group {old_group_id} to group {new_group_id} by {frappe.session.user}"
+		)
+		
+		return self.get_groups_summary()

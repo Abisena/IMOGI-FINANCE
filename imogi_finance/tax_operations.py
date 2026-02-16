@@ -401,7 +401,7 @@ def _get_coretax_required_fields(direction: str) -> dict[str, dict[str, object]]
     npwp_fields = (
         {f"{document_prefix}_fp_npwp"}
         if direction == "Input"
-        else {"out_fp_npwp", "out_buyer_tax_id"}
+        else {"out_fp_customer_npwp", "out_buyer_tax_id"}
     )
     fp_date_field = f"{document_prefix}_fp_date"
 

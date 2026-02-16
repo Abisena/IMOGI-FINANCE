@@ -18,7 +18,7 @@ const DEFAULT_COPY_KEYS = [
 const DEFAULT_SI_FIELDS = {
   fp_no: 'out_fp_no',
   fp_date: 'out_fp_date',
-  npwp: 'out_fp_npwp',
+  npwp: 'out_fp_customer_npwp',
   dpp: 'out_fp_dpp',
   ppn: 'out_fp_ppn',
   ppnbm: 'out_fp_ppnbm',
@@ -69,8 +69,8 @@ async function syncSiUpload(frm) {
     }
     updates[targetField] = upload[sourceField] || null;
   });
-  if (updates.out_fp_npwp) {
-    updates.out_buyer_tax_id = updates.out_fp_npwp;
+  if (updates.out_fp_customer_npwp) {
+    updates.out_buyer_tax_id = updates.out_fp_customer_npwp;
   }
   await frm.set_value(updates);
 }

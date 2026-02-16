@@ -69,6 +69,12 @@ def get_columns():
 			"label": frappe._("Outstanding Amount"),
 			"fieldtype": "Currency",
 			"width": 150
+		},
+		{
+			"fieldname": "allocation_status",
+			"label": frappe._("Allocation Status"),
+			"fieldtype": "Data",
+			"width": 150
 		}
 	]
 
@@ -85,9 +91,7 @@ def get_data(filters):
 			ple.party,
 			ple.posting_date,
 			ple.account,
-			SUM(ple.amount) as amount,
-			SUM(ple.amount_in_account_currency) - SUM(ple.amount_in_account_currency) as allocated_amount,
-			SUM(ple.amount_in_account_currency) as outstanding_amount
+			ABS(SUM(ple.amount)) as amount
 		FROM
 			`tabPayment Ledger Entry` ple
 		WHERE
@@ -97,8 +101,6 @@ def get_data(filters):
 		GROUP BY
 			ple.voucher_type, ple.voucher_no, ple.party_type, ple.party, 
 			ple.posting_date, ple.account
-		HAVING
-			outstanding_amount != 0
 		ORDER BY
 			ple.posting_date DESC, ple.voucher_no
 	""".format(conditions=conditions)
@@ -110,6 +112,13 @@ def get_data(filters):
 		allocated = get_allocated_amount(row.voucher_type, row.voucher_no)
 		row["allocated_amount"] = allocated
 		row["outstanding_amount"] = row["amount"] - allocated
+		
+		# Calculate allocation status
+		row["allocation_status"] = get_allocation_status(row["amount"], allocated)
+	
+	# Filter by allocation status if specified
+	if filters.get("allocation_status"):
+		data = [row for row in data if row["allocation_status"] == filters.get("allocation_status")]
 	
 	return data
 
@@ -151,3 +160,16 @@ def get_allocated_amount(voucher_type, voucher_no):
 	""", (voucher_type, voucher_no))
 	
 	return allocated[0][0] if allocated and allocated[0][0] else 0
+
+
+def get_allocation_status(amount, allocated_amount):
+	"""Calculate allocation status based on amount and allocated amount"""
+	if not amount or amount == 0:
+		return "Unallocated"
+	
+	if not allocated_amount or allocated_amount == 0:
+		return "Unallocated"
+	elif allocated_amount >= abs(amount):
+		return "Fully Allocated"
+	else:
+		return "Partially Allocated"
