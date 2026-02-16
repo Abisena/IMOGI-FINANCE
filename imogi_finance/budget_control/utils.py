@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "enable_budget_reclass": 0,
     "enable_additional_budget": 0,
     "enable_internal_charge": 0,
+    "enable_budget_check_direct_pi": 0,  # Option A: Hard block PI without ER if budget insufficient
     "budget_controller_role": roles.BUDGET_CONTROLLER,
     "require_budget_controller_review": 1,
     "lock_on_workflow_state": "Approved",

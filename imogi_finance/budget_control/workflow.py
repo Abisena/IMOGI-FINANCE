@@ -336,11 +336,18 @@ def _get_entries_for_ref(ref_doctype: str, ref_name: str, entry_type: str | None
 
 
 def _reverse_reservations(expense_request):
+    """Reverse existing RESERVATION entries by creating RESERVATION IN entries.
+    
+    Used when re-submitting an Expense Request that already has reservations.
+    Uses RESERVATION IN to offset RESERVATION OUT (simplified flow, replaces RELEASE).
+    """
     reservations = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
-    if not reservations:
+    # Only reverse OUT reservations (not IN releases)
+    reservations_out = [r for r in reservations if r.get("direction") == "OUT"]
+    if not reservations_out:
         return
 
-    for row in reservations:
+    for row in reservations_out:
         dims = utils.Dimensions(
             company=row.get("company"),
             fiscal_year=row.get("fiscal_year"),
@@ -349,8 +356,9 @@ def _reverse_reservations(expense_request):
             project=row.get("project"),
             branch=row.get("branch"),
         )
+        # Use RESERVATION IN to offset RESERVATION OUT (replaces RELEASE)
         ledger.post_entry(
-            "RELEASE",
+            "RESERVATION",
             dims,
             float(row.get("amount") or 0),
             "IN",
@@ -628,15 +636,30 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):
+    """Release budget reservation for an expense request.
+    
+    Uses RESERVATION with direction IN to offset the original RESERVATION OUT.
+    This is the simplified flow that replaces the deprecated RELEASE entry type.
+    
+    Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
+    """
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):
         return
 
+    # Get existing RESERVATION OUT entries (only count OUT, ignore any existing IN)
     reservations = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
-    if not reservations:
+    # Filter to only OUT direction entries
+    reservations_out = [r for r in reservations if r.get("direction") == "OUT"]
+    
+    if not reservations_out:
+        frappe.logger().info(
+            f"release_budget_for_request: No RESERVATION OUT entries found for {getattr(expense_request, 'name', None)}"
+        )
         return
 
-    for row in reservations:
+    entries_created = []
+    for row in reservations_out:
         dims = utils.Dimensions(
             company=row.get("company"),
             fiscal_year=row.get("fiscal_year"),
@@ -645,15 +668,23 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
             project=row.get("project"),
             branch=row.get("branch"),
         )
-        ledger.post_entry(
-            "RELEASE",
+        # Use RESERVATION IN to offset RESERVATION OUT (simplified flow, replaces RELEASE)
+        entry_name = ledger.post_entry(
+            "RESERVATION",
             dims,
             float(row.get("amount") or 0),
-            "IN",
+            "IN",  # IN direction to release/offset the OUT reservation
             ref_doctype="Expense Request",
             ref_name=getattr(expense_request, "name", None),
-            remarks=_("Release on rejection or cancel"),
+            remarks=_("Release reservation on {0}").format(reason or "rejection/cancel"),
         )
+        if entry_name:
+            entries_created.append(entry_name)
+            frappe.logger().info(f"release_budget_for_request: Created RESERVATION IN {entry_name}")
+    
+    frappe.logger().info(
+        f"release_budget_for_request: Released {len(entries_created)} reservations for {getattr(expense_request, 'name', None)}"
+    )
 
     if hasattr(expense_request, "db_set"):
         expense_request.db_set("budget_lock_status", "Released")
@@ -677,14 +708,17 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
 def handle_expense_request_workflow(expense_request, action: str | None, next_state: str | None):
     """Handle budget workflow state changes for Expense Request.
 
-    Simplified flow (no RELEASE needed):
-    - Submit: Create RESERVATION
-    - Reject/Reopen: Keep RESERVATION (user dapat re-submit, reservation tetap valid)
-    - Cancel: Keep RESERVATION (no need to release, will be consumed or expired)
+    Simplified flow (RELEASE deprecated, use RESERVATION IN):
+    - Submit: Create RESERVATION OUT (lock budget)
+    - Reject/Cancel: Create RESERVATION IN (release lock) via release_budget_for_request()
+    - Reopen: Create RESERVATION IN (release lock) for re-submission
 
-    RESERVATION entries remain in database and are only offset by:
-    - CONSUMPTION when PI is submitted
-    - REVERSAL when PI is cancelled
+    Formula: Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
+    
+    RESERVATION entries remain in database and are offset by:
+    - RESERVATION IN when ER is rejected/cancelled
+    - CONSUMPTION IN when PI is submitted
+    - REVERSAL OUT when PI is cancelled
     """
     settings = utils.get_settings()
     if not settings.get("enable_budget_lock"):

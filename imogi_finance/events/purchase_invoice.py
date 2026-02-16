@@ -21,6 +21,8 @@ from imogi_finance.budget_control.workflow import (
     reverse_consumption_for_purchase_invoice,
     maybe_post_internal_charge_je,
 )
+from imogi_finance.budget_control import utils as budget_utils
+from imogi_finance.budget_control import service as budget_service
 
 
 def sync_expense_request_status_from_pi(doc, method=None):
@@ -83,6 +85,9 @@ def validate_before_submit(doc, method=None):
     
     # Validate 1 ER = 1 PI (only submitted PI, cancelled are ignored)
     _validate_one_pi_per_request(doc)
+    
+    # Option A: Budget check for direct PI (without ER)
+    _validate_budget_for_direct_pi(doc)
     
     settings = get_settings()
     require_verified = cint(settings.get("enable_tax_invoice_ocr")) and cint(
@@ -189,6 +194,124 @@ def _validate_npwp_match(doc):
             ),
             title=_("NPWP Mismatch")
         )
+
+
+def _validate_budget_for_direct_pi(doc):
+    """Validate budget availability for Purchase Invoice created directly (without Expense Request).
+    
+    Option A: Hard block - PI without ER must have sufficient budget available.
+    
+    This check is controlled by the 'enable_budget_check_direct_pi' setting.
+    When enabled, PI without ER will be blocked if budget is insufficient.
+    
+    Note: PI from ER already has budget reserved via RESERVATION entries,
+    so this check only applies to direct PI creation.
+    """
+    # Skip if linked to Expense Request or Branch Expense Request
+    expense_request = getattr(doc, "imogi_expense_request", None)
+    branch_request = getattr(doc, "branch_expense_request", None)
+    if expense_request or branch_request:
+        return
+    
+    # Get budget control settings
+    settings = budget_utils.get_settings()
+    
+    # Skip if budget lock or direct PI check is disabled
+    if not settings.get("enable_budget_lock"):
+        return
+    if not settings.get("enable_budget_check_direct_pi"):
+        frappe.logger().info(
+            f"_validate_budget_for_direct_pi: Direct PI budget check disabled for PI {getattr(doc, 'name', 'Unknown')}"
+        )
+        return
+    
+    # Get company and fiscal year
+    company = getattr(doc, "company", None)
+    fiscal_year = budget_utils.resolve_fiscal_year(
+        getattr(doc, "fiscal_year", None), 
+        company=company
+    )
+    
+    if not fiscal_year:
+        frappe.logger().warning(
+            f"_validate_budget_for_direct_pi: Could not resolve fiscal year for PI {getattr(doc, 'name', 'Unknown')}"
+        )
+        return
+    
+    # Check budget role for overrun
+    allow_role = settings.get("allow_budget_overrun_role")
+    allow_overrun = bool(allow_role and allow_role in frappe.get_roles())
+    
+    # Build dimensions from PI items and check budget
+    items = getattr(doc, "items", []) or []
+    
+    # Group amounts by cost_center + expense_account
+    allocation_map = {}
+    for item in items:
+        cost_center = getattr(item, "cost_center", None) or getattr(doc, "cost_center", None)
+        expense_account = getattr(item, "expense_account", None)
+        amount = float(getattr(item, "amount", 0) or 0)
+        
+        if not cost_center or not expense_account:
+            continue
+        
+        key = (cost_center, expense_account)
+        allocation_map[key] = allocation_map.get(key, 0) + amount
+    
+    if not allocation_map:
+        frappe.logger().warning(
+            f"_validate_budget_for_direct_pi: No valid items found for PI {getattr(doc, 'name', 'Unknown')}"
+        )
+        return
+    
+    # Check budget availability for each dimension
+    for (cost_center, expense_account), amount in allocation_map.items():
+        if amount <= 0:
+            continue
+        
+        dims = budget_utils.Dimensions(
+            company=company,
+            fiscal_year=fiscal_year,
+            cost_center=cost_center,
+            account=expense_account,
+            project=getattr(doc, "project", None),
+            branch=getattr(doc, "branch", None),
+        )
+        
+        result = budget_service.check_budget_available(dims, amount)
+        
+        frappe.logger().info(
+            f"_validate_budget_for_direct_pi: Budget check for {cost_center}/{expense_account}: "
+            f"amount={amount}, available={result.get('available')}, ok={result.get('ok')}"
+        )
+        
+        if not result.get("ok") and not allow_overrun:
+            frappe.throw(
+                _("Budget Insufficient for direct Purchase Invoice.<br><br>"
+                  "Cost Center: {0}<br>"
+                  "Account: {1}<br>"
+                  "Requested: {2}<br>"
+                  "Available: {3}<br><br>"
+                  "Please create an Expense Request first or contact Budget Controller.").format(
+                    cost_center or "(not set)",
+                    expense_account or "(not set)",
+                    frappe.format_value(amount, {"fieldtype": "Currency"}),
+                    frappe.format_value(result.get("available"), {"fieldtype": "Currency"}) 
+                        if result.get("available") is not None else "N/A"
+                ),
+                title=_("Budget Exceeded")
+            )
+        elif not result.get("ok") and allow_overrun:
+            frappe.logger().warning(
+                f"_validate_budget_for_direct_pi: Budget overrun allowed by role for PI {getattr(doc, 'name', 'Unknown')}"
+            )
+            frappe.msgprint(
+                _("Budget overrun allowed for {0}/{1}. Proceeding with special permission.").format(
+                    cost_center, expense_account
+                ),
+                indicator="orange",
+                alert=True
+            )
 
 
 def _generate_deferred_expense_schedule(doc):

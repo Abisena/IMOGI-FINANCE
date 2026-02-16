@@ -222,14 +222,22 @@ def get_budget_control_breakdown(dims, from_date=None, to_date=None):
     """
     Get breakdown of Budget Control Entry by entry_type.
     
-    New Simplified Flow (No RELEASE):
-    - RESERVATION: Budget locked for Expense Request (OUT)
-    - CONSUMPTION: Consumes reserved budget when PI submit (IN)
-    - REVERSAL: Restores reserved budget when PI cancel (OUT)
+    Simplified Flow (RELEASE deprecated, use RESERVATION IN instead):
+    - RESERVATION OUT: Budget locked for Expense Request
+    - RESERVATION IN: Budget released on ER rejection/cancel (replaces RELEASE)
+    - CONSUMPTION IN: Consumes reserved budget when PI submit
+    - REVERSAL OUT: Restores reserved budget when PI cancel
     - RECLASS: Budget movement between accounts
     - SUPPLEMENT: Additional budget allocation
     
-    Reserved = RESERVATION - CONSUMPTION + REVERSAL
+    Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
+    
+    Note: breakdown values are pre-signed based on direction:
+    - OUT = positive (adds to breakdown)
+    - IN = negative (subtracts from breakdown)
+    
+    So net_reserved = breakdown["reservation"] + breakdown["consumption"] + breakdown["reversal"]
+    works correctly because signs are already applied.
     
     Returns dict with keys: reservation, consumption, reversal, reclass, supplement
     """
@@ -350,11 +358,13 @@ def get_data(filters):
             # Get Budget Control Entry breakdown by entry_type
             breakdown = get_budget_control_breakdown(dims, from_date=from_date, to_date=to_date)
             
-            # Net reserved = RESERVATION - CONSUMPTION + REVERSAL
-            # Simplified flow: no RELEASE needed
-            # - RESERVATION: +100 (locked for ER)
-            # - CONSUMPTION: -100 (consumed by PI)
-            # - REVERSAL: +100 (restored on PI cancel)
+            # Net reserved = RESERVATION(OUT-IN) - CONSUMPTION + REVERSAL
+            # Simplified flow: RESERVATION IN replaces RELEASE
+            # - RESERVATION OUT: +100 (locked for ER)
+            # - RESERVATION IN: -100 (released on ER reject/cancel)
+            # - CONSUMPTION IN: -100 (consumed by PI)
+            # - REVERSAL OUT: +100 (restored on PI cancel)
+            # Note: breakdown values are pre-signed (OUT=+, IN=-)
             net_reserved = breakdown["reservation"] + breakdown["consumption"] + breakdown["reversal"]
             
             # Calculate committed = actual + net reserved
@@ -483,7 +493,12 @@ def get_chart_data(data, filters):
 
 
 def get_summary(data):
-    """Generate summary cards with Budget Control Entry breakdown."""
+    """Generate summary cards with Budget Control Entry breakdown.
+    
+    Note: With simplified flow, RESERVATION includes both lock (OUT) and release (IN).
+    The 'reservation' field in data is already net (OUT - IN).
+    'release' field is deprecated (always 0 for new entries).
+    """
     if not data:
         return []
     
@@ -491,6 +506,7 @@ def get_summary(data):
     total_actual = sum(row.get("actual", 0) or 0 for row in data)
     total_reservation = sum(row.get("reservation", 0) or 0 for row in data)
     total_consumption = sum(row.get("consumption", 0) or 0 for row in data)
+    # RELEASE is deprecated - kept for backward compatibility with old data
     total_release = sum(row.get("release", 0) or 0 for row in data)
     total_net_reserved = sum(row.get("net_reserved", 0) or 0 for row in data)
     total_committed = sum(row.get("committed", 0) or 0 for row in data)
@@ -499,7 +515,7 @@ def get_summary(data):
     over_budget_count = len([r for r in data if (r.get("available", 0) or 0) < 0])
     critical_count = len([r for r in data if r.get("status") in ("Critical", "Warning")])
     
-    return [
+    summary_cards = [
         {
             "value": total_allocated,
             "indicator": "blue",
@@ -515,19 +531,13 @@ def get_summary(data):
         {
             "value": abs(total_reservation),
             "indicator": "red",
-            "label": _("Total Reservation"),
+            "label": _("Total Reservation (Net)"),  # Includes both lock and release
             "datatype": "Currency"
         },
         {
             "value": abs(total_consumption),
             "indicator": "blue",
             "label": _("Total Consumption"),
-            "datatype": "Currency"
-        },
-        {
-            "value": abs(total_release),
-            "indicator": "green",
-            "label": _("Total Release"),
             "datatype": "Currency"
         },
         {
@@ -559,3 +569,14 @@ def get_summary(data):
             "label": _("Critical/Warning Accounts")
         }
     ]
+    
+    # Add legacy Release card only if there's data (backward compatibility)
+    if total_release != 0:
+        summary_cards.insert(4, {
+            "value": abs(total_release),
+            "indicator": "green",
+            "label": _("Total Release (Legacy)"),
+            "datatype": "Currency"
+        })
+    
+    return summary_cards

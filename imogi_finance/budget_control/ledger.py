@@ -39,18 +39,19 @@ def _entry_filters(dims: Dimensions, entry_types: list[str]):
 def get_reserved_total(dims: Dimensions, from_date: date | None = None, to_date: date | None = None) -> float:
     """Calculate total reserved budget from Budget Control Entries.
     
-    Reserved = RESERVATION (OUT) - CONSUMPTION (IN) + REVERSAL (OUT)
+    Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
     
-    Logic:
-    - RESERVATION: Budget yang di-hold untuk Expense Request
-    - CONSUMPTION: Mengurangi reserved saat PI submit (consume dari reservation)
-    - REVERSAL: Mengembalikan reserved saat PI cancel (restore reservation)
-    - RELEASE: TIDAK DIPAKAI LAGI (simplified flow)
+    Simplified flow (RELEASE deprecated, use RESERVATION IN instead):
+    - RESERVATION OUT: Budget yang di-hold untuk Expense Request
+    - RESERVATION IN: Budget yang di-release saat ER rejected/cancelled
+    - CONSUMPTION IN: Mengurangi reserved saat PI submit (consume dari reservation)
+    - REVERSAL OUT: Mengembalikan reserved saat PI cancel (restore reservation)
     
     Contoh:
-    - ER submit: RESERVATION +100 → Reserved = 100
-    - PI submit: CONSUMPTION +100 → Reserved = 100 - 100 = 0
-    - PI cancel: REVERSAL +100 → Reserved = 100 - 100 + 100 = 100
+    - ER submit: RESERVATION OUT +100 → Reserved = 100
+    - ER rejected: RESERVATION IN +100 → Reserved = 100 - 100 = 0
+    - PI submit: CONSUMPTION IN +100 → Reserved = 100 - 100 = 0
+    - PI cancel: REVERSAL OUT +100 → Reserved = 100 - 100 + 100 = 100
     """
     try:
         rows = frappe.get_all(
@@ -75,11 +76,13 @@ def get_reserved_total(dims: Dimensions, from_date: date | None = None, to_date:
         amount = float(row.get("amount") or 0.0)
 
         if entry_type == "RESERVATION" and direction == "OUT":
-            total += amount  # Reserve budget
+            total += amount  # Reserve budget (lock)
+        elif entry_type == "RESERVATION" and direction == "IN":
+            total -= amount  # Release reservation (unlock on ER reject/cancel)
         elif entry_type == "CONSUMPTION" and direction == "IN":
-            total -= amount  # Consume reserved budget
+            total -= amount  # Consume reserved budget (PI submit)
         elif entry_type == "REVERSAL" and direction == "OUT":
-            total += amount  # Restore reserved budget (after PI cancel)
+            total += amount  # Restore reserved budget (PI cancel)
 
     return total
 

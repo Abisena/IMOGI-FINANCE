@@ -22,10 +22,12 @@ class BudgetControlEntry(Document):
     VALID_DIRECTIONS = {"IN", "OUT"}
     
     # Valid entry_type and direction combinations
+    # NOTE: RESERVATION allows both OUT (lock budget) and IN (release lock on ER rejection/cancel)
+    # RELEASE is deprecated - use RESERVATION IN instead (simplified flow)
     VALID_COMBINATIONS = {
-        "RESERVATION": ["OUT"],
+        "RESERVATION": ["OUT", "IN"],  # OUT=lock, IN=release (replaces RELEASE)
         "CONSUMPTION": ["IN"],
-        "RELEASE": ["IN"],
+        "RELEASE": ["IN"],  # DEPRECATED - kept for backward compatibility
         "REVERSAL": ["OUT"],
         "RECLASS": ["IN", "OUT"],
         "SUPPLEMENT": ["IN"]
