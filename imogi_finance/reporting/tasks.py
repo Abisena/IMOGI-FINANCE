@@ -13,6 +13,7 @@ from frappe import _
 
 from imogi_finance.reporting.data import load_daily_inputs
 from imogi_finance.reporting.service import build_daily_report, resolve_signers
+from imogi_finance.settings.utils import get_finance_control_settings
 
 
 def run_daily_reporting(branches: list[str] | None = None) -> None:
@@ -24,7 +25,7 @@ def run_daily_reporting(branches: list[str] | None = None) -> None:
         report_date = date.today()
 
         # Load settings for signers (use same field names as api/reporting.py)
-        settings_doc = frappe.get_cached_doc("Finance Control Settings", "Finance Control Settings")
+        settings_doc = get_finance_control_settings()
         signers_dict = {
             "prepared_by": getattr(settings_doc, "daily_report_preparer", None),
             "approved_by": getattr(settings_doc, "daily_report_approver", None),

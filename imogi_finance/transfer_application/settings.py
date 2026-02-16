@@ -5,8 +5,10 @@ from typing import Iterable, List
 import frappe
 from frappe.utils import flt
 
+from imogi_finance.settings.utils import get_transfer_application_settings as _get_ta_settings
 
-REFERENCE_DOCTYPES: List[str] = [
+
+DEFAULT_REFERENCE_DOCTYPES: List[str] = [
     "Purchase Invoice",
     "Expense Claim",
     "Salary Slip",
@@ -18,8 +20,12 @@ REFERENCE_DOCTYPES: List[str] = [
 
 
 def get_transfer_application_settings():
+    """Get Transfer Application Settings singleton.
+    
+    Uses centralized helper from settings layer for consistency.
+    """
     try:
-        settings = frappe.get_cached_doc("Transfer Application Settings")
+        settings = _get_ta_settings()
     except frappe.DoesNotExistError:
         settings = frappe.new_doc("Transfer Application Settings")
         settings.enable_bank_txn_matching = 1
@@ -43,11 +49,45 @@ def ensure_settings_defaults(settings):
         settings.matching_amount_tolerance = 0
 
 
+def get_reference_doctypes() -> list[str]:
+    """Load reference doctypes from Transfer Application Settings table.
+    
+    Strategy:
+    1. Load from reference_doctypes table (enabled rows only)
+    2. If table is empty or not configured, fall back to DEFAULT_REFERENCE_DOCTYPES
+    
+    Returns:
+        List of enabled reference DocType names
+    """
+    try:
+        settings = get_transfer_application_settings()
+        rows = settings.get("reference_doctypes") or []
+        
+        doctypes = [
+            r.get("reference_doctype")
+            for r in rows
+            if r.get("enabled") and r.get("reference_doctype")
+        ]
+        
+        if doctypes:
+            return doctypes
+    except Exception as e:
+        frappe.logger().warning(f"Failed to load reference doctypes from table: {e}. Using defaults.")
+    
+    # Fallback to hardcoded defaults
+    return DEFAULT_REFERENCE_DOCTYPES
+
+
 def get_reference_doctype_options() -> list[str]:
+    """Get list of valid reference doctype options for UI dropdown.
+    
+    Filters to only doctypes that exist in system.
+    """
+    doctypes = get_reference_doctypes()
     existing = set(
-        frappe.get_all("DocType", filters={"name": ("in", REFERENCE_DOCTYPES)}, pluck="name")
+        frappe.get_all("DocType", filters={"name": ("in", doctypes)}, pluck="name")
     )
-    options: list[str] = [doctype for doctype in REFERENCE_DOCTYPES if doctype in existing]
+    options: list[str] = [doctype for doctype in doctypes if doctype in existing]
     options.append("Other")
     return options
 

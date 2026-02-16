@@ -35,12 +35,11 @@ _ = frappe._
 
 
 def _get_settings():
+    from imogi_finance.settings.utils import get_finance_control_settings
     try:
-        if hasattr(frappe, "get_cached_doc"):
-            return frappe.get_cached_doc("Finance Control Settings")
+        return get_finance_control_settings()
     except Exception:
         return {}
-    return {}
 
 
 def _extract_signers_from_settings(doc, bank_account: str | None = None, cash_account: str | None = None) -> dict:

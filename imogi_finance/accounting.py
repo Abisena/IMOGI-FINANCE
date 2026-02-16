@@ -8,6 +8,8 @@ from frappe.utils import add_months, cint, flt
 
 from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
+from imogi_finance.settings.utils import get_gl_account
+from imogi_finance.settings.gl_purposes import DPP_VARIANCE
 
 PURCHASE_INVOICE_REQUEST_TYPES = {"Expense"}
 PURCHASE_INVOICE_ALLOWED_STATUSES = frozenset({"Approved"})
@@ -472,7 +474,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # Add DPP variance as additional line item at the end (NOT subject to withholding tax)
     dpp_variance = flt(getattr(request, "ti_dpp_variance", 0) or 0)
     if dpp_variance != 0:
-        variance_account = settings.get("dpp_variance_account")
+        try:
+            variance_account = get_gl_account(DPP_VARIANCE, company=company, required=False)
+        except frappe.ValidationError:
+            variance_account = None
 
         if variance_account:
             variance_item = {

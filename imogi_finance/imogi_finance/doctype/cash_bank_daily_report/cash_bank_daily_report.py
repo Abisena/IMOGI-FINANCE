@@ -149,7 +149,8 @@ class CashBankDailyReport(Document):
             return
 
         # Get Finance Control Settings
-        settings = frappe.get_single("Finance Control Settings")
+        from imogi_finance.settings.utils import get_finance_control_settings
+        settings = get_finance_control_settings()
 
         # Check per-account rules first
         account = self.bank_account or self.cash_account
@@ -202,7 +203,8 @@ class CashBankDailyReport(Document):
 
     def _is_view_only_mode(self) -> bool:
         try:
-            settings = frappe.get_cached_doc("Finance Control Settings")
+            from imogi_finance.settings.utils import get_finance_control_settings
+            settings = get_finance_control_settings()
         except Exception:
             return False
         return bool(getattr(settings, "daily_report_view_only", 0))

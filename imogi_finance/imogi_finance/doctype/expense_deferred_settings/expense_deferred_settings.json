@@ -8,7 +8,6 @@
   "engine": "InnoDB",
   "field_order": [
     "enable_deferred_expense",
-    "default_prepaid_account",
     "deferrable_accounts"
   ],
   "fields": [
@@ -17,12 +16,6 @@
       "fieldname": "enable_deferred_expense",
       "fieldtype": "Check",
       "label": "Enable Deferred Expense"
-    },
-    {
-      "fieldname": "default_prepaid_account",
-      "fieldtype": "Link",
-      "label": "Default Prepaid Account",
-      "options": "Account"
     },
     {
       "fieldname": "deferrable_accounts",

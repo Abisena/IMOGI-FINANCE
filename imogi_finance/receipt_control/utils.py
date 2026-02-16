@@ -6,12 +6,24 @@ from typing import Dict, Iterable, Optional
 import frappe
 from frappe import _
 
+# Import helpers for centralized settings access
+from imogi_finance.settings.utils import (
+    get_finance_control_settings,
+    get_gl_account,
+)
+from imogi_finance.settings.gl_purposes import (
+    DIGITAL_STAMP_EXPENSE,
+    DIGITAL_STAMP_PAYMENT,
+)
+from imogi_finance.settings.branch_defaults import BRANCH_SETTING_DEFAULTS
+
 
 def get_receipt_control_settings():
-    """Fetch Finance Control Settings with sane defaults."""
-
-    from imogi_finance.branching import BRANCH_SETTING_DEFAULTS
-
+    """Fetch Finance Control Settings with sane defaults.
+    
+    Uses centralized helper to get settings, with fallback defaults
+    for fields that may not exist on legacy systems.
+    """
     defaults = frappe._dict(
         {
             "enable_customer_receipt": 0,
@@ -26,8 +38,6 @@ def get_receipt_control_settings():
             "digital_stamp_provider": None,
             "provider_mode": None,
             "digital_stamp_cost": 10000,
-            "digital_stamp_expense_account": "Biaya Materai Digital",
-            "digital_stamp_payment_account": "Kas/Bank",
         }
     )
     defaults.update(BRANCH_SETTING_DEFAULTS)
@@ -36,7 +46,7 @@ def get_receipt_control_settings():
         return defaults
 
     try:
-        settings = frappe.get_single("Finance Control Settings")
+        settings = get_finance_control_settings()
     except Exception:
         # Avoid breaking desk if single is missing in early migrations
         return defaults
@@ -45,6 +55,26 @@ def get_receipt_control_settings():
         defaults[key] = getattr(settings, key, defaults[key])
 
     return defaults
+
+
+def get_digital_stamp_accounts(company: str | None = None) -> tuple[str, str]:
+    """Get digital stamp GL accounts (expense and payment) from GL Account Mappings.
+    
+    Retrieves the configured GL accounts for digital stamp posting.
+    Must be called only when digital_stamp is enabled.
+    
+    Args:
+        company: Company code for multi-company support (optional)
+        
+    Returns:
+        Tuple of (expense_account, payment_account)
+        
+    Raises:
+        frappe.ValidationError: If mappings are not configured
+    """
+    expense_account = get_gl_account(DIGITAL_STAMP_EXPENSE, company=company, required=True)
+    payment_account = get_gl_account(DIGITAL_STAMP_PAYMENT, company=company, required=True)
+    return expense_account, payment_account
 
 
 def terbilang_id(amount: float | int | Decimal, suffix: str = "rupiah") -> str:
@@ -152,24 +182,48 @@ def record_stamp_cost(customer_receipt: str, cost: float | Decimal) -> str:
 
     Returns:
         The name of the submitted Journal Entry.
+        
+    Raises:
+        frappe.ValidationError: If GL account mappings are not configured
     """
 
     cost_amount = float(cost or 0)
     if cost_amount <= 0:
         frappe.throw(_("Stamp cost must be greater than zero."))
 
-    receipt_meta = frappe.db.get_value("Customer Receipt", customer_receipt, ["company", "branch"], as_dict=True)
+    receipt_meta = frappe.db.get_value(
+        "Customer Receipt", customer_receipt, ["company", "branch"], as_dict=True
+    )
     if not receipt_meta:
         frappe.throw(_("Customer Receipt {0} not found.").format(customer_receipt))
 
-    settings = get_receipt_control_settings()
-    expense_account = getattr(settings, "digital_stamp_expense_account", None)
-    payment_account = getattr(settings, "digital_stamp_payment_account", None)
-    if not expense_account or not payment_account:
-        frappe.throw(_("Please configure digital stamp expense and payment accounts."))
+    # Get GL accounts from central mapping (no more hardcoded)
+    try:
+        expense_account, payment_account = get_digital_stamp_accounts(
+            company=receipt_meta.company
+        )
+    except frappe.ValidationError:
+        frappe.throw(
+            _(
+                "Digital stamp GL accounts are not configured. "
+                "Please set 'digital_stamp_expense' and 'digital_stamp_payment' "
+                "in Finance Control Settings → GL Account Mappings."
+            ),
+            title=_("Missing GL Account Configuration")
+        )
+
+    # Validate accounts exist in company's chart of accounts
     for account in (expense_account, payment_account):
-        if not frappe.db.exists("Account", {"name": account, "company": receipt_meta.company}):
-            frappe.throw(_("Account {0} not found for company {1}.").format(account, receipt_meta.company))
+        if not frappe.db.exists(
+            "Account", {"name": account, "company": receipt_meta.company}
+        ):
+            frappe.throw(
+                _(
+                    "Account {0} not found for company {1}. "
+                    "Please verify GL Account Mappings configuration."
+                ).format(account, receipt_meta.company),
+                title=_("Invalid GL Account")
+            )
 
     journal_entry = frappe.get_doc(
         {

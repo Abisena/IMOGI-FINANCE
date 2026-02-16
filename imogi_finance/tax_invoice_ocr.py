@@ -18,6 +18,12 @@ from frappe.utils import cint, flt, get_site_path
 from frappe.utils.formatters import format_value
 
 from imogi_finance import tax_invoice_fields
+from imogi_finance.settings.utils import (
+    get_gl_account,
+    get_ppn_accounts,
+    get_tax_invoice_ocr_settings,
+)
+from imogi_finance.settings.gl_purposes import DPP_VARIANCE, PPN_VARIANCE
 
 background_jobs = getattr(frappe.utils, "background_jobs", None)
 
@@ -37,10 +43,6 @@ DEFAULT_SETTINGS = {
     "tolerance_idr": 10000,
     "tolerance_percentage": 1.0,
     "block_duplicate_fp_no": 1,
-    "ppn_input_account": None,
-    "ppn_output_account": None,
-    "dpp_variance_account": None,
-    "ppn_variance_account": None,
     "default_ppn_type": "Standard",
     "use_tax_rule_effective_date": 1,
     "google_vision_service_account_file": None,
@@ -73,6 +75,9 @@ def get_settings() -> dict[str, Any]:
     if not hasattr(settings_obj, "get"):
         settings_obj.get = lambda key, default=None: getattr(settings_obj, key, default)
     return settings_obj
+
+
+
 
 
 def _normalize_google_vision_path(path: str | None, *, is_pdf: bool = True) -> str:

@@ -6,12 +6,7 @@ from typing import Any, Optional
 import frappe
 from frappe import _
 
-BRANCH_SETTING_DEFAULTS = {
-    "enable_multi_branch": 0,
-    "inherit_branch_from_cost_center": 1,
-    "default_branch": None,
-    "enforce_branch_on_links": 1,
-}
+from imogi_finance.settings.branch_defaults import BRANCH_SETTING_DEFAULTS
 
 
 def _get_settings_doc():

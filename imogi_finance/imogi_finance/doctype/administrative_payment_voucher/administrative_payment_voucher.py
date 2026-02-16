@@ -45,6 +45,7 @@ def resolve_fiscal_year(posting_date, company: str) -> frappe._dict:
 
 
 def get_apv_settings() -> frappe._dict:
+    from imogi_finance.settings.utils import get_finance_control_settings
     settings = frappe._dict(DEFAULT_APV_SETTINGS.copy())
     if not getattr(frappe, "db", None):
         return settings
@@ -52,7 +53,10 @@ def get_apv_settings() -> frappe._dict:
     if not frappe.db.exists("DocType", "Finance Control Settings"):
         return settings
 
-    record = frappe.get_cached_doc("Finance Control Settings")
+    try:
+        record = get_finance_control_settings()
+    except Exception:
+        record = None
     if not record:
         return settings
 

@@ -62,13 +62,11 @@ class Dimensions:
 
 
 def _get_settings_doc():
+    from imogi_finance.settings.utils import get_budget_control_settings
     try:
-        return frappe.get_cached_doc("Budget Control Settings")
+        return get_budget_control_settings()
     except Exception:
-        try:
-            return frappe.get_single("Budget Control Settings")
-        except Exception:
-            return None
+        return None
 
 
 def get_settings():

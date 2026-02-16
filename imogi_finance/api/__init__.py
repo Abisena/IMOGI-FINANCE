@@ -22,6 +22,5 @@ def get_deferrable_accounts():
 
     return {
         "enabled": getattr(settings, "enable_deferred_expense", 1),
-        "default_prepaid_account": getattr(settings, "default_prepaid_account", None),
         "accounts": accounts,
     }

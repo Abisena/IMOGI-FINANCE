@@ -10,40 +10,7 @@ class ExpenseDeferredSettings(Document):
     
     def validate(self):
         """Validate settings before saving"""
-        self.validate_default_prepaid_account()
         self.validate_deferrable_accounts()
-    
-    def validate_default_prepaid_account(self):
-        """Validate that default prepaid account is an asset account"""
-        if not self.default_prepaid_account:
-            return
-            
-        account = frappe.db.get_value(
-            "Account", 
-            self.default_prepaid_account, 
-            ["root_type", "is_group"], 
-            as_dict=1
-        )
-        if not account:
-            frappe.throw(
-                _("Default Prepaid Account {0} does not exist").format(
-                    frappe.bold(self.default_prepaid_account)
-                )
-            )
-        
-        if account.is_group:
-            frappe.throw(
-                _("Default Prepaid Account {0} cannot be a group account").format(
-                    frappe.bold(self.default_prepaid_account)
-                )
-            )
-        if account.root_type != "Asset":
-            frappe.throw(
-                _("Default Prepaid Account {0} must be an Asset account, but is {1}").format(
-                    frappe.bold(self.default_prepaid_account),
-                    frappe.bold(account.root_type)
-                )
-            )
     
     def validate_deferrable_accounts(self):
         """Validate deferrable accounts configuration"""

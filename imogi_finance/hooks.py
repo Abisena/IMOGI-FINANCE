@@ -161,6 +161,9 @@ fixtures = [
     {"doctype": "CoreTax Column Mapping"},
     {"doctype": "Tax Profile PPh Account"},
     {"doctype": "Tax Profile PB1 Account"},
+    # Settings DocTypes with seeded fixtures (for fresh deploy)
+    {"doctype": "Finance Control Settings"},
+    {"doctype": "Transfer Application Settings"},
     # Workspace fixture files
     "fixtures/workspace.json",
     "fixtures/workspace_finance.json",
@@ -170,6 +173,8 @@ fixtures = [
     "fixtures/workspace_treasury.json",
     "fixtures/workspace_accounting.json",
     "fixtures/item.json",
+    "fixtures/finance_control_settings.json",
+    "fixtures/transfer_application_settings.json",
 ]
 
 # Uninstallation

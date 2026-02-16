@@ -12,6 +12,12 @@ from frappe.query_builder.functions import Sum, Coalesce
 from frappe.utils import flt, getdate
 from typing import Optional, Dict, List, Tuple, Any
 
+from imogi_finance.settings.utils import (
+	get_tax_profile as _get_tax_profile_helper,
+	get_ppn_accounts,
+	get_tax_invoice_ocr_settings as _get_tax_invoice_ocr_settings_helper,
+)
+
 
 def get_tax_profile(company: str) -> Optional[frappe._dict]:
 	"""
@@ -25,24 +31,12 @@ def get_tax_profile(company: str) -> Optional[frappe._dict]:
 	"""
 	if not company:
 		return None
-		
-	cache_key = f"tax_profile:{company}"
-	cached = frappe.cache().get_value(cache_key)
 	
-	if cached:
-		return frappe._dict(cached)
-	
-	profile_name = frappe.db.get_value("Tax Profile", {"company": company}, "name")
-	if not profile_name:
+	try:
+		profile = _get_tax_profile_helper(company)
+		return frappe._dict(profile.as_dict())
+	except frappe.ValidationError:
 		return None
-	
-	profile = frappe.get_doc("Tax Profile", profile_name)
-	profile_dict = profile.as_dict()
-	
-	# Cache for 5 minutes
-	frappe.cache().set_value(cache_key, profile_dict, expires_in_sec=300)
-	
-	return frappe._dict(profile_dict)
 
 
 def get_tax_invoice_ocr_settings() -> frappe._dict:
@@ -52,24 +46,16 @@ def get_tax_invoice_ocr_settings() -> frappe._dict:
 	Returns:
 		Settings as dict with default values
 	"""
-	cache_key = "tax_invoice_ocr_settings"
-	cached = frappe.cache().get_value(cache_key)
-	
-	if cached:
-		return frappe._dict(cached)
-	
-	settings = frappe.get_single("Tax Invoice OCR Settings")
-	settings_dict = settings.as_dict()
-	
-	# Cache for 5 minutes
-	frappe.cache().set_value(cache_key, settings_dict, expires_in_sec=300)
-	
-	return frappe._dict(settings_dict)
+	try:
+		settings = _get_tax_invoice_ocr_settings_helper()
+		return frappe._dict(settings.as_dict())
+	except frappe.ValidationError:
+		return frappe._dict({})
 
 
 def validate_vat_input_configuration(company: Optional[str] = None) -> Dict[str, Any]:
 	"""
-	Validate VAT Input Register configuration.
+	Validate VAT Input Register configuration by checking Tax Profile.
 	
 	Args:
 		company: Company name to validate
@@ -77,14 +63,20 @@ def validate_vat_input_configuration(company: Optional[str] = None) -> Dict[str,
 	Returns:
 		Dict with validation result and messages
 	"""
-	settings = get_tax_invoice_ocr_settings()
-	ppn_input_account = settings.get("ppn_input_account")
-	
-	if not ppn_input_account:
+	if not company:
 		return {
 			"valid": False,
-			"message": _("PPN Input Account is not configured in Tax Invoice OCR Settings."),
-			"action": _("Please configure it at: <a href='/app/tax-invoice-ocr-settings'>Tax Invoice OCR Settings</a>"),
+			"message": _("Company not specified."),
+			"indicator": "red"
+		}
+	
+	try:
+		ppn_input_account, _ = get_ppn_accounts(company)
+	except frappe.ValidationError as e:
+		return {
+			"valid": False,
+			"message": str(e),
+			"action": _("Please configure Tax Profile for company '{0}'").format(company),
 			"indicator": "red"
 		}
 	
@@ -93,7 +85,7 @@ def validate_vat_input_configuration(company: Optional[str] = None) -> Dict[str,
 		return {
 			"valid": False,
 			"message": _("PPN Input Account '{0}' does not exist.").format(ppn_input_account),
-			"action": _("Please update the configuration at: <a href='/app/tax-invoice-ocr-settings'>Tax Invoice OCR Settings</a>"),
+			"action": _("Please update the Tax Profile."),
 			"indicator": "red"
 		}
 	
@@ -117,7 +109,7 @@ def validate_vat_input_configuration(company: Optional[str] = None) -> Dict[str,
 
 def validate_vat_output_configuration(company: Optional[str] = None) -> Dict[str, Any]:
 	"""
-	Validate VAT Output Register configuration.
+	Validate VAT Output Register configuration by checking Tax Profile.
 	
 	Args:
 		company: Company name to validate
@@ -125,14 +117,20 @@ def validate_vat_output_configuration(company: Optional[str] = None) -> Dict[str
 	Returns:
 		Dict with validation result and messages
 	"""
-	settings = get_tax_invoice_ocr_settings()
-	ppn_output_account = settings.get("ppn_output_account")
-	
-	if not ppn_output_account:
+	if not company:
 		return {
 			"valid": False,
-			"message": _("PPN Output Account is not configured in Tax Invoice OCR Settings."),
-			"action": _("Please configure it at: <a href='/app/tax-invoice-ocr-settings'>Tax Invoice OCR Settings</a>"),
+			"message": _("Company not specified."),
+			"indicator": "red"
+		}
+	
+	try:
+		_, ppn_output_account = get_ppn_accounts(company)
+	except frappe.ValidationError as e:
+		return {
+			"valid": False,
+			"message": str(e),
+			"action": _("Please configure Tax Profile for company '{0}'").format(company),
 			"indicator": "red"
 		}
 	
@@ -141,7 +139,7 @@ def validate_vat_output_configuration(company: Optional[str] = None) -> Dict[str
 		return {
 			"valid": False,
 			"message": _("PPN Output Account '{0}' does not exist.").format(ppn_output_account),
-			"action": _("Please update the configuration at: <a href='/app/tax-invoice-ocr-settings'>Tax Invoice OCR Settings</a>"),
+			"action": _("Please update the Tax Profile."),
 			"indicator": "red"
 		}
 	

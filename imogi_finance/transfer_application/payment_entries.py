@@ -9,6 +9,8 @@ from erpnext.accounts.doctype.payment_entry.payment_entry import get_party_accou
 from erpnext.accounts.utils import get_company_default
 
 from imogi_finance.transfer_application.settings import get_transfer_application_settings
+from imogi_finance.settings.utils import get_gl_account
+from imogi_finance.settings.gl_purposes import DEFAULT_PAID_FROM
 
 
 def create_payment_entry_for_transfer_application(
@@ -45,7 +47,7 @@ def create_payment_entry_for_transfer_application(
 
     if not paid_from:
         frappe.throw(
-            _("Please set Paid From Account in Transfer Application or configure a default bank/cash account for {0} in Transfer Application Settings.").format(
+            _("Paid From Account is not configured for {0}. Please set it in Finance Control Settings → GL Account Mappings (purpose: default_paid_from) or provide it in Transfer Application.").format(
                 transfer_application.company
             )
         )
@@ -65,21 +67,27 @@ def create_payment_entry_for_transfer_application(
         total_amount = sum(frappe.utils.flt(item.amount) for item in items)
         first_item = items[0]
 
-        # Determine paid_to account
-        paid_to = None
-        if first_item.party_type and first_item.party:
-            try:
-                paid_to = get_party_account(first_item.party_type, first_item.party, transfer_application.company)
-            except Exception:
-                pass
+        # Determine paid_to account - MUST come from party (beneficiary)
+        if not first_item.party_type or not first_item.party:
+            frappe.throw(
+                _("Beneficiary {0}: party_type and party are required to determine destination account.").format(
+                    first_item.beneficiary_name
+                )
+            )
 
-        if not paid_to:
-            paid_to = _resolve_paid_to_account_from_settings(settings, transfer_application.company)
+        try:
+            paid_to = get_party_account(first_item.party_type, first_item.party, transfer_application.company)
+        except Exception as e:
+            frappe.throw(
+                _("Could not get account for {0} {1}: {2}").format(
+                    first_item.party_type, first_item.party, str(e)
+                )
+            )
 
         if not paid_to:
             frappe.throw(
-                _("Could not determine the destination account for beneficiary {0}. Please set party or configure default payable account.").format(
-                    first_item.beneficiary_name
+                _("No account found for {0} {1} in company {2}.").format(
+                    first_item.party_type, first_item.party, transfer_application.company
                 )
             )
 
@@ -183,29 +191,18 @@ def _group_items_by_beneficiary(items):
     return dict(grouped)
 
 
-def _resolve_paid_to_account_from_settings(settings, company):
-    """Helper to get paid_to from settings or company defaults"""
-    default_setting = getattr(settings, "default_paid_to_account", None)
-    if default_setting:
-        return default_setting
-
-    company_default = get_company_default(company, "default_payable_account")
-    if company_default:
-        return company_default
-
-    expense_default = get_company_default(company, "default_expense_account")
-    if expense_default:
-        return expense_default
-
-    return None
-
 
 def _resolve_paid_from_account(company: str, *, settings=None):
-    settings = settings or get_transfer_application_settings()
-    account = getattr(settings, "default_paid_from_account", None)
-    if account:
-        return account
+    """Resolve paid_from account via GL Mappings or company/bank defaults"""
+    # First try GL Mappings (new approach)
+    try:
+        paid_from = get_gl_account(DEFAULT_PAID_FROM, company=company, required=False)
+        if paid_from:
+            return paid_from
+    except Exception:
+        pass  # Fall back to company defaults
 
+    # Fallback: bank/cash accounts
     bank_account = _get_default_bank_cash_account(company, account_type="Bank")
     if bank_account and bank_account.get("account"):
         return bank_account.get("account")
@@ -241,35 +238,3 @@ def _get_default_bank_cash_account(company: str, *, account_type: str):
 
     return {"account": account}
 
-
-def _resolve_paid_to_account(transfer_application: Document, *, settings=None):
-    settings = settings or get_transfer_application_settings()
-
-    # Try to get party info from first item (for backward compatibility)
-    party_type = None
-    party = None
-
-    if transfer_application.items and len(transfer_application.items) > 0:
-        first_item = transfer_application.items[0]
-        party_type = getattr(first_item, "party_type", None)
-        party = getattr(first_item, "party", None)
-
-    if party_type and party:
-        try:
-            return get_party_account(party_type, party, transfer_application.company)
-        except Exception:
-            pass
-
-    default_setting = getattr(settings, "default_paid_to_account", None)
-    if default_setting:
-        return default_setting
-
-    company_default = get_company_default(transfer_application.company, "default_payable_account")
-    if company_default:
-        return company_default
-
-    expense_default = get_company_default(transfer_application.company, "default_expense_account")
-    if expense_default:
-        return expense_default
-
-    return None

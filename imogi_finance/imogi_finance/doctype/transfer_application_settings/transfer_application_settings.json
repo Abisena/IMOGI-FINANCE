@@ -14,8 +14,8 @@
   "field_order": [
     "enable_bank_txn_matching",
     "enable_auto_create_payment_entry_on_strong_match",
-    "default_paid_from_account",
-    "default_paid_to_account",
+    "section_reference_doctypes",
+    "reference_doctypes",
     "matching_amount_tolerance",
     "section_break_b2b_api",
     "enable_b2b_api_integration",
@@ -35,16 +35,16 @@
       "label": "Auto-create Payment Entry on Strong Match"
     },
     {
-      "fieldname": "default_paid_from_account",
-      "fieldtype": "Link",
-      "label": "Default Paid From Account",
-      "options": "Account"
+      "fieldname": "section_reference_doctypes",
+      "fieldtype": "Section Break",
+      "label": "Reference DocTypes"
     },
     {
-      "fieldname": "default_paid_to_account",
-      "fieldtype": "Link",
-      "label": "Default Paid To Account",
-      "options": "Account"
+      "fieldname": "reference_doctypes",
+      "fieldtype": "Table",
+      "label": "Reference DocTypes",
+      "options": "Reference DocType Item",
+      "description": "Configure which DocTypes are available for selection when creating transfer applications. When empty, defaults to standard list."
     },
     {
       "fieldname": "matching_amount_tolerance",

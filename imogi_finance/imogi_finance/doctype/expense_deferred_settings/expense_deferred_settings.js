@@ -3,16 +3,6 @@
 
 frappe.ui.form.on('Expense Deferred Settings', {
   setup: function(frm) {
-    // Set query for Default Prepaid Account - filter to Asset accounts only
-    frm.set_query('default_prepaid_account', function() {
-      return {
-        filters: {
-          'root_type': 'Asset',
-          'is_group': 0
-        }
-      };
-    });
-    
     // Set query for Prepaid Account in child table - filter to Asset accounts
     frm.set_query('prepaid_account', 'deferrable_accounts', function() {
       return {

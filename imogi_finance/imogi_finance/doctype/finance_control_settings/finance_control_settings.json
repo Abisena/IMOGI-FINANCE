@@ -39,7 +39,9 @@
     "allow_target_bank_cash",
     "default_mode_of_payment",
     "require_attachment_for_reasons",
-    "reason_requirements"
+    "reason_requirements",
+    "section_gl_mappings",
+    "gl_account_mappings"
   ],
   "fields": [
     {
@@ -230,6 +232,19 @@
       "fieldtype": "Table",
       "label": "Reason Attachment Rules",
       "options": "Administrative Payment Reason Requirement"
+    },
+    {
+      "fieldname": "section_gl_mappings",
+      "fieldtype": "Section Break",
+      "label": "GL Account Mappings",
+      "description": "Central configuration for all GL account purposes across the entire system. These mappings ensure consistent account usage for various posting behaviors. You must configure all 6 purposes. Supports multi-company setups - leave Company empty for global default, or specify a company for company-specific mapping."
+    },
+    {
+      "fieldname": "gl_account_mappings",
+      "fieldtype": "Table",
+      "label": "GL Account Mappings",
+      "options": "GL Account Mapping Item",
+      "description": "Define GL accounts for various purposes: digital stamp (materai) costs, transfer application paid_from account, deferred expense prepaid accounts, and tax variance accounts. ALL 6 PURPOSES ARE REQUIRED. Each purpose must have at least one account configured (either as global default or company-specific). Validation will prevent saving if any purpose is missing. Note: paid_to must come from party account per beneficiary."
     }
   ],
   "hide_toolbar": 0,

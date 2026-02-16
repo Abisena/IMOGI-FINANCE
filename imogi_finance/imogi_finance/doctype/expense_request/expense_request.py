@@ -16,6 +16,8 @@ from imogi_finance.budget_control.workflow import handle_expense_request_workflo
 from imogi_finance.services.approval_route_service import ApprovalRouteService
 from imogi_finance.services.approval_service import ApprovalService
 from imogi_finance.services.deferred_expense import generate_amortization_schedule
+from imogi_finance.settings.utils import get_gl_account
+from imogi_finance.settings.gl_purposes import DPP_VARIANCE
 from ..expense_deferred_settings.expense_deferred_settings import get_deferrable_account_map
 from imogi_finance.tax_invoice_ocr import sync_tax_invoice_upload, validate_tax_invoice_upload_link
 from imogi_finance.tax_invoice_fields import get_upload_link_field
@@ -463,11 +465,12 @@ class ExpenseRequest(Document):
         # ========== 4. VARIANCE ACCOUNT VALIDATION (BLOCKING) ==========
         # Check if variance account is configured when variance exists
         if dpp_variance != 0:
-            variance_account = settings.get("dpp_variance_account")
-            if not variance_account:
+            try:
+                variance_account = get_gl_account(DPP_VARIANCE, company=self.company, required=True)
+            except frappe.ValidationError:
                 frappe.throw(
                     _("DPP Variance detected ({0}) but Variance Account is not configured. "
-                      "Please configure 'DPP Variance Account' in Tax Invoice OCR Settings "
+                      "Please configure 'DPP Variance' in Finance Control Settings → GL Account Mappings "
                       "before submitting this Expense Request.").format(
                         frappe.format_value(dpp_variance, {"fieldtype": "Currency"})
                     ),
