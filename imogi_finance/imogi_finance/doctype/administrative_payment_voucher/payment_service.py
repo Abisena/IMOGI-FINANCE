@@ -137,7 +137,21 @@ def _build_payment_entry(
     )
 
     payment_entry = frappe.new_doc("Payment Entry")
-    payment_entry.payment_type = account_map.payment_type
+    
+    # Determine if party is required based on target account type
+    requires_party = apv_module.party_required(target_details)
+    
+    # Use "Internal Transfer" when no party is involved (non-receivable/payable accounts)
+    # ERPNext requires party_type for "Receive" and "Pay" payment types
+    if requires_party:
+        payment_entry.payment_type = account_map.payment_type
+        payment_entry.party_type = apv.party_type
+        payment_entry.party = apv.party
+        if hasattr(payment_entry, "party_account"):
+            payment_entry.party_account = target_details.name
+    else:
+        payment_entry.payment_type = "Internal Transfer"
+    
     payment_entry.company = apv.company
     payment_entry.posting_date = apv.posting_date
     payment_entry.paid_from = account_map.paid_from
@@ -148,12 +162,6 @@ def _build_payment_entry(
     payment_entry.reference_no = apv.name
     payment_entry.reference_date = apv.posting_date
     payment_entry.remarks = apv._build_remarks()
-
-    if apv_module.party_required(target_details):
-        payment_entry.party_type = apv.party_type
-        payment_entry.party = apv.party
-        if hasattr(payment_entry, "party_account"):
-            payment_entry.party_account = target_details.name
 
     apv_module.apply_optional_dimension(payment_entry, "cost_center", apv.cost_center)
 
