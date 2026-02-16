@@ -223,8 +223,8 @@ async function getPpnRate(frm) {
   }
   
   try {
-    const template = await frappe.db.get_doc('Indonesia Tax Templates', frm.doc.ppn_template);
-    const rate = template.rate || 0;
+    const template = await frappe.db.get_doc('Purchase Taxes and Charges Template', frm.doc.ppn_template);
+    const rate = (template.taxes && template.taxes[0] && template.taxes[0].rate) || 0;
     ppnRateCache[cacheKey] = rate;
     frm.doc.__ppn_rate = rate;
     return rate;
