@@ -109,6 +109,29 @@ Manual entry creation would corrupt budget tracking."""),
             if ref_name in cancelling_pis:
                 return
         
+        # Check if this is triggered by "Cancel All Linked Documents" from parent
+        # frappe.form_dict contains the parent doctype/name when called from cancel_all_linked_docs
+        form_dict = getattr(frappe, "form_dict", frappe._dict())
+        cancel_parent_doctype = form_dict.get("doctype")
+        cancel_parent_name = form_dict.get("name")
+        
+        if cancel_parent_doctype and cancel_parent_name:
+            # Allow if parent matches BCE's ref_doctype/ref_name
+            if ref_doctype == cancel_parent_doctype and ref_name == cancel_parent_name:
+                return
+            
+            # Also allow for Expense Request → BCE (even if BCE ref is different)
+            # because "Cancel All Linked Documents" should cascade properly
+            if cancel_parent_doctype == "Expense Request":
+                # Check if this BCE belongs to the ER being cancelled
+                if ref_doctype == "Expense Request" and ref_name == cancel_parent_name:
+                    return
+            
+            if cancel_parent_doctype == "Purchase Invoice":
+                # Check if this BCE belongs to the PI being cancelled
+                if ref_doctype == "Purchase Invoice" and ref_name == cancel_parent_name:
+                    return
+        
         # Block manual cancellation
         frappe.throw(
             _("""Budget Control Entries cannot be cancelled directly.
