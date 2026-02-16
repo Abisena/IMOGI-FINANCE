@@ -119,51 +119,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Tax Invoice Status",
-        "doctype": "Tax Invoice Upload",
-        "chart_type": "Donut",
-        "based_on": "status"
-      },
-      {
-        "chart_name": "Tax by Type",
-        "doctype": "Tax Invoice Type",
-        "chart_type": "Pie",
-        "based_on": "invoice_type"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Tax Invoice OCR Upload",
-        "filters": [
-          ["status", "=", "Pending"]
-        ]
-      },
-      {
-        "doctype": "Tax Payment Batch",
-        "filters": [
-          ["status", "=", "Draft"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Tax Invoice OCR Upload",
-        "label": "Pending OCR",
-        "filters": [
-          ["status", "=", "Pending"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Tax Payment Batch",
-        "label": "Draft Tax Batches",
-        "filters": [
-          ["status", "=", "Draft"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]

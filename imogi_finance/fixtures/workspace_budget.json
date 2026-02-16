@@ -84,51 +84,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Budget vs Actual",
-        "doctype": "Budget",
-        "chart_type": "Bar",
-        "based_on": "fiscal_year"
-      },
-      {
-        "chart_name": "Budget by Cost Center",
-        "doctype": "Budget",
-        "chart_type": "Donut",
-        "based_on": "cost_center"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Budget",
-        "filters": [
-          ["docstatus", "=", "1"]
-        ]
-      },
-      {
-        "doctype": "Budget Control Entry",
-        "filters": [
-          ["entry_type", "=", "ALLOCATION"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Budget",
-        "label": "Active Budgets",
-        "filters": [
-          ["docstatus", "=", "1"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Additional Budget Request",
-        "label": "Pending Budget Requests",
-        "filters": [
-          ["status", "=", "Draft"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]

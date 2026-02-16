@@ -69,51 +69,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Asset by Category",
-        "doctype": "Asset",
-        "chart_type": "Donut",
-        "based_on": "asset_category"
-      },
-      {
-        "chart_name": "Asset Status",
-        "doctype": "Asset",
-        "chart_type": "Pie",
-        "based_on": "status"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Asset",
-        "filters": [
-          ["status", "=", "In Use"]
-        ]
-      },
-      {
-        "doctype": "Asset Depreciation Schedule",
-        "filters": [
-          ["docstatus", "=", "1"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Asset",
-        "label": "Total Assets",
-        "filters": [
-          ["status", "=", "In Use"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Asset Depreciation Schedule",
-        "label": "Depreciation Schedules",
-        "filters": [
-          ["docstatus", "=", "1"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]

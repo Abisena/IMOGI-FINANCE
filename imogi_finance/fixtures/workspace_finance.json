@@ -129,51 +129,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Expense Request Status",
-        "doctype": "Expense Request",
-        "chart_type": "Donut",
-        "based_on": "status"
-      },
-      {
-        "chart_name": "Outstanding Approvals",
-        "doctype": "Expense Request",
-        "chart_type": "Bar",
-        "based_on": "approval_level"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Expense Request",
-        "filters": [
-          ["workflow_state", "=", "Pending Review"]
-        ]
-      },
-      {
-        "doctype": "Purchase Invoice",
-        "filters": [
-          ["status", "=", "Draft"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Expense Request",
-        "label": "Pending ER",
-        "filters": [
-          ["workflow_state", "=", "Pending Review"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Purchase Invoice",
-        "label": "Draft PI",
-        "filters": [
-          ["status", "=", "Draft"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]

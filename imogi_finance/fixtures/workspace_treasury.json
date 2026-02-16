@@ -144,51 +144,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Transfer Application Status",
-        "doctype": "Transfer Application",
-        "chart_type": "Donut",
-        "based_on": "status"
-      },
-      {
-        "chart_name": "Payment Entry by Mode",
-        "doctype": "Payment Entry",
-        "chart_type": "Bar",
-        "based_on": "mode_of_payment"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Transfer Application",
-        "filters": [
-          ["status", "=", "Draft"]
-        ]
-      },
-      {
-        "doctype": "Payment Entry",
-        "filters": [
-          ["status", "=", "Draft"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Transfer Application",
-        "label": "Pending Transfers",
-        "filters": [
-          ["status", "=", "Draft"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Payment Entry",
-        "label": "Draft Payments",
-        "filters": [
-          ["status", "=", "Draft"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]

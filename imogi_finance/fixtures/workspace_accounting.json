@@ -134,51 +134,8 @@
     "cards": [],
     "custom_blocks": [],
     "links": [],
-    "charts": [
-      {
-        "chart_name": "Journal Entry by Type",
-        "doctype": "Journal Entry",
-        "chart_type": "Pie",
-        "based_on": "voucher_type"
-      },
-      {
-        "chart_name": "GL Account Balance",
-        "doctype": "GL Entry",
-        "chart_type": "Bar",
-        "based_on": "account"
-      }
-    ],
-    "quick_lists": [
-      {
-        "doctype": "Journal Entry",
-        "filters": [
-          ["docstatus", "=", "0"]
-        ]
-      },
-      {
-        "doctype": "Account",
-        "filters": [
-          ["is_group", "=", "0"]
-        ]
-      }
-    ],
-    "number_cards": [
-      {
-        "doctype": "Journal Entry",
-        "label": "Draft Journals",
-        "filters": [
-          ["docstatus", "=", "0"]
-        ],
-        "show_count": true
-      },
-      {
-        "doctype": "Deferred Expense Schedule",
-        "label": "Active Deferrals",
-        "filters": [
-          ["docstatus", "=", "1"]
-        ],
-        "show_count": true
-      }
-    ]
+    "charts": [],
+    "quick_lists": [],
+    "number_cards": []
   }
 ]
