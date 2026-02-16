@@ -80,7 +80,78 @@ class TaxInvoiceUpload(Document):
 
     def on_update(self):
         self._sync_on_change()
+    
+    def on_trash(self):
+        """Prevent accidental deletion of synced records.
+        
+        Does NOT cascade delete to Sales Invoice (safe delete).
+        Requires confirmation for synced records.
+        """
+        # Require confirmation for synced records
+        if self.status == "Synced":
+            # Check if user has high privilege role
+            if "System Manager" not in frappe.get_roles():
+                frappe.throw(
+                    _("Cannot delete synced Tax Invoice Upload. Only System Manager can delete synced records.")
+                )
+            
+            # Log deletion for audit trail
+            frappe.log_error(
+                title=f"Tax Invoice Upload Deleted: {self.name}",
+                message=f"User: {frappe.session.user}\nSI: {self.linked_sales_invoice}\nFP: {self.tax_invoice_no}"
+            )
+        
+        # DO NOT cascade delete to Sales Invoice
+        # Sales Invoice fields remain unchanged for audit trail
 
     @frappe.whitelist()
     def sync_now(self):
         return sync_tax_invoice_with_sales(self)
+    
+    @frappe.whitelist()
+    def unlink_from_sales_invoice(self):
+        """Clear Sales Invoice fields that were synced from this upload.
+        
+        This is a separate action from deletion - use when you need to
+        "undo" the sync but keep the upload record.
+        """
+        self.check_permission("write")
+        
+        if not self.linked_sales_invoice:
+            frappe.throw(_("No Sales Invoice linked"))
+        
+        # Only clear if the SI fields match this upload's data
+        si = frappe.get_doc("Sales Invoice", self.linked_sales_invoice)
+        
+        updates = {}
+        if si.out_fp_tax_invoice_pdf == self.invoice_pdf:
+            updates["out_fp_tax_invoice_pdf"] = None
+        
+        if si.out_fp_no == self.tax_invoice_no:
+            updates.update({
+                "out_fp_no": None,
+                "out_fp_no_seri": None,
+                "out_fp_no_faktur": None,
+                "out_fp_date": None,
+                "out_fp_customer_npwp": None,
+                "out_fp_dpp": None,
+                "out_fp_ppn": None
+            })
+        
+        if updates:
+            frappe.db.set_value("Sales Invoice", self.linked_sales_invoice, updates, update_modified=False)
+            
+            # Add comment to SI
+            si.add_comment(
+                "Info",
+                f"Tax Invoice Upload {self.name} unlinked by {frappe.session.user}"
+            )
+            
+            # Update status
+            self.status = "Draft"
+            self.save()
+            
+            frappe.msgprint(_("Sales Invoice fields cleared"))
+        else:
+            frappe.msgprint(_("No matching fields found to clear"))
+

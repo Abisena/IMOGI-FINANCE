@@ -1,7 +1,7 @@
 {
   "actions": [],
   "allow_rename": 0,
-  "autoname": "field:tax_invoice_no",
+  "autoname": "format:TAXUP-{tax_invoice_no}-{linked_sales_invoice}",
   "creation": "2024-01-01 00:00:00.000000",
   "default_view": "Form",
   "doctype": "DocType",
@@ -10,9 +10,11 @@
   "field_order": [
     "section_basic",
     "tax_invoice_no",
+    "tax_invoice_no_raw",
     "tax_invoice_date",
     "customer_npwp",
     "linked_sales_invoice",
+    "vat_out_batch",
     "section_amounts",
     "dpp",
     "ppn",
@@ -33,9 +35,14 @@
       "fieldname": "tax_invoice_no",
       "fieldtype": "Data",
       "in_list_view": 1,
-      "label": "Tax Invoice Number",
-      "reqd": 1,
-      "unique": 1
+      "label": "Tax Invoice Number (Normalized 16 digits)",
+      "reqd": 1
+    },
+    {
+      "fieldname": "tax_invoice_no_raw",
+      "fieldtype": "Data",
+      "label": "Tax Invoice Number (Original Format)",
+      "description": "Original format from CoreTax (e.g., 010.001-26.12345678)"
     },
     {
       "fieldname": "tax_invoice_date",
@@ -58,6 +65,13 @@
       "label": "Sales Invoice",
       "options": "Sales Invoice",
       "reqd": 1
+    },
+    {
+      "fieldname": "vat_out_batch",
+      "fieldtype": "Link",
+      "label": "VAT OUT Batch",
+      "options": "VAT OUT Batch",
+      "description": "Batch that created this upload record"
     },
     {
       "fieldname": "section_amounts",

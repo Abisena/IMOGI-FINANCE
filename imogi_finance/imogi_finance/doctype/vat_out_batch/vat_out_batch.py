@@ -257,7 +257,7 @@ class VATOUTBatch(Document):
 	def _validate_not_exported(self):
 		"""Validate that batch has not been exported (groups not locked)."""
 		if self.exported_on:
-			frappe.throw(_"Groups locked after export. Cannot modify grouping."))
+			frappe.throw(_("Groups locked after export. Cannot modify grouping."))
 	
 	@frappe.whitelist()
 	def add_invoice_to_group(self, invoice_name, group_id):
@@ -436,3 +436,77 @@ class VATOUTBatch(Document):
 		)
 		
 		return self.get_groups_summary()
+	
+	@frappe.whitelist()
+	def export_csv_template(self):
+		"""Generate CSV template for bulk Tax Invoice Upload creation.
+		
+		Returns:
+			dict: CSV content, filename, and metadata
+		"""
+		import csv
+		import io
+		import re
+		
+		self.check_permission("read")
+		
+		# Get batch invoices
+		invoices = self.get_batch_invoices()
+		if not invoices:
+			frappe.throw(_("No invoices found in batch"))
+		
+		# Prepare CSV data
+		csv_buffer = io.StringIO()
+		csv_writer = csv.writer(csv_buffer)
+		
+		# Write headers
+		csv_writer.writerow([
+			'fp_number',
+			'sales_invoice',
+			'dpp',
+			'ppn',
+			'fp_date',
+			'customer_npwp'
+		])
+		
+		# Normalize FP number (extract 16 digits)
+		def normalize_fp(fp_no_faktur):
+			if not fp_no_faktur:
+				return ''
+			# Extract only digits
+			digits = re.sub(r'\D', '', fp_no_faktur)
+			# Return last 16 digits if longer, otherwise return as is
+			return digits[-16:] if len(digits) >= 16 else digits
+		
+		missing_fp_count = 0
+		
+		# Write data rows
+		for inv in invoices:
+			fp_number = normalize_fp(inv.out_fp_no_faktur)
+			if not fp_number or len(fp_number) != 16:
+				missing_fp_count += 1
+			
+			# Get amounts - gracefully handle missing fields
+			dpp = inv.get('out_fp_dpp') or inv.get('base_net_total') or 0
+			ppn = inv.get('out_fp_ppn') or inv.get('base_tax_total') or 0
+			fp_date = inv.get('out_fp_date') or inv.posting_date or ''
+			customer_npwp = inv.get('out_fp_customer_npwp') or inv.get('tax_id') or ''
+			
+			csv_writer.writerow([
+				fp_number,
+				inv.name,
+				dpp,
+				ppn,
+				fp_date,
+				customer_npwp
+			])
+		
+		csv_content = csv_buffer.getvalue()
+		csv_buffer.close()
+		
+		return {
+			'csv_content': csv_content,
+			'filename': f'VAT_OUT_{self.name}_template.csv',
+			'total_invoices': len(invoices),
+			'missing_fp_count': missing_fp_count
+		}

@@ -45,9 +45,9 @@ frappe.ui.form.on('VAT OUT Batch', {
 					show_import_dialog(frm);
 				}, __('Import'));
 				
-				frm.add_custom_button(__('Upload PDFs'), function() {
-					show_pdf_upload_dialog(frm);
-				}, __('Import'));
+				frm.add_custom_button(__('Export CSV Template'), function() {
+					export_csv_template(frm);
+				}, __('Export'));
 			}
 		}
 		
@@ -209,58 +209,6 @@ function show_import_dialog(frm) {
 					if (r.message && r.message.status === 'success') {
 						frappe.show_alert({
 							message: __('FP numbers imported: {0}', [r.message.imported_count]),
-							indicator: 'green'
-						}, 5);
-						d.hide();
-						frm.reload_doc();
-					}
-				}
-			});
-		}
-	});
-	
-	d.show();
-}
-
-function show_pdf_upload_dialog(frm) {
-	let d = new frappe.ui.Dialog({
-		title: __('Bulk Upload FP PDFs'),
-		fields: [
-			{
-				fieldname: 'pdf_zip',
-				fieldtype: 'Attach',
-				label: __('ZIP File with FP PDFs'),
-				reqd: 1,
-				description: __('Upload ZIP file containing FP PDFs. Filename format: [FP Number].pdf')
-			},
-			{
-				fieldname: 'instructions',
-				fieldtype: 'HTML',
-				options: `
-					<div class="alert alert-info" style="margin-top: 10px;">
-						<strong>Instructions:</strong><br>
-						1. Download FP PDFs from CoreTax DJP<br>
-						2. Create ZIP file with all PDFs<br>
-						3. Filename must be: [16-digit FP Number].pdf<br>
-						Example: 0109876543210001.pdf
-					</div>
-				`
-			}
-		],
-		primary_action_label: __('Upload'),
-		primary_action: function(values) {
-			frappe.call({
-				method: 'imogi_finance.vat_out_batch_api.bulk_upload_pdfs',
-				args: {
-					batch_name: frm.doc.name,
-					zip_file_url: values.pdf_zip
-				},
-				freeze: true,
-				freeze_message: __('Processing PDF uploads...'),
-				callback: function(r) {
-					if (r.message && r.message.status === 'success') {
-						frappe.show_alert({
-							message: __('PDFs uploaded: {0}', [r.message.uploaded_count]),
 							indicator: 'green'
 						}, 5);
 						d.hide();
@@ -735,4 +683,46 @@ function show_manage_groups_dialog(frm) {
 	load_current_groups();
 	
 	d.show();
+}
+
+function export_csv_template(frm) {
+	frappe.call({
+		method: 'imogi_finance.imogi_finance.doctype.vat_out_batch.vat_out_batch.export_csv_template',
+		args: {
+			batch_name: frm.doc.name
+		},
+		freeze: true,
+		freeze_message: __('Generating CSV template...'),
+		callback: function(r) {
+			if (r.message) {
+				let result = r.message;
+				
+				// Show warnings if any invoices missing FP numbers
+				if (result.missing_fp_count > 0) {
+					frappe.msgprint({
+						title: __('Warning'),
+						indicator: 'orange',
+						message: __('{0} invoice(s) are missing FP numbers. Run "Import FP Numbers" first to prefill all FP numbers in the template.', [result.missing_fp_count])
+					});
+				}
+				
+				// Create and download CSV
+				let csv_content = result.csv_content;
+				let blob = new Blob([csv_content], { type: 'text/csv;charset=utf-8;' });
+				let link = document.createElement('a');
+				let url = URL.createObjectURL(blob);
+				link.setAttribute('href', url);
+				link.setAttribute('download', result.filename);
+				link.style.visibility = 'hidden';
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				
+				frappe.show_alert({
+					message: __('CSV template downloaded: {0}', [result.filename]),
+					indicator: 'green'
+				}, 5);
+			}
+		}
+	});
 }
