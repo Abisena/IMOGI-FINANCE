@@ -161,6 +161,14 @@ fixtures = [
     {"doctype": "CoreTax Column Mapping"},
     {"doctype": "Tax Profile PPh Account"},
     {"doctype": "Tax Profile PB1 Account"},
+    # Workspace fixture files
+    "fixtures/workspace.json",
+    "fixtures/workspace_finance.json",
+    "fixtures/workspace_asset.json",
+    "fixtures/workspace_budget.json",
+    "fixtures/workspace_tax.json",
+    "fixtures/workspace_treasury.json",
+    "fixtures/workspace_accounting.json",
     "fixtures/item.json",
 ]
 
