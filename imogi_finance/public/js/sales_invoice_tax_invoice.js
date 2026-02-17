@@ -59,6 +59,10 @@ async function syncSiUpload(frm) {
   if (!frm.doc.out_fp_tax_invoice_upload) {
     return;
   }
+  // Skip sync if document is already saved and clean to prevent dirty state after save
+  if (!frm.doc.__islocal && !frm.is_dirty()) {
+    return;
+  }
   const upload = await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.out_fp_tax_invoice_upload);
   const updates = {};
   COPY_KEYS.forEach((key) => {
