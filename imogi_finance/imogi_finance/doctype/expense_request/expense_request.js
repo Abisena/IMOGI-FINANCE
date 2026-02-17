@@ -142,8 +142,16 @@ async function setPphRate(frm) {
 function computeTotals(frm) {
   const flt = (frappe.utils && frappe.utils.flt) || window.flt || ((value) => parseFloat(value) || 0);
   const totalExpense = flt(frm.doc.amount || 0);
+  
+  // Calculate variance total from variance items
+  const varianceTotal = (frm.doc.items || []).reduce(
+    (sum, row) => sum + (row.is_variance_item ? flt(row.amount || 0) : 0),
+    0,
+  );
+  
+  // PPh base excludes variance items
   const itemPphTotal = (frm.doc.items || []).reduce(
-    (sum, row) => sum + (row.is_pph_applicable ? flt(row.pph_base_amount || 0) : 0),
+    (sum, row) => sum + (row.is_pph_applicable && !row.is_variance_item ? flt(row.pph_base_amount || 0) : 0),
     0,
   );
   
@@ -165,7 +173,8 @@ function computeTotals(frm) {
     || (frm.doc.is_pph_applicable ? flt(frm.doc.pph_base_amount || 0) : 0);
   const pphRate = flt(frm._pph_rate || 0);
   const totalPph = Math.abs(pphRate ? (pphBaseTotal * pphRate) / 100 : pphBaseTotal);
-  const totalAmount = totalExpense + totalPpn + totalPpnbm - totalPph;
+  // Include variance in total amount (can be positive or negative)
+  const totalAmount = totalExpense + totalPpn + totalPpnbm - totalPph + varianceTotal;
 
   return {
     totalExpense,
@@ -173,6 +182,7 @@ function computeTotals(frm) {
     totalPpnbm,
     pphBaseTotal,
     totalPph,
+    varianceTotal,
     totalAmount,
   };
 }
@@ -193,9 +203,18 @@ function renderTotalsHtml(frm, totals) {
         ? `<span style="color:#c0392b;font-weight:500">${format(totals.totalPph)}</span>`
         : format(0),
     ],
-
-    ['Total', format(totals.totalAmount)],
   ];
+
+  // Add variance row only if variance exists
+  if (totals.varianceTotal && Math.abs(totals.varianceTotal) > 0.001) {
+    const varianceColor = totals.varianceTotal > 0 ? '#27ae60' : '#e67e22';  // Green for positive, orange for negative
+    rows.push([
+      'PPN Variance',
+      `<span style="color:${varianceColor};font-weight:500">${format(totals.varianceTotal)}</span>`,
+    ]);
+  }
+
+  rows.push(['Total', format(totals.totalAmount)]);
 
   const cells = rows
     .map(
@@ -494,6 +513,35 @@ function updateDeferredExpenseIndicators(frm) {
   });
 }
 
+function lockVarianceItemRows(frm) {
+  // Make variance item rows completely read-only
+  // Variance items are system-generated and should not be editable by users
+  const items = frm.doc.items || [];
+  items.forEach((item, idx) => {
+    if (item.is_variance_item) {
+      const grid = frm.fields_dict.items.grid;
+      const row = grid.grid_rows[idx];
+      if (row) {
+        // Make all fields in this row read-only
+        row.docfields.forEach((df) => {
+          const field = row.fields_dict[df.fieldname];
+          if (field && field.$input) {
+            field.$input.prop('disabled', true);
+          }
+        });
+        // Hide delete button for variance rows
+        if (row.row && row.row.find('.grid-delete-row')) {
+          row.row.find('.grid-delete-row').hide();
+        }
+        // Add visual indicator for variance row
+        if (row.row) {
+          row.row.css('background-color', '#fff8e1');  // Light yellow background
+        }
+      }
+    }
+  });
+}
+
 frappe.ui.form.on('Expense Request', {
   async refresh(frm) {
     hideErOcrStatus(frm);
@@ -508,6 +556,7 @@ frappe.ui.form.on('Expense Request', {
     await setDeferredExpenseQueries(frm);
     addDeferredExpenseItemActions(frm);
     updateDeferredExpenseIndicators(frm);
+    lockVarianceItemRows(frm);
     maybeRenderCancelDeleteActions(frm);
     maybeRenderPrimarySubmitButton(frm);
     updateTotalsSummary(frm);

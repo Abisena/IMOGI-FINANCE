@@ -15,6 +15,7 @@
     "is_pph_applicable",
     "pph_base_amount",
     "is_deferred_expense",
+    "is_variance_item",
     "deferred_section",
     "prepaid_account",
     "deferred_start_date",
@@ -86,6 +87,17 @@
       "label": "Deferred Expense",
       "columns": 1,
       "description": "Enable for prepaid expenses that require amortization"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_variance_item",
+      "fieldtype": "Check",
+      "in_list_view": 0,
+      "label": "Variance Item",
+      "read_only": 1,
+      "hidden": 0,
+      "allow_on_submit": 0,
+      "description": "System-generated variance adjustment item (auto-created from OCR variance)"
     },
     {
       "collapsible": 1,

@@ -311,6 +311,13 @@ class ExpenseRequest(Document):
         items = self.get("items") or []
         total_expense = flt(getattr(self, "amount", 0) or 0)
 
+        # Calculate variance total from variance items (excluded from expense total by validate_amounts)
+        variance_total = sum(
+            flt(getattr(item, "amount", 0) or 0)
+            for item in items
+            if getattr(item, "is_variance_item", 0)
+        )
+
         # Calculate PPN from items total using template rate (NOT from OCR)
         total_ppn = 0
         if getattr(self, "is_ppn_applicable", 0):
@@ -321,7 +328,7 @@ class ExpenseRequest(Document):
         item_pph_total = sum(
             flt(getattr(item, "pph_base_amount", 0) or 0)
             for item in items
-            if getattr(item, "is_pph_applicable", 0)
+            if getattr(item, "is_pph_applicable", 0) and not getattr(item, "is_variance_item", 0)
         )
         pph_base_total = item_pph_total or (
             flt(getattr(self, "pph_base_amount", 0) or 0) if getattr(self, "is_pph_applicable", 0) else 0
@@ -332,7 +339,8 @@ class ExpenseRequest(Document):
         # for consistency, since we subtract it in the formula.
         total_pph = abs(total_pph)
         # PPh is withholding tax, so it reduces the total payable amount.
-        total_amount = total_expense + total_ppn + total_ppnbm - total_pph
+        # Variance is added to total (can be positive or negative)
+        total_amount = total_expense + total_ppn + total_ppnbm - total_pph + variance_total
 
         # Keep header PPh base amount in sync with the effective base used for calculations.
         if getattr(self, "is_pph_applicable", 0) or item_pph_total:
@@ -432,7 +440,42 @@ class ExpenseRequest(Document):
         # Calculate & save PPN variance only
         # DPP is user input (expected to be correct), only PPN differs due to rate/rounding
         if ocr_ppn > 0:
-            self.ti_ppn_variance = ocr_ppn - expected_ppn
+            new_variance = ocr_ppn - expected_ppn
+            self.ti_ppn_variance = new_variance
+
+            # ========== CREATE VARIANCE LINE ITEM ==========
+            # Only create if variance is significant (> 0.001) and no existing variance item
+            if abs(new_variance) > 0.001:
+                # Remove existing variance items first (prevent duplicates on amend/re-submit)
+                items = self.get("items") or []
+                non_variance_items = [item for item in items if not getattr(item, "is_variance_item", 0)]
+                self.items = []
+                for item in non_variance_items:
+                    self.append("items", item.as_dict() if hasattr(item, "as_dict") else item)
+
+                # Get variance account from GL mappings
+                try:
+                    from imogi_finance.settings.utils import get_gl_account
+                    from imogi_finance.settings.gl_purposes import PPN_VARIANCE
+                    company = self._get_company()
+                    variance_account = get_gl_account(PPN_VARIANCE, company=company, required=False)
+                except Exception:
+                    variance_account = None
+
+                if variance_account:
+                    # Create variance line item
+                    self.append("items", {
+                        "expense_account": variance_account,
+                        "description": "PPN Variance Adjustment" if new_variance > 0 else "PPN Variance Reduction",
+                        "amount": new_variance,
+                        "is_variance_item": 1,
+                        "is_pph_applicable": 0,
+                        "is_deferred_expense": 0,
+                    })
+                    frappe.logger().info(
+                        f"[PPN VARIANCE ITEM] ER {self.name}: Created variance line item "
+                        f"amount={new_variance}, account={variance_account}"
+                    )
 
         # ========== 3. OCR CONSISTENCY VALIDATION (WARNING) ==========
         # Validate that OCR PPN matches OCR DPP × tax rate

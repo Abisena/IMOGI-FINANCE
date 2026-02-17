@@ -45,6 +45,11 @@ class FinanceValidator:
         total = 0.0
         accounts: list[str] = []
         for item in items or []:
+            # Skip variance items from expense total calculation
+            # Variance items are system-generated adjustments that should not affect
+            # the expense base used for PPN/PPh/budget calculations
+            if getattr(item, "is_variance_item", 0):
+                continue
             qty = flt(getattr(item, "qty", 0)) or 0
             rate = flt(getattr(item, "rate", 0)) or flt(getattr(item, "amount", 0))
             amount = flt(getattr(item, "amount", qty * rate))

@@ -194,6 +194,28 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     settings = get_settings()
     sync_tax_invoice_upload(request, "Expense Request", save=False)
+
+    # ============================================================================
+    # RECALCULATE PPN VARIANCE BEFORE PI CREATION (LEGACY/EDGE CASE HANDLING)
+    # ============================================================================
+    # For new ERs: variance item is created during ER submit (before_submit hook)
+    # For legacy ERs or edge cases (OCR synced after submit): recalculate here
+    # This ensures variance is always calculated from latest OCR data before PI creation.
+    ocr_ppn = flt(getattr(request, "ti_fp_ppn", 0) or 0)
+    expected_ppn = flt(getattr(request, "total_ppn", 0) or 0)
+    old_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
+
+    if ocr_ppn > 0:
+        new_variance = ocr_ppn - expected_ppn
+        if abs(new_variance - old_variance) > 0.001:  # Variance changed
+            frappe.logger().info(
+                f"[PPN VARIANCE RECALC] ER {request.name}: "
+                f"old={old_variance}, new={new_variance}, "
+                f"ocr_ppn={ocr_ppn}, expected_ppn={expected_ppn}"
+            )
+            request.ti_ppn_variance = new_variance
+            request.db_set("ti_ppn_variance", new_variance, update_modified=False)
+
     enforce_mode = (settings.get("enforce_mode") or "").lower()
     if settings.get("enable_budget_lock") and enforce_mode in {"approval only", "both"}:
         lock_status = getattr(request, "budget_lock_status", None)
@@ -471,10 +493,22 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     "base_amount": float(base_amount)
                 })
 
-    # Add PPN variance as additional line item at the end (NOT subject to withholding tax)
-    # PPN variance occurs when OCR PPN differs from calculated PPN due to rate/rounding differences
+    # ============================================================================
+    # PPN VARIANCE LINE ITEM HANDLING
+    # ============================================================================
+    # Check if variance item already exists in ER items (created during ER submit)
+    # If not, create variance item here as fallback for backward compatibility
+    has_variance_item_in_er = any(
+        getattr(item, "is_variance_item", 0) for item in request_items
+    )
+
     ppn_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
-    if ppn_variance != 0:
+    if ppn_variance != 0 and not has_variance_item_in_er:
+        # Variance item not in ER (legacy ER or edge case) - create in PI
+        frappe.logger().info(
+            f"[PPN VARIANCE FALLBACK] ER {request.name}: Creating variance item in PI "
+            f"(not found in ER items), variance={ppn_variance}"
+        )
         try:
             variance_account = get_gl_account(PPN_VARIANCE, company=company, required=False)
         except frappe.ValidationError:
