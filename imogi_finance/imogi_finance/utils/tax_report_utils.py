@@ -334,8 +334,10 @@ def get_tax_amount_from_gl(
 	"""
 	GLEntry = DocType("GL Entry")
 
-	# Determine if this is an asset or liability account
-	account_type = frappe.db.get_value("Account", tax_account, "account_type")
+	# Determine if this is an asset or liability account using root_type
+	# root_type is more reliable than account_type for Indonesian VAT accounts
+	# where both Input and Output VAT may have account_type = "Tax"
+	root_type = frappe.db.get_value("Account", tax_account, "root_type")
 
 	query = (
 		frappe.qb.from_(GLEntry)
@@ -358,13 +360,13 @@ def get_tax_amount_from_gl(
 	total_debit = flt(result[0].total_debit)
 	total_credit = flt(result[0].total_credit)
 
-	# For Input VAT (Asset), use debit amount
-	# For Output VAT (Liability), use credit amount
-	if account_type in ["Tax", "Payable"]:
+	# For Input VAT (Asset root_type), use debit amount
+	# For Output VAT (Liability root_type), use credit amount
+	if root_type == "Liability":
 		# Liability account - credit increases the liability
 		return total_credit - total_debit
 	else:
-		# Asset account - debit increases the asset
+		# Asset account (including root_type "Asset") - debit increases the asset
 		return total_debit - total_credit
 
 
@@ -396,9 +398,10 @@ def get_tax_amounts_batch(
 
 	GLEntry = DocType("GL Entry")
 
-	# Determine if this is an asset or liability account
-	account_type = frappe.db.get_value("Account", tax_account, "account_type")
-	is_liability = account_type in ["Tax", "Payable"]
+	# Determine if this is an asset or liability account using root_type
+	# root_type is more reliable than account_type for Indonesian VAT accounts
+	root_type = frappe.db.get_value("Account", tax_account, "root_type")
+	is_liability = root_type == "Liability"
 
 	# Build list of voucher_no values to filter
 	voucher_nos = [voucher_no for _, voucher_no in voucher_list]
@@ -428,7 +431,7 @@ def get_tax_amounts_batch(
 		total_debit = flt(row.total_debit)
 		total_credit = flt(row.total_credit)
 
-		# Calculate net amount based on account type
+		# Calculate net amount based on root_type
 		if is_liability:
 			amounts[voucher_key] = total_credit - total_debit
 		else:
