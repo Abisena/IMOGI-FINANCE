@@ -502,7 +502,8 @@ class ExpenseRequest(Document):
 
                 if variance_account:
                     # Create variance line item with validated account
-                    variance_item = self.append("items", {
+                    # Note: cost_center and project are taken from header level, not item level
+                    self.append("items", {
                         "expense_account": variance_account,
                         "description": "PPN Variance Adjustment" if new_variance > 0 else "PPN Variance Reduction",
                         "amount": new_variance,
@@ -510,13 +511,6 @@ class ExpenseRequest(Document):
                         "is_pph_applicable": 0,
                         "is_deferred_expense": 0,
                     })
-                    # Copy cost center and project from first item if not set
-                    if non_variance_items:
-                        variance_item.cost_center = non_variance_items[0].cost_center
-                        variance_item.project = getattr(non_variance_items[0], "project", None)
-                    else:
-                        variance_item.cost_center = getattr(self, "cost_center", None)
-                        variance_item.project = getattr(self, "project", None)
 
                     frappe.logger().info(
                         f"[PPN VARIANCE ITEM] ER {self.name}: Created variance line item "
