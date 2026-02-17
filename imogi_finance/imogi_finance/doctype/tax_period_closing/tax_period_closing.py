@@ -22,19 +22,19 @@ from imogi_finance.tax_operations import (
 
 class TaxPeriodClosing(Document):
     """Monthly tax period closing that locks faktur pajak edits and tracks exports.
-    
+
     This doctype manages the monthly tax period closing workflow, including:
     - Tax register snapshot generation (VAT Input/Output, PPh, PB1)
     - CoreTax export file generation (CSV/XLSX)
     - VAT netting journal entry creation
     - Period locking to prevent tax invoice edits
-    
+
     Workflow States:
         Draft: Initial creation, editable
         Reviewed: Registers validated by Tax Reviewer
         Approved: Ready for submission and netting
         Closed: Submitted and locked (docstatus=1)
-    
+
     Key Features:
         - Auto-fetches Tax Profile based on company
         - Validates period uniqueness (one closing per company/period)
@@ -54,7 +54,7 @@ class TaxPeriodClosing(Document):
     register_snapshot: Optional[str]
     last_refresh_on: Optional[str]
     is_generating: int
-    
+
     def validate(self):
         """Master validation method - calls individual validators in sequence."""
         self._set_period_dates()
@@ -73,14 +73,14 @@ class TaxPeriodClosing(Document):
     def before_submit(self):
         """Final validation and preparation before submission."""
         self.status = "Closed"
-        
+
         # Ensure snapshot exists
         if not self.register_snapshot:
             self.generate_snapshot(save=False)
-        
+
         # Update totals from snapshot
         self._update_totals_from_snapshot()
-        
+
         # Validate completeness
         self._validate_register_completeness()
 
@@ -98,7 +98,7 @@ class TaxPeriodClosing(Document):
     def on_cancel(self):
         """Clean up on cancellation."""
         self.status = "Draft"
-        
+
         # Warn if VAT netting entry exists
         if self.vat_netting_journal_entry:
             self._validate_netting_entry_before_cancel()
@@ -133,7 +133,7 @@ class TaxPeriodClosing(Document):
         """Ensure only one closing exists per company/period (excluding cancelled)."""
         if self.is_new():
             return
-        
+
         filters = {
             "company": self.company,
             "period_month": self.period_month,
@@ -141,7 +141,7 @@ class TaxPeriodClosing(Document):
             "docstatus": ["!=", 2],  # Exclude cancelled
             "name": ["!=", self.name]
         }
-        
+
         existing = frappe.db.exists("Tax Period Closing", filters)
         if existing:
             frappe.throw(
@@ -158,13 +158,13 @@ class TaxPeriodClosing(Document):
         """Validate status workflow progression (flexible with warnings)."""
         if self.is_new() or not self.get_doc_before_save():
             return
-        
+
         old_status = self.get_doc_before_save().status
         new_status = self.status
-        
+
         if old_status == new_status:
             return
-        
+
         # Define valid progressions
         valid_progressions = {
             "Draft": ["Reviewed", "Approved", "Closed"],
@@ -172,13 +172,13 @@ class TaxPeriodClosing(Document):
             "Approved": ["Closed", "Reviewed", "Draft"],
             "Closed": []  # Cannot change once closed (requires cancel)
         }
-        
+
         if old_status == "Closed" and self.docstatus == 1:
             frappe.throw(
                 _("Cannot change status of a submitted closing. Please cancel and amend if needed."),
                 title=_("Invalid Status Change")
             )
-        
+
         if new_status not in valid_progressions.get(old_status, []):
             # Show warning but allow if user has privileged role
             frappe.msgprint(
@@ -196,7 +196,7 @@ class TaxPeriodClosing(Document):
                 _("Cannot submit without tax register snapshot. Please refresh registers first."),
                 title=_("Missing Snapshot")
             )
-        
+
         # Check for unverified invoices (warning only, not blocking)
         unverified_count = self._count_unverified_invoices()
         if unverified_count > 0:
@@ -214,7 +214,7 @@ class TaxPeriodClosing(Document):
             self.vat_netting_journal_entry,
             "docstatus"
         )
-        
+
         if je_status == 1:
             frappe.throw(
                 _("Cannot cancel this closing because VAT Netting Journal Entry {0} is submitted. "
@@ -226,34 +226,40 @@ class TaxPeriodClosing(Document):
         """Count unverified tax invoices in the period."""
         if not self.company or not self.date_from or not self.date_to:
             return 0
-        
-        filters = {
+
+        base_filters = {
             "company": self.company,
             "posting_date": ["between", [self.date_from, self.date_to]],
-            "docstatus": 1,
-            "is_faktur_verified": 0
+            "docstatus": 1
         }
-        
-        pi_count = frappe.db.count("Purchase Invoice", filters)
-        si_count = frappe.db.count("Sales Invoice", filters)
-        
+
+        # Purchase Invoice uses ti_verification_status field
+        pi_filters = base_filters.copy()
+        pi_filters["ti_verification_status"] = ["!=", "Verified"]
+        pi_count = frappe.db.count("Purchase Invoice", pi_filters)
+
+        # Sales Invoice uses out_fp_status field
+        si_filters = base_filters.copy()
+        si_filters["out_fp_status"] = ["!=", "Verified"]
+        si_count = frappe.db.count("Sales Invoice", si_filters)
+
         return pi_count + si_count
 
     def generate_snapshot(self, save: bool = True) -> dict:
         """Generate tax register snapshot for the period.
-        
+
         Calls tax_operations.build_register_snapshot() to gather:
         - Input VAT from Purchase Invoices
-        - Output VAT from Sales Invoices  
+        - Output VAT from Sales Invoices
         - PPh totals from withholding accounts
         - PB1 totals (single or multi-branch)
-        
+
         Args:
             save: Whether to save document after generating snapshot
-            
+
         Returns:
             dict: Snapshot data with tax totals
-            
+
         Raises:
             frappe.ValidationError: If company is not set
         """
@@ -270,7 +276,7 @@ class TaxPeriodClosing(Document):
 
         if save:
             self.save(ignore_permissions=True)
-        
+
         return snapshot
 
     def _update_totals_from_snapshot(self):
@@ -292,37 +298,37 @@ class TaxPeriodClosing(Document):
         self.vat_net = flt(data.get("vat_net"))
         self.pph_total = flt(data.get("pph_total"))
         self.pb1_total = flt(data.get("pb1_total"))
-        
+
         # Update register-specific fields from v15+ snapshot
         self.input_invoice_count = data.get("input_invoice_count", 0)
         self.output_invoice_count = data.get("output_invoice_count", 0)
         self.withholding_entry_count = data.get("withholding_entry_count", 0)
         self.verification_status = data.get("verification_status", "Verified")
-        
+
         # Extract metadata
         meta = data.get("meta", {})
         self.data_source = meta.get("data_source", "register_integration")
-    
+
     def _validate_register_configuration(self):
         """Validate that all register configurations are properly set up.
-        
+
         This checks that Tax Invoice OCR Settings and Tax Profile have
         the required accounts configured for register reports to work.
         """
         from imogi_finance.imogi_finance.utils_register.register_integration import validate_register_configuration
-        
+
         if not self.company:
             return
-        
+
         try:
             validation = validate_register_configuration(self.company)
-            
+
             if not validation.get("valid"):
                 # Build detailed error message
                 vat_input = validation.get("vat_input", {})
                 vat_output = validation.get("vat_output", {})
                 withholding = validation.get("withholding", {})
-                
+
                 errors = []
                 if not vat_input.get("valid"):
                     errors.append(f"VAT Input: {vat_input.get('message', 'Configuration error')}")
@@ -330,7 +336,7 @@ class TaxPeriodClosing(Document):
                     errors.append(f"VAT Output: {vat_output.get('message', 'Configuration error')}")
                 if not withholding.get("valid"):
                     errors.append(f"Withholding: {withholding.get('message', 'Configuration error')}")
-                
+
                 frappe.msgprint(
                     _("Register configuration issues detected:<br>{0}").format("<br>".join(errors)),
                     title=_("Configuration Warning"),
@@ -341,10 +347,10 @@ class TaxPeriodClosing(Document):
                 message=f"Failed to validate register configuration: {str(e)}",
                 title="Tax Period Closing: Configuration Validation Error"
             )
-    
+
     def _validate_register_data(self):
         """Validate register snapshot data quality and consistency.
-        
+
         Checks for:
         - Data source (register_integration vs fallback)
         - Invoice/entry counts (warn if zero)
@@ -353,15 +359,15 @@ class TaxPeriodClosing(Document):
         """
         if not self.register_snapshot:
             return
-        
+
         try:
             data = json.loads(self.register_snapshot)
         except Exception:
             return
-        
+
         meta = data.get("meta", {})
         data_source = meta.get("data_source", "unknown")
-        
+
         # Warn if using fallback data source
         if data_source == "fallback_empty":
             error_msg = meta.get("error", "Unknown error")
@@ -372,12 +378,12 @@ class TaxPeriodClosing(Document):
                 indicator="red"
             )
             return
-        
+
         # Warn if all counts are zero (possible configuration issue)
         input_count = data.get("input_invoice_count", 0)
         output_count = data.get("output_invoice_count", 0)
         withholding_count = data.get("withholding_entry_count", 0)
-        
+
         if input_count == 0 and output_count == 0 and withholding_count == 0:
             frappe.msgprint(
                 _("Warning: No tax transactions found in this period. "
@@ -388,16 +394,16 @@ class TaxPeriodClosing(Document):
 
     def generate_exports(self, save: bool = True) -> dict:
         """Generate CoreTax export files for input and output VAT.
-        
+
         Generates CSV/XLSX files formatted for CoreTax system based on
         CoreTax Export Settings configuration.
-        
+
         Args:
             save: Whether to save document after generating exports
-            
+
         Returns:
             dict: File URLs for input_export and output_export
-            
+
         Raises:
             frappe.ValidationError: If tax profile or CoreTax settings not configured
         """
@@ -435,48 +441,48 @@ class TaxPeriodClosing(Document):
 
     def _get_tax_profile_doc(self) -> Document:
         """Get cached Tax Profile document.
-        
+
         Returns:
             Document: Tax Profile document
-            
+
         Raises:
             frappe.ValidationError: If tax profile not set or not found
         """
         if not self.tax_profile:
             self._ensure_tax_profile()
-        
+
         if not self.tax_profile:
             frappe.throw(
                 _("Tax Profile is required. Please set Tax Profile for company {0}.").format(self.company),
                 title=_("Missing Tax Profile")
             )
-        
+
         return frappe.get_cached_doc("Tax Profile", self.tax_profile)
 
     def create_vat_netting_journal_entry(self, save: bool = True) -> str:
         """Create VAT netting journal entry.
-        
+
         Creates a Journal Entry that nets Input VAT against Output VAT,
         with the difference posted to PPN Payable account.
-        
+
         Journal Entry structure:
             Dr: PPN Output Account (Output VAT Total)
             Cr: PPN Input Account (Input VAT Total)
             Cr: PPN Payable Account (Net = Output - Input)
-        
+
         Args:
             save: Whether to save closing document after creating JE
-            
+
         Returns:
             str: Name of created Journal Entry
-            
+
         Raises:
             frappe.PermissionError: If user lacks required roles
             frappe.ValidationError: If accounts not configured or VAT amounts missing
         """
         # Permission check
         frappe.only_for((roles.SYSTEM_MANAGER, roles.ACCOUNTS_MANAGER, roles.TAX_REVIEWER))
-        
+
         profile = self._get_tax_profile_doc()
 
         # Ensure totals are up to date
@@ -528,81 +534,81 @@ class TaxPeriodClosing(Document):
 @frappe.whitelist()
 def refresh_tax_registers(closing_name: str) -> dict:
     """Regenerate tax register snapshot for a period closing.
-    
+
     Permission: Accounts Manager, Tax Reviewer, System Manager
-    
+
     Args:
         closing_name: Name of Tax Period Closing document
-        
+
     Returns:
         dict: Updated snapshot data
     """
     frappe.only_for((roles.SYSTEM_MANAGER, roles.ACCOUNTS_MANAGER, roles.TAX_REVIEWER))
-    
+
     closing = frappe.get_doc("Tax Period Closing", closing_name)
     closing.check_permission("write")
-    
+
     return closing.generate_snapshot()
 
 
 @frappe.whitelist()
 def generate_coretax_exports(closing_name: str) -> dict:
     """Generate CoreTax export files for a period closing.
-    
+
     Permission: Accounts Manager, Tax Reviewer, System Manager
-    
+
     Args:
         closing_name: Name of Tax Period Closing document
-        
+
     Returns:
         dict: File URLs for input and output exports
     """
     frappe.only_for((roles.SYSTEM_MANAGER, roles.ACCOUNTS_MANAGER, roles.TAX_REVIEWER))
-    
+
     closing = frappe.get_doc("Tax Period Closing", closing_name)
     closing.check_permission("write")
-    
+
     return closing.generate_exports()
 
 
 @frappe.whitelist()
 def create_vat_netting_entry_for_closing(closing_name: str) -> str:
     """Create VAT netting journal entry for a period closing.
-    
+
     Permission: Accounts Manager, Tax Reviewer, System Manager
-    
+
     Args:
         closing_name: Name of Tax Period Closing document
-        
+
     Returns:
         str: Name of created Journal Entry
     """
     frappe.only_for((roles.SYSTEM_MANAGER, roles.ACCOUNTS_MANAGER, roles.TAX_REVIEWER))
-    
+
     closing = frappe.get_doc("Tax Period Closing", closing_name)
     closing.check_permission("write")
-    
+
     return closing.create_vat_netting_journal_entry()
 
 
 def is_period_locked(company: str, check_date: str) -> bool:
     """Check if a tax period is locked.
-    
+
     Args:
         company: Company name
         check_date: Date to check (YYYY-MM-DD)
-        
+
     Returns:
         bool: True if period is locked (submitted closing exists)
     """
     from frappe.utils import getdate
-    
+
     check_date = getdate(check_date)
-    
+
     # Get month and year from check_date
     period_month = check_date.month
     period_year = check_date.year
-    
+
     # Check if submitted closing exists for this period
     locked = frappe.db.exists(
         "Tax Period Closing",
@@ -613,5 +619,5 @@ def is_period_locked(company: str, check_date: str) -> bool:
             "docstatus": 1
         }
     )
-    
+
     return bool(locked)
