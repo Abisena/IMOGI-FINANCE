@@ -495,7 +495,7 @@
     "fieldtype": "Select",
     "insert_after": "out_fp_ppn",
     "label": "PPN Type",
-    "options": "Standard\nZero Rated\nExempt/Not PPN",
+    "options": "Standard\nStandard 12% (PPN 2025+)\nZero Rated\nExempt/Not PPN",
     "default": "Standard",
     "allow_on_submit": 1
   },
