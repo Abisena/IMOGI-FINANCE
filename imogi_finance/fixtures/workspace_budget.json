@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Budget",
+    "name": "Budget Control",
     "title": "Budget Control",
-    "label": "Budget",
+    "label": "Budget Control",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "chart-pie",

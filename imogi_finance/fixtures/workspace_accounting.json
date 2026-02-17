@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Accounting",
+    "name": "Accounting & Reporting",
     "title": "Accounting & Reporting",
-    "label": "Accounting",
+    "label": "Accounting & Reporting",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "book",

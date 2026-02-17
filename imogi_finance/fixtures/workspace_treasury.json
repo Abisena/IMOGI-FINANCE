@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Treasury",
+    "name": "Treasury & Payments",
     "title": "Treasury & Payments",
-    "label": "Treasury",
+    "label": "Treasury & Payments",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "piggy-bank",

@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Asset",
+    "name": "Asset Management",
     "title": "Asset Management",
-    "label": "Asset",
+    "label": "Asset Management",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "building",

@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Finance",
+    "name": "Finance Operations",
     "title": "Finance Operations",
-    "label": "Finance",
+    "label": "Finance Operations",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "money-bill-wave",
