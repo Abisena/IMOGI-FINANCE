@@ -479,6 +479,15 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         except frappe.ValidationError:
             variance_account = None
 
+        # Validate that the configured account actually exists
+        if variance_account and not frappe.db.exists("Account", variance_account):
+            frappe.throw(
+                _("DPP Variance account '{0}' does not exist. "
+                  "Please create this account in Chart of Accounts or update GL Account Mappings "
+                  "in Finance Control Settings.").format(variance_account),
+                title=_("Invalid Variance Account")
+            )
+
         if variance_account:
             variance_item = {
                 "item_name": "DPP Variance Adjustment" if dpp_variance > 0 else "DPP Variance Reduction",

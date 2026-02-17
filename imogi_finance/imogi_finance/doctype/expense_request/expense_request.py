@@ -467,6 +467,16 @@ class ExpenseRequest(Document):
         if dpp_variance != 0:
             try:
                 variance_account = get_gl_account(DPP_VARIANCE, company=self._get_company(), required=True)
+                # Also validate the account actually exists
+                if not frappe.db.exists("Account", variance_account):
+                    frappe.throw(
+                        _("DPP Variance account '{0}' does not exist. "
+                          "Please create this account in Chart of Accounts with the correct company suffix "
+                          "(e.g., '{0} - TPT'), or update GL Account Mappings in Finance Control Settings.").format(
+                            variance_account
+                        ),
+                        title=_("Variance Account Not Found")
+                    )
             except frappe.ValidationError:
                 frappe.throw(
                     _("DPP Variance detected ({0}) but Variance Account is not configured. "
