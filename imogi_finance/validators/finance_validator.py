@@ -59,7 +59,7 @@ class FinanceValidator:
     def validate_tax_fields(doc):
         items = getattr(doc, "items", None) or []
         errors = []
-        
+
         # ============================================================================
         # Validate PPN Configuration
         # ============================================================================
@@ -72,7 +72,7 @@ class FinanceValidator:
         # ============================================================================
         item_pph_applicable = [item for item in items if getattr(item, "is_pph_applicable", 0)]
         header_pph_applicable = getattr(doc, "is_pph_applicable", 0)
-        
+
         # PPh Type required if EITHER header checkbox OR any item has Apply WHT
         if item_pph_applicable or header_pph_applicable:
             pph_type = getattr(doc, "pph_type", None)
@@ -108,7 +108,7 @@ class FinanceValidator:
                             item_desc
                         )
                     )
-        
+
         # ============================================================================
         # Show All Errors at Once (Better UX)
         # ============================================================================
@@ -116,21 +116,34 @@ class FinanceValidator:
             # Separate PPN and PPh errors for clarity
             ppn_errors = [e for e in errors if "PPN" in str(e) or "ppn" in str(e).lower()]
             pph_errors = [e for e in errors if "PPh" in str(e) or "pph" in str(e).lower()]
-            
+
             error_msg = []
             if ppn_errors:
                 error_msg.append("<b>PPN Configuration Issues:</b>")
                 error_msg.extend([f"• {e}" for e in ppn_errors])
-            
+
             if pph_errors:
                 if ppn_errors:
                     error_msg.append("<br>")
                 error_msg.append("<b>PPh Configuration Issues:</b>")
                 error_msg.extend([f"• {e}" for e in pph_errors])
-            
+
             _safe_throw("<br>".join(error_msg))
 
 
 def validate_document_tax_fields(doc, method=None):
-    """DocEvent wrapper to enforce PPN/PPh requirements on tax-bearing documents."""
+    """DocEvent wrapper to enforce PPN/PPh requirements on tax-bearing documents.
+
+    IMPORTANT: This validator is designed for Expense Request which has fields:
+    - is_ppn_applicable, ppn_template
+    - is_pph_applicable, pph_type, pph_base_amount
+
+    Purchase Invoice uses different fields (imogi_pph_type, tax_withholding_category)
+    and handles tax configuration differently via accounting.py, so we skip validation.
+    """
+    # Skip validation for Purchase Invoice - it uses different field structure
+    # Tax fields on PI are handled by accounting.py create_purchase_invoice_from_request()
+    if doc.doctype == "Purchase Invoice":
+        return
+
     FinanceValidator.validate_tax_fields(doc)
