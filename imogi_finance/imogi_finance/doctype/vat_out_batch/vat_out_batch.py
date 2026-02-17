@@ -6,14 +6,27 @@ from __future__ import annotations
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import make_autoname
 from frappe.utils import now, nowdate, getdate
 
 
 class VATOUTBatch(Document):
-	def before_naming(self):
-		"""Fetch company_abbr before autoname runs."""
+	def autoname(self):
+		"""Generate name using company abbreviation and sequential number."""
+		# Fetch company abbreviation
 		if self.company and not self.company_abbr:
 			self.company_abbr = frappe.db.get_value("Company", self.company, "abbr")
+
+		# Build naming series prefix
+		year = getdate(self.date_from or nowdate()).year
+		abbr = self.company_abbr or "XX"
+
+		# Format: VO-{abbr}-.{YYYY}.-.##### (contoh: VO-TPT-.2026.-.00001)
+		# make_autoname format: prefix + ".#####" where prefix ends without dot
+		naming_series = f"VO-{abbr}-.{year}.-..#####"
+
+		# Generate name with auto-incrementing number
+		self.name = make_autoname(naming_series)
 
 	def validate(self):
 		"""Validate batch data."""
