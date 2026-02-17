@@ -60,6 +60,13 @@ async function syncPiUpload(frm) {
     return;
   }
 
+  // IMPORTANT: Don't sync if document was just saved (not dirty) and not new
+  // This prevents the form from becoming dirty after save, which would
+  // hide the Submit button and show "Not Saved" status again
+  if (!frm.doc.__islocal && !frm.is_dirty()) {
+    return;
+  }
+
   const cachedUpload = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
   const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
