@@ -310,13 +310,13 @@ class ExpenseRequest(Document):
         """Calculate and set all total fields."""
         items = self.get("items") or []
         total_expense = flt(getattr(self, "amount", 0) or 0)
-        
+
         # Calculate PPN from items total using template rate (NOT from OCR)
         total_ppn = 0
         if getattr(self, "is_ppn_applicable", 0):
             ppn_rate = self._get_ppn_rate()
             total_ppn = total_expense * ppn_rate / 100
-        
+
         total_ppnbm = flt(getattr(self, "ti_fp_ppnbm", None) or getattr(self, "ppnbm", None) or 0)
         item_pph_total = sum(
             flt(getattr(item, "pph_base_amount", 0) or 0)
@@ -363,7 +363,7 @@ class ExpenseRequest(Document):
         """Get PPN rate from template or infer from date."""
         ppn_rate = 0
         ppn_template = getattr(self, "ppn_template", None)
-        
+
         if ppn_template:
             try:
                 # Use cached doc for performance (ERPNext v15+ best practice)
@@ -374,7 +374,7 @@ class ExpenseRequest(Document):
                         break
             except Exception:
                 pass
-        
+
         # Fallback: date-based inference
         if not ppn_rate:
             try:
@@ -383,7 +383,7 @@ class ExpenseRequest(Document):
                 ppn_rate = infer_tax_rate(dpp=flt(self.amount), ppn=None, fp_date=fp_date) * 100
             except Exception:
                 pass
-        
+
         return ppn_rate
 
     def validate_tax_fields(self):
@@ -445,7 +445,7 @@ class ExpenseRequest(Document):
             if ppn_rate > 0:
                 expected_ppn_from_ocr_dpp = ocr_dpp * ppn_rate / 100
                 ocr_consistency_variance = abs(ocr_ppn - expected_ppn_from_ocr_dpp)
-                
+
                 # Show warning if OCR data is internally inconsistent
                 if ocr_consistency_variance > 0.01:  # More than 1 cent difference
                     frappe.msgprint(
@@ -466,7 +466,7 @@ class ExpenseRequest(Document):
         # Check if variance account is configured when variance exists
         if dpp_variance != 0:
             try:
-                variance_account = get_gl_account(DPP_VARIANCE, company=self.company, required=True)
+                variance_account = get_gl_account(DPP_VARIANCE, company=self._get_company(), required=True)
             except frappe.ValidationError:
                 frappe.throw(
                     _("DPP Variance detected ({0}) but Variance Account is not configured. "
@@ -508,10 +508,11 @@ class ExpenseRequest(Document):
                         item.prepaid_account
                     )
                 )
-            if self.company and account.company and account.company != self.company:
+            company = self._get_company()
+            if company and account.company and account.company != company:
                 frappe.throw(
                     _("Prepaid Account {0} must belong to company {1}.").format(
-                        item.prepaid_account, self.company
+                        item.prepaid_account, company
                     )
                 )
 
