@@ -313,11 +313,9 @@
     "name": "Purchase Invoice-ti_fp_ppn_type",
     "dt": "Purchase Invoice",
     "fieldname": "ti_fp_ppn_type",
-    "fieldtype": "Select",
+    "fieldtype": "Data",
     "insert_after": "ti_fp_ppnbm",
     "label": "PPN Type",
-    "options": "Standard\nZero Rated\nExempt/Not PPN",
-    "default": "Standard",
     "read_only": 1,
     "allow_on_submit": 1
   },

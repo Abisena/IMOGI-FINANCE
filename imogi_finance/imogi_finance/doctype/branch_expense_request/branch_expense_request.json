@@ -48,7 +48,6 @@
     "ti_fp_ppn_type",
     "ti_verification_status",
     "ti_verification_notes",
-    "ti_dpp_variance",
     "ti_ppn_variance",
     "ti_duplicate_flag",
     "ti_npwp_match",
@@ -365,14 +364,6 @@
       "fieldtype": "Small Text",
       "label": "Tax Invoice Verification Notes",
       "read_only": 1
-    },
-    {
-      "allow_on_submit": 1,
-      "fieldname": "ti_dpp_variance",
-      "fieldtype": "Currency",
-      "label": "DPP Variance",
-      "read_only": 1,
-      "description": "Difference between OCR DPP and Expected DPP (OCR - Expected). Can be negative or positive."
     },
     {
       "allow_on_submit": 1,

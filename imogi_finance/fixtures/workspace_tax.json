@@ -1,9 +1,9 @@
 [
   {
     "doctype": "Workspace",
-    "name": "Tax",
+    "name": "Tax & Compliance",
     "title": "Tax & Compliance",
-    "label": "Tax",
+    "label": "Tax & Compliance",
     "parent_workspace": "FINANCE IMOGI",
     "type": "Workspace",
     "icon": "file-invoice-dollar",

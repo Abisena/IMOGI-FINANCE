@@ -9,7 +9,7 @@ from frappe.utils import add_months, cint, flt
 from imogi_finance.branching import apply_branch, resolve_branch
 from imogi_finance.tax_invoice_ocr import get_settings, sync_tax_invoice_upload
 from imogi_finance.settings.utils import get_gl_account
-from imogi_finance.settings.gl_purposes import DPP_VARIANCE
+from imogi_finance.settings.gl_purposes import PPN_VARIANCE
 
 PURCHASE_INVOICE_REQUEST_TYPES = {"Expense"}
 PURCHASE_INVOICE_ALLOWED_STATUSES = frozenset({"Approved"})
@@ -471,18 +471,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     "base_amount": float(base_amount)
                 })
 
-    # Add DPP variance as additional line item at the end (NOT subject to withholding tax)
-    dpp_variance = flt(getattr(request, "ti_dpp_variance", 0) or 0)
-    if dpp_variance != 0:
+    # Add PPN variance as additional line item at the end (NOT subject to withholding tax)
+    # PPN variance occurs when OCR PPN differs from calculated PPN due to rate/rounding differences
+    ppn_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
+    if ppn_variance != 0:
         try:
-            variance_account = get_gl_account(DPP_VARIANCE, company=company, required=False)
+            variance_account = get_gl_account(PPN_VARIANCE, company=company, required=False)
         except frappe.ValidationError:
             variance_account = None
 
         # Validate that the configured account actually exists
         if variance_account and not frappe.db.exists("Account", variance_account):
             frappe.throw(
-                _("DPP Variance account '{0}' does not exist. "
+                _("PPN Variance account '{0}' does not exist. "
                   "Please create this account in Chart of Accounts or update GL Account Mappings "
                   "in Finance Control Settings.").format(variance_account),
                 title=_("Invalid Variance Account")
@@ -490,14 +491,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
         if variance_account:
             variance_item = {
-                "item_name": "DPP Variance Adjustment" if dpp_variance > 0 else "DPP Variance Reduction",
-                "description": f"Tax invoice variance adjustment (OCR vs Expected): {flt(dpp_variance):,.2f}",
+                "item_name": "PPN Variance Adjustment" if ppn_variance > 0 else "PPN Variance Reduction",
+                "description": f"PPN variance adjustment (OCR vs Calculated): {flt(ppn_variance):,.2f}",
                 "expense_account": variance_account,
                 "cost_center": request.cost_center,
                 "project": request.project,
                 "qty": 1,
-                "rate": dpp_variance,  # Can be positive or negative
-                "amount": dpp_variance,
+                "rate": ppn_variance,  # Can be positive or negative
+                "amount": ppn_variance,
             }
             pi.append("items", variance_item)
 
@@ -541,8 +542,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     pi.ti_verification_notes = getattr(request, "ti_verification_notes", None)
     pi.ti_duplicate_flag = getattr(request, "ti_duplicate_flag", None)
     pi.ti_npwp_match = getattr(request, "ti_npwp_match", None)
-    # Copy variance fields for reference and audit trail
-    pi.ti_dpp_variance = getattr(request, "ti_dpp_variance", None)
+    # Copy variance field for reference and audit trail
     pi.ti_ppn_variance = getattr(request, "ti_ppn_variance", None)
     apply_branch(pi, branch)
 

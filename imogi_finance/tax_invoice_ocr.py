@@ -23,7 +23,7 @@ from imogi_finance.settings.utils import (
     get_ppn_accounts,
     get_tax_invoice_ocr_settings,
 )
-from imogi_finance.settings.gl_purposes import DPP_VARIANCE, PPN_VARIANCE
+from imogi_finance.settings.gl_purposes import PPN_VARIANCE
 
 background_jobs = getattr(frappe.utils, "background_jobs", None)
 

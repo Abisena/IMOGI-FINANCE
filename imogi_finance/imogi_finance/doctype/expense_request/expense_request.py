@@ -17,7 +17,7 @@ from imogi_finance.services.approval_route_service import ApprovalRouteService
 from imogi_finance.services.approval_service import ApprovalService
 from imogi_finance.services.deferred_expense import generate_amortization_schedule
 from imogi_finance.settings.utils import get_gl_account
-from imogi_finance.settings.gl_purposes import DPP_VARIANCE
+# DPP variance removed - only PPN variance is tracked
 from ..expense_deferred_settings.expense_deferred_settings import get_deferrable_account_map
 from imogi_finance.tax_invoice_ocr import sync_tax_invoice_upload, validate_tax_invoice_upload_link
 from imogi_finance.tax_invoice_fields import get_upload_link_field
@@ -429,12 +429,8 @@ class ExpenseRequest(Document):
         ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
         ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
 
-        # Calculate & save variance
-        dpp_variance = 0
-        if ocr_dpp > 0:
-            dpp_variance = ocr_dpp - expected_dpp
-            self.ti_dpp_variance = dpp_variance
-
+        # Calculate & save PPN variance only
+        # DPP is user input (expected to be correct), only PPN differs due to rate/rounding
         if ocr_ppn > 0:
             self.ti_ppn_variance = ocr_ppn - expected_ppn
 
@@ -462,30 +458,7 @@ class ExpenseRequest(Document):
                         title=_("OCR Consistency Warning")
                     )
 
-        # ========== 4. VARIANCE ACCOUNT VALIDATION (BLOCKING) ==========
-        # Check if variance account is configured when variance exists
-        if dpp_variance != 0:
-            try:
-                variance_account = get_gl_account(DPP_VARIANCE, company=self._get_company(), required=True)
-                # Also validate the account actually exists
-                if not frappe.db.exists("Account", variance_account):
-                    frappe.throw(
-                        _("DPP Variance account '{0}' does not exist. "
-                          "Please create this account in Chart of Accounts with the correct company suffix "
-                          "(e.g., '{0} - TPT'), or update GL Account Mappings in Finance Control Settings.").format(
-                            variance_account
-                        ),
-                        title=_("Variance Account Not Found")
-                    )
-            except frappe.ValidationError:
-                frappe.throw(
-                    _("DPP Variance detected ({0}) but Variance Account is not configured. "
-                      "Please configure 'DPP Variance' in Finance Control Settings → GL Account Mappings "
-                      "before submitting this Expense Request.").format(
-                        frappe.format_value(dpp_variance, {"fieldtype": "Currency"})
-                    ),
-                    title=_("Variance Account Not Configured")
-                )
+        # DPP variance validation removed - only PPN variance is tracked and handled in PI creation
 
     def validate_deferred_expense(self):
         """Validate deferred expense configuration."""
