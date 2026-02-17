@@ -65,7 +65,6 @@
     "ti_duplicate_flag",
     "ti_npwp_match",
     "ti_verification_notes",
-    "ti_dpp_variance",
     "ti_ppn_variance",
     "tab_approval",
     "approval_section",
@@ -507,19 +506,11 @@
     },
     {
       "allow_on_submit": 1,
-      "fieldname": "ti_dpp_variance",
-      "fieldtype": "Currency",
-      "label": "DPP Variance",
-      "read_only": 1,
-      "description": "Difference between OCR DPP and Expected DPP (OCR - Expected). Used for variance line item in Purchase Invoice."
-    },
-    {
-      "allow_on_submit": 1,
       "fieldname": "ti_ppn_variance",
       "fieldtype": "Currency",
       "label": "PPN Variance",
       "read_only": 1,
-      "description": "Difference between OCR PPN and Expected PPN (OCR - Expected). For reference only."
+      "description": "Difference between OCR PPN and Expected PPN (OCR - Expected). Line item will be created in Purchase Invoice."
     },
     {
       "fieldname": "tab_approval",

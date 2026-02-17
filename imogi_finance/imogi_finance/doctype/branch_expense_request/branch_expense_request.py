@@ -305,27 +305,8 @@ class BranchExpenseRequest(Document):
         
         expected_ppn = expected_dpp * ppn_rate / 100
         
-        # Check DPP difference using percentage tolerance only
-        if ocr_dpp > 0 and expected_dpp > 0:
-            # Calculate variance (OCR - Expected) - can be negative or positive
-            dpp_variance = ocr_dpp - expected_dpp
-            dpp_diff = abs(dpp_variance)
-            dpp_diff_pct = (dpp_diff / expected_dpp * 100) if expected_dpp > 0 else 0
-            
-            # Save variance for tax operations (will be used for PPN payable calculation)
-            self.ti_dpp_variance = dpp_variance
-            
-            # Validate using percentage tolerance (2%)
-            if dpp_diff_pct > tolerance_pct:
-                errors.append(
-                    _("DPP dari OCR ({0}) berbeda dengan Total Expense ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4}%)").format(
-                        frappe.format_value(ocr_dpp, {"fieldtype": "Currency"}),
-                        frappe.format_value(expected_dpp, {"fieldtype": "Currency"}),
-                        frappe.format_value(dpp_variance, {"fieldtype": "Currency"}),
-                        dpp_diff_pct,
-                        tolerance_pct
-                    )
-                )
+        # DPP variance removed - DPP is user input and expected to be correct
+        # Only PPN variance is tracked due to rate/rounding differences
         
         # Check PPN difference using percentage tolerance only
         if ocr_ppn > 0:

@@ -37,7 +37,6 @@ class FinanceControlSettings(Document):
         - digital_stamp_payment
         - default_paid_from
         - default_prepaid
-        - dpp_variance
         - ppn_variance
         
         Note: default_paid_to removed - paid_to must come from party account per beneficiary
