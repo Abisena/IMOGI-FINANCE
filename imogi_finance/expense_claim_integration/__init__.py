@@ -21,11 +21,13 @@ __version__ = "1.0.0"
 from imogi_finance.expense_claim_integration.expense_claim_advances import (
     get_employee_advances,
     allocate_advance_to_expense_claim,
-    link_employee_advances
+    link_employee_advances,
+    set_approval_status
 )
 
 __all__ = [
     "get_employee_advances",
     "allocate_advance_to_expense_claim",
-    "link_employee_advances"
+    "link_employee_advances",
+    "set_approval_status"
 ]
