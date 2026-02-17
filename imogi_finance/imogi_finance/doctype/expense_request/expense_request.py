@@ -462,9 +462,47 @@ class ExpenseRequest(Document):
                 except Exception:
                     variance_account = None
 
+                # Validate variance account exists and is valid before creating line item
                 if variance_account:
-                    # Create variance line item
-                    self.append("items", {
+                    # Check if account actually exists in Chart of Accounts
+                    if not frappe.db.exists("Account", variance_account):
+                        frappe.msgprint(
+                            _("PPN Variance account '{0}' does not exist in Chart of Accounts. "
+                              "Please create this account or update GL Account Mappings in Finance Control Settings. "
+                              "Variance line item will not be created.").format(variance_account),
+                            indicator="orange",
+                            title=_("Variance Account Missing")
+                        )
+                        variance_account = None
+                    else:
+                        # Validate account is active and can be used
+                        account_doc = frappe.get_cached_value("Account", variance_account,
+                                                              ["disabled", "is_group", "company"], as_dict=True)
+                        if account_doc.get("disabled"):
+                            frappe.msgprint(
+                                _("PPN Variance account '{0}' is disabled. Please enable it or select another account.").format(variance_account),
+                                indicator="orange",
+                                title=_("Account Disabled")
+                            )
+                            variance_account = None
+                        elif account_doc.get("is_group"):
+                            frappe.msgprint(
+                                _("PPN Variance account '{0}' is a group account. Please select a ledger account instead.").format(variance_account),
+                                indicator="orange",
+                                title=_("Invalid Account Type")
+                            )
+                            variance_account = None
+                        elif account_doc.get("company") != company:
+                            frappe.msgprint(
+                                _("PPN Variance account '{0}' does not belong to company '{1}'.").format(variance_account, company),
+                                indicator="orange",
+                                title=_("Company Mismatch")
+                            )
+                            variance_account = None
+
+                if variance_account:
+                    # Create variance line item with validated account
+                    variance_item = self.append("items", {
                         "expense_account": variance_account,
                         "description": "PPN Variance Adjustment" if new_variance > 0 else "PPN Variance Reduction",
                         "amount": new_variance,
@@ -472,6 +510,14 @@ class ExpenseRequest(Document):
                         "is_pph_applicable": 0,
                         "is_deferred_expense": 0,
                     })
+                    # Copy cost center and project from first item if not set
+                    if non_variance_items:
+                        variance_item.cost_center = non_variance_items[0].cost_center
+                        variance_item.project = getattr(non_variance_items[0], "project", None)
+                    else:
+                        variance_item.cost_center = getattr(self, "cost_center", None)
+                        variance_item.project = getattr(self, "project", None)
+
                     frappe.logger().info(
                         f"[PPN VARIANCE ITEM] ER {self.name}: Created variance line item "
                         f"amount={new_variance}, account={variance_account}"
