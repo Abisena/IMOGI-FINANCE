@@ -64,16 +64,31 @@ async function syncPiUpload(frm) {
   const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
 
+  const normalizeValue = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+    return value;
+  };
+
   COPY_KEYS.forEach((key) => {
     const sourceField = UPLOAD_TAX_INVOICE_FIELDS[key];
     const targetField = PI_TAX_INVOICE_FIELDS[key];
     if (!sourceField || !targetField) {
       return;
     }
-    updates[targetField] = upload[sourceField] ?? null;
+
+    const nextValue = normalizeValue(upload[sourceField]);
+    const currentValue = normalizeValue(frm.doc[targetField]);
+
+    if (currentValue !== nextValue) {
+      updates[targetField] = nextValue;
+    }
   });
 
-  await frm.set_value(updates);
+  if (Object.keys(updates).length) {
+    await frm.set_value(updates);
+  }
 }
 
 function lockPiTaxInvoiceFields(frm) {
