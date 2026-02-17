@@ -56,12 +56,12 @@ async function syncErUpload(frm) {
   if (!frm.doc.ti_tax_invoice_upload) {
     return;
   }
-  
+
   // Skip sync for non-draft documents - OCR fields are read-only and already saved
   if (frm.doc.docstatus !== 0) {
     return;
   }
-  
+
   const cachedUpload = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
   const upload = cachedUpload || await frappe.db.get_doc('Tax Invoice OCR Upload', frm.doc.ti_tax_invoice_upload);
   const updates = {};
@@ -94,17 +94,17 @@ function formatApprovalTimestamps(frm) {
     const userField = `level_${level}_user`;
     const approvedField = `level_${level}_approved_on`;
     const rejectedField = `level_${level}_rejected_on`;
-    
+
     if (!frm.doc[userField]) {
       continue; // Skip levels without approver
     }
-    
+
     // Update field descriptions to show timestamps
     if (frm.doc[approvedField]) {
       const formattedTime = frappe.datetime.str_to_user(frm.doc[approvedField]);
       frm.set_df_property(approvedField, 'description', `✅ Approved at ${formattedTime}`);
     }
-    
+
     if (frm.doc[rejectedField]) {
       const formattedTime = frappe.datetime.str_to_user(frm.doc[rejectedField]);
       frm.set_df_property(rejectedField, 'description', `❌ Rejected at ${formattedTime}`);
@@ -142,19 +142,19 @@ async function setPphRate(frm) {
 function computeTotals(frm) {
   const flt = (frappe.utils && frappe.utils.flt) || window.flt || ((value) => parseFloat(value) || 0);
   const totalExpense = flt(frm.doc.amount || 0);
-  
+
   // Calculate variance total from variance items
   const varianceTotal = (frm.doc.items || []).reduce(
     (sum, row) => sum + (row.is_variance_item ? flt(row.amount || 0) : 0),
     0,
   );
-  
+
   // PPh base excludes variance items
   const itemPphTotal = (frm.doc.items || []).reduce(
     (sum, row) => sum + (row.is_pph_applicable && !row.is_variance_item ? flt(row.pph_base_amount || 0) : 0),
     0,
   );
-  
+
   // Calculate PPN from items total using template rate (NOT from OCR)
   let totalPpn = 0;
   if (frm.doc.docstatus === 0) {
@@ -167,7 +167,7 @@ function computeTotals(frm) {
     // Submitted/Cancelled: Use saved backend value
     totalPpn = flt(frm.doc.total_ppn || 0);
   }
-  
+
   const totalPpnbm = flt(frm.doc.ti_fp_ppnbm || frm.doc.ppnbm || 0);
   const pphBaseTotal = itemPphTotal
     || (frm.doc.is_pph_applicable ? flt(frm.doc.pph_base_amount || 0) : 0);
@@ -239,14 +239,14 @@ async function getPpnRate(frm) {
     frm.doc.__ppn_rate = 0;
     return 0;
   }
-  
+
   // Check cache first
   const cacheKey = frm.doc.ppn_template;
   if (ppnRateCache[cacheKey] !== undefined) {
     frm.doc.__ppn_rate = ppnRateCache[cacheKey];
     return ppnRateCache[cacheKey];
   }
-  
+
   try {
     const template = await frappe.db.get_doc('Purchase Taxes and Charges Template', frm.doc.ppn_template);
     const rate = (template.taxes && template.taxes[0] && template.taxes[0].rate) || 0;
@@ -265,7 +265,7 @@ async function updateTotalsSummary(frm) {
   if (frm.doc.is_ppn_applicable && frm.doc.ppn_template) {
     await getPpnRate(frm);
   }
-  
+
   const totals = computeTotals(frm);
   const fields = {
     total_expense: totals.totalExpense,
@@ -517,27 +517,55 @@ function lockVarianceItemRows(frm) {
   // Make variance item rows completely read-only
   // Variance items are system-generated and should not be editable by users
   const items = frm.doc.items || [];
+
+  // Early return if no items grid or not ready
+  if (!frm.fields_dict?.items?.grid) {
+    return;
+  }
+
+  const grid = frm.fields_dict.items.grid;
+
+  // Early return if grid_rows not available
+  if (!grid.grid_rows || !Array.isArray(grid.grid_rows)) {
+    return;
+  }
+
   items.forEach((item, idx) => {
-    if (item.is_variance_item) {
-      const grid = frm.fields_dict.items.grid;
-      const row = grid.grid_rows[idx];
-      if (row) {
-        // Make all fields in this row read-only
-        row.docfields.forEach((df) => {
-          const field = row.fields_dict[df.fieldname];
-          if (field && field.$input) {
-            field.$input.prop('disabled', true);
-          }
-        });
-        // Hide delete button for variance rows
-        if (row.row && row.row.find('.grid-delete-row')) {
-          row.row.find('.grid-delete-row').hide();
+    // Skip if item is not defined or not a variance item
+    if (!item || !item.is_variance_item) {
+      return;
+    }
+
+    const row = grid.grid_rows[idx];
+
+    // Skip if row doesn't exist yet
+    if (!row) {
+      return;
+    }
+
+    // Make all fields in this row read-only
+    if (row.docfields && Array.isArray(row.docfields)) {
+      row.docfields.forEach((df) => {
+        if (!df || !df.fieldname) return;
+
+        const field = row.fields_dict?.[df.fieldname];
+        if (field && field.$input) {
+          field.$input.prop('disabled', true);
         }
-        // Add visual indicator for variance row
-        if (row.row) {
-          row.row.css('background-color', '#fff8e1');  // Light yellow background
-        }
+      });
+    }
+
+    // Hide delete button for variance rows
+    if (row.row && typeof row.row.find === 'function') {
+      const deleteBtn = row.row.find('.grid-delete-row');
+      if (deleteBtn && deleteBtn.length) {
+        deleteBtn.hide();
       }
+    }
+
+    // Add visual indicator for variance row
+    if (row.row && typeof row.row.css === 'function') {
+      row.row.css('background-color', '#fff8e1');  // Light yellow background
     }
   });
 }
@@ -560,7 +588,7 @@ frappe.ui.form.on('Expense Request', {
     maybeRenderCancelDeleteActions(frm);
     maybeRenderPrimarySubmitButton(frm);
     updateTotalsSummary(frm);
-    
+
     const isDraft = frm.doc.docstatus === 0;
 
     const addCheckRouteButton = () => {
@@ -810,12 +838,12 @@ function maybeRenderInternalChargeButton(frm) {
   if (hasInternalCharge) {
     // Show more detailed status with link
     frm.dashboard.add_indicator(__('Internal Charge: {0}', [frm.doc.internal_charge_request]), 'green');
-    
+
     // Add button to view/edit ICR
     frm.add_custom_button(__('View Internal Charge'), () => {
       frappe.set_route('Form', 'Internal Charge Request', frm.doc.internal_charge_request);
     }, __('Actions'));
-    
+
     return;
   }
 
@@ -831,11 +859,11 @@ function maybeRenderInternalChargeButton(frm) {
       });
 
       if (message) {
-        frappe.show_alert({ 
-          message: __('Internal Charge Request {0} created. Please add allocation lines with target cost centers.', [message]), 
-          indicator: 'green' 
+        frappe.show_alert({
+          message: __('Internal Charge Request {0} created. Please add allocation lines with target cost centers.', [message]),
+          indicator: 'green'
         });
-        
+
         // Redirect to ICR form so user can add lines with different cost centers
         frappe.set_route('Form', 'Internal Charge Request', message);
       }
@@ -868,7 +896,7 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
       // If PI doesn't exist anymore, allow creating new one
     }
   }
-  
+
   const [ocrEnabled, requireVerified] = await Promise.all([
     frappe.db.get_single_value('Tax Invoice OCR Settings', 'enable_tax_invoice_ocr'),
     frappe.db.get_single_value(
@@ -931,13 +959,13 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
   frm.add_custom_button(__('Create Purchase Invoice'), async () => {
     // Check for WHT category conflict before creating PI
     const hasItemsWithWHT = frm.doc.items?.some(item => item.is_pph_applicable);
-    
+
     if (hasItemsWithWHT && frm.doc.supplier) {
       // Check if supplier has different WHT category
       const supplierData = await frappe.db.get_value('Supplier', frm.doc.supplier, 'tax_withholding_category');
       const supplierCategory = supplierData?.message?.tax_withholding_category;
       const erPphType = frm.doc.pph_type;
-      
+
       if (supplierCategory && erPphType && supplierCategory !== erPphType) {
         // Conflict detected! Show dialog to user
         frappe.confirm(
@@ -987,7 +1015,7 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
         return; // Stop here, wait for user decision
       }
     }
-    
+
     // No conflict, proceed normally
     proceedCreatePI(frm);
   }, __('Actions'));
