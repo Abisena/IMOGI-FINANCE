@@ -471,6 +471,18 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pass
 
         pi_item_doc = pi.append("items", pi_item)
+
+        # CRITICAL: Exempt variance item from PPN (tax-exempt)
+        # Variance is PPN adjustment itself, should NOT be taxed again
+        is_variance = bool(getattr(item, "is_variance_item", 0))
+        if is_variance:
+            # Set item_tax_rate to exempt this item from all taxes
+            # Format: {"Account Head": 0}
+            pi_item_doc.item_tax_rate = "{}"
+            frappe.logger().info(
+                f"[VARIANCE ITEM] PI item {idx}: Set tax-exempt for variance item"
+            )
+
         # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
             # CRITICAL: Explicitly set apply_tds for EACH item
@@ -494,11 +506,12 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 })
 
     # ============================================================================
-    # PPN VARIANCE HANDLING - NO LINE ITEM
+    # PPN VARIANCE HANDLING
     # ============================================================================
-    # PPN Variance will be added to tax amount in Purchase Taxes table
-    # NOT as a separate line item (changed per user requirement)
-    # Store variance for later use when adding PPN taxes
+    # PPN Variance appears in TWO places:
+    # 1. As line item in Items table (for transparency, set as tax-exempt above)
+    # 2. Added to tax amount in Purchase Taxes table (for correct PPN total)
+    # This ensures variance is visible AND included in tax calculation
     ppn_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
 
     if ppn_variance != 0:
