@@ -22,6 +22,7 @@
     "tax_rate",
     "column_break_tax",
     "harga_jual",
+    "potongan_harga",
     "dpp",
     "ppn",
     "ppnbm",
@@ -129,6 +130,12 @@
       "fieldtype": "Currency",
       "label": "Harga Jual / Penggantian / Uang Muka / Termin",
       "description": "Nilai Harga Jual dari Faktur Pajak"
+    },
+    {
+      "fieldname": "potongan_harga",
+      "fieldtype": "Currency",
+      "label": "Dikurangi Potongan Harga",
+      "description": "Nilai potongan harga / diskon dari Faktur Pajak"
     },
     {
       "fieldname": "dpp",

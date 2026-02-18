@@ -46,7 +46,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes", "ocr_error_log"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "potongan_harga", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes", "ocr_error_log"}
 
 
 def _raise_validation_error(message: str):
@@ -2026,7 +2026,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
     # 🔥 REMOVED: Auto-detection of PPN Type
     # PPN Type is now REQUIRED user input, not auto-detected from OCR
     # Verification will check if user's selected PPN Type matches OCR data
-    
+
     # Still extract PPN rate from text for verification purposes
     ppn_rate_from_text = None
     ppn_rate_match = PPN_RATE_REGEX.search(text or "")
@@ -2036,7 +2036,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
             ppn_rate_from_text = flt(raw_rate)
         except Exception:
             ppn_rate_from_text = None
-    
+
     # Store extracted rate for verification (not for setting ppn_type)
     if ppn_rate_from_text:
         matches["ppn_rate_from_text"] = ppn_rate_from_text
@@ -2187,6 +2187,7 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         },
         "ringkasan_pajak": {
             "harga_jual": matches.get("harga_jual"),
+            "potongan_harga": matches.get("potongan_harga"),
             "dasar_pengenaan_pajak": matches.get("dpp"),
             "jumlah_ppn": matches.get("ppn"),
         },
@@ -2648,40 +2649,40 @@ def _get_google_vision_headers(settings: dict[str, Any]) -> dict[str, str]:
 def _filter_ocr_text_summary_only(text: str) -> str:
 	"""
 	Filter OCR text to keep only header + summary sections.
-	
+
 	Removes line items table (feature removed from Tax Invoice OCR Upload).
 	Keeps:
 	- Faktur Pajak header (nomor seri, dates, supplier info)
 	- Buyer/recipient information
 	- Summary totals (DPP, PPN, PPnBM, Harga Jual)
 	- Footer/signature section
-	
+
 	Removes:
 	- Line items table (No., Kode, Nama Barang, Harga, DPP per item, etc.)
 	"""
 	if not text or not text.strip():
 		return text
-	
+
 	lines = text.splitlines()
 	filtered_lines: list[str] = []
 	in_table = False
-	
+
 	# Keywords that mark the start of the line items table
 	table_start_keywords = {
 		"No.", "NOMOR", "Kode Barang", "Nama Barang", "Harga Jual",
 		"No.Kode", "No. Kode"
 	}
-	
+
 	# Keywords that mark the end of line items (summary section)
 	summary_start_keywords = {
 		"Dasar Pengenaan Pajak", "Jumlah PPN", "Jumlah PPnBM",
 		"Dikurangi Potongan", "Dikurangi Uang Muka",
 		"Harga Jual / Penggantian / Uang Muka / Termin"  # Summary line (not items)
 	}
-	
+
 	for i, line in enumerate(lines):
 		stripped = line.strip()
-		
+
 		# Check if we're entering the table
 		if any(kw in stripped for kw in table_start_keywords):
 			# Verify this is actually a table header by checking next few lines
@@ -2691,12 +2692,12 @@ def _filter_ocr_text_summary_only(text: str) -> str:
 				if "rp" in next_lines or "harga" in next_lines or "potongan" in next_lines:
 					in_table = True
 					continue  # Skip the header line
-		
+
 		# Check if we're exiting the table (summary section starts)
 		if in_table and any(kw in stripped for kw in summary_start_keywords):
 			in_table = False
 			# Include this summary line
-		
+
 		# Skip lines that are clearly item details (numbers with Rp currency, item codes, etc.)
 		if in_table:
 			# Skip if line is item data (e.g., numbers, descriptions, amounts)
@@ -2709,9 +2710,9 @@ def _filter_ocr_text_summary_only(text: str) -> str:
 				"x" in stripped and "Rp" in stripped  # Quantity x amount (e.g., "Rp 360.500,00 x 1,00")
 			):
 				continue
-		
+
 		filtered_lines.append(line)
-	
+
 	return "\n".join(filtered_lines).strip()
 
 
@@ -2776,7 +2777,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     # 🔥 FIX: Use default 5 (not 2) to ensure multi-page PDFs are fully processed
     max_pages = max(cint(settings.get("ocr_max_pages") or 5), 1)
     headers = _get_google_vision_headers(settings)
-    
+
     frappe.logger().info(f"[Google Vision] Processing PDF with max_pages={max_pages}")
 
     request_body: dict[str, Any] = {
@@ -2822,7 +2823,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         Iterate through all response entries, handling both:
         1. Single-page: responses[0] contains fullTextAnnotation directly
         2. Multi-page PDF: responses[0].responses[] contains per-page annotations
-        
+
         Yields:
             dict: Each page's response entry
         """
@@ -2863,7 +2864,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
                     f"[Google Vision] Page {page_counter}: Extracted {len(processed)} chars "
                     f"from fullTextAnnotation"
                 )
-                
+
         # Priority 2: Fallback to textAnnotations[0] if fullText missing
         if not full_text:
             text_annotations = entry.get("textAnnotations") or []
@@ -2877,7 +2878,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
                             f"[Google Vision] Page {page_counter}: Extracted {len(processed)} chars "
                             f"from textAnnotations (fallback)"
                         )
-        
+
         # Extract confidence from pages
         pages = (entry.get("fullTextAnnotation") or {}).get("pages") or []
         for page in pages:
@@ -2891,7 +2892,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
     # 🔥 FIX: Use double newline between pages to preserve structure
     # This ensures summary section from page 2 doesn't merge with line items from page 1
     text = "\n\n".join(texts).strip()
-    
+
     if not text:
         frappe.logger().warning("[Google Vision] OCR returned empty text after processing all pages")
         return "", data, 0.0
@@ -2901,10 +2902,10 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
         f"[Google Vision] ✅ Successfully combined text from {len(texts)} page(s): "
         f"{len(text)} total chars, {text.count(chr(10))} lines"
     )
-    
+
     # 🔥 VALIDATION: Check if summary section markers are present
     has_summary_markers = (
-        "Dasar Pengenaan Pajak" in text or 
+        "Dasar Pengenaan Pajak" in text or
         "Jumlah PPN" in text or
         "Dikurangi Potongan Harga" in text
     )
@@ -2913,7 +2914,7 @@ def _google_vision_ocr(file_url: str, settings: dict[str, Any]) -> tuple[str, di
             "[Google Vision] ⚠️  Summary section markers not found in extracted text. "
             "PDF may be incomplete or OCR quality is low."
         )
-    
+
     # 🔥 DEBUG: Log first/last 500 chars for troubleshooting
     if frappe.conf.get("developer_mode"):
         preview_start = text[:500] if len(text) > 500 else text
@@ -3067,7 +3068,7 @@ def _update_doc_after_ocr(
     doc.save()
 
     frappe.logger().info(f"[OCR] Doc saved with ocr_status=Done, modified={doc.modified}")
-    
+
     # 🆕 FIX: Generate verification notes after OCR completes
     # Now that all OCR data is saved, run validate() to generate verification notes
     if doctype == "Tax Invoice OCR Upload":
@@ -3218,6 +3219,7 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                             notes_obj = json.loads(parsed["notes"])
                             notes_obj["ringkasan_pajak"] = {
                                 "harga_jual": parsed.get("harga_jual"),
+                                "potongan_harga": parsed.get("potongan_harga"),
                                 "dasar_pengenaan_pajak": parsed["dpp"],
                                 "jumlah_ppn": parsed["ppn"],
                             }
@@ -3469,7 +3471,7 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     ppn_value = flt(_get_value(doc, doctype, "ppn", 0))
     ppnbm_value = flt(_get_value(doc, doctype, "ppnbm", 0))
     tax_rate = flt(_get_value(doc, doctype, "tax_rate", 0))
-    
+
     # Verify PPN Type selection against actual amounts
     if ppn_type:
         if "Standard 11%" in ppn_type:
@@ -3483,7 +3485,7 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                         "PPN Type is 'Standard 11%' but actual rate is {0:.2%}. "
                         "Please verify if type selection is correct."
                     ).format(actual_rate))
-        
+
         elif "Standard 12%" in ppn_type:
             expected_rate = 0.12
             if ppn_value == 0 and dpp > 0:
@@ -3495,28 +3497,28 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                         "PPN Type is 'Standard 12%' but actual rate is {0:.2%}. "
                         "Please verify if type selection is correct."
                     ).format(actual_rate))
-        
+
         elif "Zero Rated" in ppn_type or "Ekspor" in ppn_type:
             if ppn_value > 0:
                 notes.append(_(
                     "PPN Type is 'Zero Rated (Ekspor)' but PPN amount is Rp {0:,.2f}. "
                     "Zero Rated invoices should have PPN = 0."
                 ).format(ppn_value))
-        
+
         elif "Tidak Dipungut" in ppn_type or "Dibebaskan" in ppn_type:
             if ppn_value > 0:
                 notes.append(_(
                     "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
                     "This type should have PPN = 0."
                 ).format(ppn_type, ppn_value))
-        
+
         elif "Bukan Objek PPN" in ppn_type:
             if ppn_value > 0:
                 notes.append(_(
                     "PPN Type is 'Bukan Objek PPN' but PPN amount is Rp {0:,.2f}. "
                     "Non-PPN transactions should have PPN = 0."
                 ).format(ppn_value))
-        
+
         elif "Digital 1.1%" in ppn_type or "PMSE" in ppn_type:
             expected_rate = 0.011
             if dpp > 0:
@@ -3526,7 +3528,7 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
                         "PPN Type is 'Digital 1.1%' but actual rate is {0:.2%}. "
                         "Please verify if this is a PMSE transaction."
                     ).format(actual_rate))
-        
+
         elif "Custom" in ppn_type or "Other" in ppn_type:
             # ✅ Custom tariff - show actual rate for user reference
             if dpp > 0 and ppn_value > 0:
@@ -3688,7 +3690,7 @@ def get_tax_invoice_ocr_monitoring(docname: str, doctype: str) -> dict[str, Any]
         # 🔥 FIX: Read from actual verification_notes field for Tax Invoice OCR Upload
         # (not from "notes" which is mapped to ocr_summary_json)
         "verification_notes": (
-            getattr(source_doc, "verification_notes", None) 
+            getattr(source_doc, "verification_notes", None)
             if source_doctype == "Tax Invoice OCR Upload"
             else _get_value(source_doc, source_doctype, "notes")
         ),
