@@ -602,43 +602,6 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 pi.calculate_taxes_and_totals()
                 pi.save(ignore_permissions=True)
 
-            # Apply PPN variance to tax amount (after calculation)
-            if ppn_variance != 0 and first_ppn_account:
-                variance_applied = False
-                for tax_row in pi.taxes:
-                    # Find the PPN tax row by matching account_head
-                    if tax_row.account_head == first_ppn_account:
-                        # Add variance to calculated tax_amount
-                        original_amount = flt(tax_row.tax_amount)
-                        new_amount = original_amount + ppn_variance
-                        tax_row.tax_amount = new_amount
-
-                        # Update description to show variance adjustment
-                        variance_note = _("(incl. OCR variance: {0})").format(
-                            frappe.format_value(ppn_variance, {"fieldtype": "Currency"})
-                        )
-                        if tax_row.description:
-                            tax_row.description = f"{tax_row.description} {variance_note}"
-                        else:
-                            tax_row.description = variance_note
-
-                        frappe.logger().info(
-                            f"[PPN VARIANCE] PI {pi.name}: Adjusted PPN from {original_amount:,.2f} "
-                            f"to {new_amount:,.2f} (variance={ppn_variance:,.2f})"
-                        )
-                        variance_applied = True
-                        break
-
-                if not variance_applied:
-                    frappe.logger().warning(
-                        f"[PPN VARIANCE] PI {pi.name}: Could not find PPN tax row to apply variance"
-                    )
-
-                # Recalculate totals after variance adjustment
-                if variance_applied and hasattr(pi, "calculate_taxes_and_totals"):
-                    pi.calculate_taxes_and_totals()
-                    pi.save(ignore_permissions=True)
-
             frappe.logger().info(
                 f"[PPN] PI {pi.name}: PPN calculated - Added={flt(pi.taxes_and_charges_added):,.2f}"
             )
@@ -683,6 +646,75 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     # Reload again to get final calculated values
     pi.reload()
+
+    # Apply PPN variance to tax amount AFTER all calculations are complete
+    # CRITICAL: Must be done after final calculate_taxes_and_totals() to prevent overwriting
+    if apply_ppn and ppn_variance != 0:
+        variance_applied = False
+        first_ppn_account = None
+
+        # Find first PPN tax row
+        for tax_row in pi.taxes:
+            if tax_row.charge_type == "On Net Total":
+                first_ppn_account = tax_row.account_head
+                break
+
+        if first_ppn_account:
+            for tax_row in pi.taxes:
+                # Find the PPN tax row by matching account_head
+                if tax_row.account_head == first_ppn_account:
+                    # Add variance to calculated tax_amount
+                    original_amount = flt(tax_row.tax_amount)
+                    new_amount = original_amount + ppn_variance
+                    tax_row.tax_amount = new_amount
+
+                    # Update description to show variance adjustment
+                    variance_note = _("(incl. OCR variance: {0})").format(
+                        frappe.format_value(ppn_variance, {"fieldtype": "Currency"})
+                    )
+                    if tax_row.description:
+                        tax_row.description = f"{tax_row.description} {variance_note}"
+                    else:
+                        tax_row.description = variance_note
+
+                    frappe.logger().info(
+                        f"[PPN VARIANCE] PI {pi.name}: Adjusted PPN from {original_amount:,.2f} "
+                        f"to {new_amount:,.2f} (variance={ppn_variance:,.2f})"
+                    )
+                    variance_applied = True
+                    break
+
+            if variance_applied:
+                # Save the variance adjustment WITHOUT recalculating
+                # db_set bypasses calculate_taxes_and_totals()
+                for idx, tax_row in enumerate(pi.taxes):
+                    if tax_row.account_head == first_ppn_account:
+                        # Update child table row directly in DB
+                        tax_row.db_update()
+                        break
+
+                # Update parent totals manually to reflect variance
+                pi.taxes_and_charges_added = flt(pi.taxes_and_charges_added) + ppn_variance
+                pi.total_taxes_and_charges = flt(pi.total_taxes_and_charges) + ppn_variance
+                pi.grand_total = flt(pi.grand_total) + ppn_variance
+                pi.rounded_total = flt(pi.rounded_total) + ppn_variance
+
+                # Save without recalculating
+                pi.db_set({
+                    "taxes_and_charges_added": pi.taxes_and_charges_added,
+                    "total_taxes_and_charges": pi.total_taxes_and_charges,
+                    "grand_total": pi.grand_total,
+                    "rounded_total": pi.rounded_total
+                }, update_modified=False)
+
+                frappe.logger().info(
+                    f"[PPN VARIANCE] PI {pi.name}: Applied variance to totals - "
+                    f"Grand Total: {pi.grand_total:,.2f}"
+                )
+            else:
+                frappe.logger().warning(
+                    f"[PPN VARIANCE] PI {pi.name}: Could not find PPN tax row to apply variance"
+                )
 
     # Validate taxes were actually calculated
     # NOTE: Skip validation for MIXED mode since taxes are calculated per-item, not at PI level
