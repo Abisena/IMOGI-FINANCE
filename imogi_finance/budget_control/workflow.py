@@ -151,6 +151,16 @@ def _get_account_totals(items: Iterable) -> tuple[float, dict[str, float]]:
     per_account: dict[str, float] = defaultdict(float)
 
     for item in items or []:
+        # Skip variance items from budget check
+        # Variance items are system-generated adjustments (e.g., PPN rounding differences)
+        # and should not be subject to budget control
+        is_variance = accounting._get_item_value(item, "is_variance_item")
+        if is_variance:
+            frappe.logger().info(
+                f"_get_account_totals: Skipping variance item from budget check: {accounting._get_item_value(item, 'description')}"
+            )
+            continue
+
         account = accounting._get_item_value(item, "expense_account")
         amount = accounting._get_item_value(item, "amount")
 
@@ -337,7 +347,7 @@ def _get_entries_for_ref(ref_doctype: str, ref_name: str, entry_type: str | None
 
 def _reverse_reservations(expense_request):
     """Reverse existing RESERVATION entries by creating RESERVATION IN entries.
-    
+
     Used when re-submitting an Expense Request that already has reservations.
     Uses RESERVATION IN to offset RESERVATION OUT (simplified flow, replaces RELEASE).
     """
@@ -637,10 +647,10 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
 
 def release_budget_for_request(expense_request, *, reason: str | None = None):
     """Release budget reservation for an expense request.
-    
+
     Uses RESERVATION with direction IN to offset the original RESERVATION OUT.
     This is the simplified flow that replaces the deprecated RELEASE entry type.
-    
+
     Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
     """
     settings = utils.get_settings()
@@ -651,7 +661,7 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
     reservations = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
     # Filter to only OUT direction entries
     reservations_out = [r for r in reservations if r.get("direction") == "OUT"]
-    
+
     if not reservations_out:
         frappe.logger().info(
             f"release_budget_for_request: No RESERVATION OUT entries found for {getattr(expense_request, 'name', None)}"
@@ -681,7 +691,7 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
         if entry_name:
             entries_created.append(entry_name)
             frappe.logger().info(f"release_budget_for_request: Created RESERVATION IN {entry_name}")
-    
+
     frappe.logger().info(
         f"release_budget_for_request: Released {len(entries_created)} reservations for {getattr(expense_request, 'name', None)}"
     )
@@ -714,7 +724,7 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
     - Reopen: Create RESERVATION IN (release lock) for re-submission
 
     Formula: Reserved = RESERVATION(OUT) - RESERVATION(IN) - CONSUMPTION(IN) + REVERSAL(OUT)
-    
+
     RESERVATION entries remain in database and are offset by:
     - RESERVATION IN when ER is rejected/cancelled
     - CONSUMPTION IN when PI is submitted
