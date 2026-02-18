@@ -6,7 +6,7 @@ frappe.ui.form.on('Transfer Application', {
   refresh(frm) {
     load_reference_options(frm);
     set_reference_query(frm);
-    
+
     // Apply read-only to items with reference documents
     apply_readonly_to_fetched_items(frm);
 
@@ -26,33 +26,33 @@ frappe.ui.form.on('Transfer Application', {
 frappe.ui.form.on('Transfer Application Item', {
   reference_name(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
-    
+
     if (!row.reference_name || !row.reference_doctype) {
       return;
     }
-    
+
     // Fetch details from reference document
     fetch_reference_document_details(frm, row);
   },
-  
+
   reference_doctype(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
     // Clear reference name when doctype changes
     frappe.model.set_value(cdt, cdn, 'reference_name', '');
   },
-  
+
   amount(frm, cdt, cdn) {
     calculate_totals(frm);
   },
-  
+
   expected_amount(frm, cdt, cdn) {
     calculate_totals(frm);
   },
-  
+
   items_remove(frm, cdt, cdn) {
     calculate_totals(frm);
   },
-  
+
   items_add(frm, cdt, cdn) {
     calculate_totals(frm);
   }
@@ -61,12 +61,12 @@ frappe.ui.form.on('Transfer Application Item', {
 function calculate_totals(frm) {
   let total_amount = 0;
   let total_expected = 0;
-  
+
   frm.doc.items?.forEach(item => {
     total_amount += flt(item.amount);
     total_expected += flt(item.expected_amount || item.amount);
   });
-  
+
   frm.set_value('amount', total_amount);
   frm.set_value('expected_amount', total_expected);
 }
@@ -108,12 +108,12 @@ function add_payment_entry_button(frm) {
       callback: (r) => {
         if (r?.message) {
           const { payment_entries, count, message } = r.message;
-          
-          frappe.show_alert({ 
-            message: message || __('Created {0} Payment Entry(ies)', [count]), 
-            indicator: 'green' 
+
+          frappe.show_alert({
+            message: message || __('Created {0} Payment Entry(ies)', [count]),
+            indicator: 'green'
           });
-          
+
           frm.reload_doc().then(() => {
             // Show list of created PEs in dialog
             if (payment_entries && payment_entries.length > 0) {
@@ -122,7 +122,7 @@ function add_payment_entry_button(frm) {
                 html += `<li><a href="/app/payment-entry/${pe}" target="_blank">${pe}</a></li>`;
               });
               html += '</ul></div>';
-              
+
               frappe.msgprint({
                 title: __('Payment Entries Created'),
                 message: html,
@@ -133,7 +133,7 @@ function add_payment_entry_button(frm) {
         }
       },
     });
-  }, __('Actions'));
+  }, __('Transfer'));
 }
 
 function add_mark_printed_button(frm) {
@@ -146,16 +146,16 @@ function add_mark_printed_button(frm) {
         frm.reload_doc();
       },
     });
-  }, __('Actions'));
+  }, __('Transfer'));
 }
 
 function add_export_excel_button(frm) {
   // Only show for approved transfers and Finance Controller role
   if (!frm.doc.workflow_state) return;
-  
+
   const allowed_states = ['Approved for Transfer', 'Awaiting Bank Confirmation', 'Paid'];
   if (!allowed_states.includes(frm.doc.workflow_state)) return;
-  
+
   frm.add_custom_button(__('Export to Excel'), () => {
     frm.call({
       doc: frm.doc,
@@ -171,20 +171,20 @@ function add_export_excel_button(frm) {
         }
       }
     });
-  }, __('Actions'));
+  }, __('Transfer'));
 }
 
 function apply_readonly_to_fetched_items(frm) {
   // Apply read-only to items that have reference documents
   if (!frm.doc.items) return;
-  
+
   frm.doc.items.forEach(item => {
     if (item.reference_name && item.reference_doctype) {
       let grid_row = frm.fields_dict.items.grid.grid_rows_by_docname[item.name];
       if (grid_row) {
-        let fields = ['description', 'amount', 'party_type', 'party', 'beneficiary_name', 
+        let fields = ['description', 'amount', 'party_type', 'party', 'beneficiary_name',
                       'bank_name', 'account_number', 'account_holder_name', 'bank_branch'];
-        
+
         fields.forEach(field => {
           grid_row.toggle_editable(field, false);
         });
@@ -203,7 +203,7 @@ function fetch_reference_document_details(frm, row) {
     callback: (r) => {
       if (r.message) {
         let doc = r.message;
-        
+
         // Fetch based on doctype
         if (row.reference_doctype === 'Expense Request') {
           fetch_from_expense_request(frm, row, doc);
@@ -214,7 +214,7 @@ function fetch_reference_document_details(frm, row) {
         } else if (row.reference_doctype === 'Payment Entry') {
           fetch_from_payment_entry(frm, row, doc);
         }
-        
+
         // Set fields as read-only after fetching
         set_fields_readonly_in_grid(frm, row.name, true);
       }
@@ -226,12 +226,12 @@ function fetch_from_expense_request(frm, row, er_doc) {
   // Set description and amount
   frappe.model.set_value(row.doctype, row.name, 'description', er_doc.description || er_doc.name);
   frappe.model.set_value(row.doctype, row.name, 'amount', er_doc.total_amount || 0);
-  
+
   // Fetch supplier details if available
   if (er_doc.supplier) {
     frappe.model.set_value(row.doctype, row.name, 'party_type', 'Supplier');
     frappe.model.set_value(row.doctype, row.name, 'party', er_doc.supplier);
-    
+
     // Fetch bank details
     fetch_bank_details_for_party(frm, row, 'Supplier', er_doc.supplier);
   }
@@ -242,12 +242,12 @@ function fetch_from_purchase_invoice(frm, row, pi_doc) {
   let desc = pi_doc.bill_no || pi_doc.title || pi_doc.name;
   frappe.model.set_value(row.doctype, row.name, 'description', desc);
   frappe.model.set_value(row.doctype, row.name, 'amount', pi_doc.outstanding_amount || pi_doc.grand_total || 0);
-  
+
   // Fetch supplier details
   if (pi_doc.supplier) {
     frappe.model.set_value(row.doctype, row.name, 'party_type', 'Supplier');
     frappe.model.set_value(row.doctype, row.name, 'party', pi_doc.supplier);
-    
+
     // Fetch bank details
     fetch_bank_details_for_party(frm, row, 'Supplier', pi_doc.supplier);
   }
@@ -257,12 +257,12 @@ function fetch_from_purchase_order(frm, row, po_doc) {
   // Set description and amount
   frappe.model.set_value(row.doctype, row.name, 'description', po_doc.title || po_doc.name);
   frappe.model.set_value(row.doctype, row.name, 'amount', po_doc.grand_total || 0);
-  
+
   // Fetch supplier details
   if (po_doc.supplier) {
     frappe.model.set_value(row.doctype, row.name, 'party_type', 'Supplier');
     frappe.model.set_value(row.doctype, row.name, 'party', po_doc.supplier);
-    
+
     // Fetch bank details
     fetch_bank_details_for_party(frm, row, 'Supplier', po_doc.supplier);
   }
@@ -272,12 +272,12 @@ function fetch_from_payment_entry(frm, row, pe_doc) {
   // Set description and amount
   frappe.model.set_value(row.doctype, row.name, 'description', pe_doc.remarks || pe_doc.name);
   frappe.model.set_value(row.doctype, row.name, 'amount', pe_doc.paid_amount || 0);
-  
+
   // Fetch party details
   if (pe_doc.party_type && pe_doc.party) {
     frappe.model.set_value(row.doctype, row.name, 'party_type', pe_doc.party_type);
     frappe.model.set_value(row.doctype, row.name, 'party', pe_doc.party);
-    
+
     // Fetch bank details
     fetch_bank_details_for_party(frm, row, pe_doc.party_type, pe_doc.party);
   }
@@ -313,9 +313,9 @@ function fetch_bank_details_for_party(frm, row, party_type, party_name) {
 
 function set_fields_readonly_in_grid(frm, row_name, readonly) {
   // Set read-only for fields that were fetched from reference
-  let fields = ['description', 'amount', 'party_type', 'party', 'beneficiary_name', 
+  let fields = ['description', 'amount', 'party_type', 'party', 'beneficiary_name',
                 'bank_name', 'account_number', 'account_holder_name', 'bank_branch'];
-  
+
   let grid_row = frm.fields_dict.items.grid.grid_rows_by_docname[row_name];
   if (grid_row) {
     fields.forEach(field => {
