@@ -241,6 +241,8 @@ doc_events = {
             "imogi_finance.events.purchase_invoice.prevent_double_wht_validate",
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
+            "imogi_finance.events.purchase_invoice.manage_ppn_variance_validate",
+            "imogi_finance.events.purchase_invoice.manage_direct_pi_ppn_variance",
         ],
         "before_submit": "imogi_finance.events.purchase_invoice.validate_before_submit",
         "on_submit": "imogi_finance.events.purchase_invoice.on_submit",

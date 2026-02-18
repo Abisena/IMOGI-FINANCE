@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from imogi_finance.branching import get_branch_settings, validate_branch_alignment
 from imogi_finance.accounting import PURCHASE_INVOICE_ALLOWED_STATUSES, PURCHASE_INVOICE_REQUEST_TYPES
@@ -72,6 +72,185 @@ def prevent_double_wht_validate(doc, method=None):
     _prevent_double_wht(doc)
 
 
+def manage_ppn_variance_validate(doc, method=None):
+    """Manage PPN variance row idempotently in PI validate hook.
+    
+    Runs AFTER calculate_taxes_and_totals() to adjust PPN tax based on OCR variance.
+    Only processes if:
+    - PI has taxes table with PPN
+    - Tax Invoice OCR Upload is linked
+    - OCR has PPN amount
+    """
+    # Skip if no tax invoice upload or no OCR PPN
+    if not getattr(doc, "ti_tax_invoice_upload", None):
+        return
+    
+    ocr_ppn = flt(getattr(doc, "ti_fp_ppn", 0) or 0)
+    if ocr_ppn <= 0:
+        return
+    
+    # Get PPN tax rows from taxes table
+    if not hasattr(doc, "taxes") or not doc.taxes:
+        return
+    
+    # Find PPN tax row(s) - look for "On Net Total" charge type
+    ppn_tax_rows = [
+        tax for tax in doc.taxes
+        if getattr(tax, "charge_type", None) == "On Net Total"
+    ]
+    
+    if not ppn_tax_rows:
+        return
+    
+    # Calculate expected PPN from first PPN tax row
+    first_ppn_row = ppn_tax_rows[0]
+    calculated_ppn = flt(getattr(first_ppn_row, "tax_amount", 0) or 0)
+    
+    # STRICT ZERO TOLERANCE: Use int(round()) for numerical normalization
+    variance_raw = ocr_ppn - calculated_ppn
+    variance = int(round(variance_raw))
+    
+    if variance == 0:
+        # No variance adjustment needed
+        return
+    
+    # Apply variance to first PPN tax row
+    new_tax_amount = calculated_ppn + variance
+    first_ppn_row.tax_amount = new_tax_amount
+    
+    # Update description to show variance
+    original_desc = getattr(first_ppn_row, "description", "") or ""
+    variance_note = f"(+OCR variance: Rp {variance:,.0f})" if variance > 0 else f"(OCR variance: Rp {variance:,.0f})"
+    
+    if "OCR variance" in original_desc:
+        # Replace existing variance note
+        import re
+        first_ppn_row.description = re.sub(r'\(.*OCR variance:.*?\)', variance_note, original_desc)
+    else:
+        # Append variance note
+        first_ppn_row.description = f"{original_desc} {variance_note}".strip()
+    
+    frappe.logger().info(
+        f"[PPN VARIANCE] PI {doc.name}: Adjusted PPN from {calculated_ppn:,.2f} "
+        f"to {new_tax_amount:,.2f} (variance={variance:,.0f})"
+    )
+    
+    # Recalculate totals with adjusted tax
+    if hasattr(doc, "calculate_taxes_and_totals"):
+        doc.calculate_taxes_and_totals()
+
+
+def manage_direct_pi_ppn_variance(doc, method=None):
+    """Manage PPN variance for direct PI (without ER) - strict zero tolerance + idempotent.
+    
+    Only runs for PI WITHOUT Expense Request link.
+    Creates/updates/deletes variance item in items table.
+    """
+    # Skip if linked to ER (variance already managed by ER)
+    if getattr(doc, "imogi_expense_request", None):
+        return
+    
+    # Skip if no OCR or no PPN
+    if not getattr(doc, "ti_tax_invoice_upload", None):
+        return
+    
+    ocr_ppn = flt(getattr(doc, "ti_fp_ppn", 0) or 0)
+    if ocr_ppn <= 0:
+        return
+    
+    # Must have taxes_and_charges template
+    if not getattr(doc, "taxes_and_charges", None):
+        frappe.throw("Purchase Taxes and Charges Template wajib dipilih untuk PI dengan OCR. Pilih template VAT yang sesuai.")
+    
+    # Get expected PPN from taxes table
+    if not hasattr(doc, "taxes") or not doc.taxes:
+        frappe.throw("Purchase Taxes and Charges Template wajib dipilih untuk PI dengan OCR. Pilih template VAT yang sesuai.")
+    
+    ppn_tax_rows = [tax for tax in doc.taxes if getattr(tax, "charge_type", None) == "On Net Total"]
+    if not ppn_tax_rows:
+        frappe.throw("Template tidak memiliki baris VAT (On Net Total). Periksa template & Tax Profile.")
+    
+    # STRICT: Throw if no VAT account configured in Tax Profile
+    try:
+        from imogi_finance.settings.utils import get_vat_input_accounts
+        company = getattr(doc, "company", None)
+        vat_accounts = get_vat_input_accounts(company)
+    except frappe.ValidationError as e:
+        frappe.throw(str(e))
+    
+    expected_ppn = flt(getattr(ppn_tax_rows[0], "tax_amount", 0) or 0)
+    
+    # STRICT ZERO TOLERANCE
+    variance_raw = ocr_ppn - expected_ppn
+    variance = int(round(variance_raw))
+    
+    # Get PPN Variance account
+    try:
+        from imogi_finance.settings.utils import get_gl_account
+        from imogi_finance.settings.gl_purposes import PPN_VARIANCE
+        company = getattr(doc, "company", None)
+        variance_account = get_gl_account(PPN_VARIANCE, company=company, required=True)
+    except frappe.DoesNotExistError:
+        frappe.throw("GL Account Mapping untuk purpose 'PPN_VARIANCE' belum ada. Tambahkan di GL Purposes/Mapping.")
+    except Exception as e:
+        frappe.throw(str(e))
+    
+    # IDEMPOTENT: Query existing variance rows
+    items = doc.get("items") or []
+    ppn_var_rows = [
+        r for r in items
+        if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
+    ]
+    
+    if variance == 0:
+        # Delete all variance rows
+        if ppn_var_rows:
+            for row in ppn_var_rows:
+                doc.remove(row)
+            frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Deleted {len(ppn_var_rows)} variance row(s) (variance = 0)")
+    
+    elif len(ppn_var_rows) == 0:
+        # CREATE: No variance row exists, create new one
+        doc.append("items", {
+            "item_name": "PPN Variance",
+            "description": "PPN Variance (OCR adjustment)",
+            "expense_account": variance_account,
+            "cost_center": getattr(doc, "cost_center", None),
+            "qty": 1,
+            "rate": variance,
+            "amount": variance,
+            "is_variance_item": 1,
+        })
+        # Set custom field if exists
+        if items and hasattr(items[-1], "is_ppn_variance_row"):
+            items[-1].is_ppn_variance_row = 1
+        frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Created variance row = {variance}")
+    
+    elif len(ppn_var_rows) == 1:
+        # UPDATE: Exactly 1 row exists, update it
+        row = ppn_var_rows[0]
+        row.amount = variance
+        row.rate = variance
+        row.description = "PPN Variance (OCR adjustment)"
+        frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Updated variance row = {variance}")
+    
+    else:
+        # MERGE: Multiple rows exist, merge to 1
+        first_row = ppn_var_rows[0]
+        first_row.amount = variance
+        first_row.rate = variance
+        first_row.description = "PPN Variance (OCR adjustment)"
+        
+        for duplicate in ppn_var_rows[1:]:
+            doc.remove(duplicate)
+        
+        frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Merged {len(ppn_var_rows)} rows to 1, variance = {variance}")
+    
+    # Recalculate totals after variance item changes
+    if hasattr(doc, "calculate_taxes_and_totals"):
+        doc.calculate_taxes_and_totals()
+
+
 def validate_before_submit(doc, method=None):
     # Prevent double WHT: clear supplier's tax category if Apply WHT already set from ER
     _prevent_double_wht(doc)
@@ -88,33 +267,6 @@ def validate_before_submit(doc, method=None):
     
     # Option A: Budget check for direct PI (without ER)
     _validate_budget_for_direct_pi(doc)
-    
-    settings = get_settings()
-    require_verified = cint(settings.get("enable_tax_invoice_ocr")) and cint(
-        settings.get("require_verification_before_submit_pi")
-    )
-    has_tax_invoice_upload = bool(getattr(doc, "ti_tax_invoice_upload", None))
-    if (
-        require_verified
-        and has_tax_invoice_upload
-        and getattr(doc, "ti_verification_status", "") != "Verified"
-    ):
-        message = _("Tax Invoice must be verified before submitting this Purchase Invoice.")
-        marker = getattr(frappe, "ThrowMarker", None)
-        throw_fn = getattr(frappe, "throw", None)
-
-        if callable(throw_fn):
-            try:
-                throw_fn(message, title=_("Verification Required"))
-                return
-            except Exception as exc:
-                if marker and not isinstance(exc, marker) and exc.__class__.__name__ != "ThrowCalled":
-                    raise marker(message)
-                raise
-
-        if marker:
-            raise marker(message)
-        raise Exception(message)
 
 
 def _validate_one_pi_per_request(doc):
@@ -122,8 +274,8 @@ def _validate_one_pi_per_request(doc):
     
     Cancelled PI are ignored - allow creating new PI if old one is cancelled.
     """
-    expense_request = doc.get("imogi_expense_request")
-    branch_request = doc.get("branch_expense_request")
+    expense_request = getattr(doc, "imogi_expense_request", None)
+    branch_request = getattr(doc, "branch_expense_request", None)
     
     if expense_request:
         existing_pi = frappe.db.get_value(
@@ -387,10 +539,10 @@ def _prevent_double_wht(doc):
     - SOLUTION: When ER's Apply WHT is set, explicitly set tax_withholding_category = None
       AND set apply_tds = 0 to prevent Frappe's TDS controller from using supplier's category
     """
-    expense_request = doc.get("imogi_expense_request")
-    apply_tds = cint(doc.get("apply_tds", 0))  # Dari ER's Apply WHT checkbox (at PI level)
-    pph_type = doc.get("imogi_pph_type")        # Dari ER's Tab Tax
-    supplier_tax_category = doc.get("tax_withholding_category")  # Auto-populated oleh Frappe
+    expense_request = getattr(doc, "imogi_expense_request", None)
+    apply_tds = cint(getattr(doc, "apply_tds", 0))  # Dari ER's Apply WHT checkbox (at PI level)
+    pph_type = getattr(doc, "imogi_pph_type", None)        # Dari ER's Tab Tax
+    supplier_tax_category = getattr(doc, "tax_withholding_category", None)  # Auto-populated oleh Frappe
     
     # Check if this is a mixed Apply WHT scenario
     # MIXED mode: apply_tds=1 at PI level, pph_type is set, supplier_tax_category exists

@@ -37,8 +37,6 @@ DEFAULT_SETTINGS = {
     "ocr_max_retry": 1,
     "ocr_file_max_mb": 10,
     "store_raw_ocr_json": 1,
-    "require_verification_before_submit_pi": 1,
-    "require_verification_before_create_pi_from_expense_request": 1,
     "npwp_normalize": 1,
     "block_duplicate_fp_no": 1,
     "google_vision_service_account_file": None,
@@ -372,6 +370,132 @@ def _infer_nilai_lain_factor_from_amounts(dpp_value: Any, ppn_value: Any) -> tup
 
     # Conservative default policy for Nilai Lain context
     return float(Decimal("11") / Decimal("12")), "default_policy"
+
+
+def get_template_vat_rate(template_doc, vat_accounts: list[str]) -> float:
+    """Calculate expected VAT rate from Purchase Taxes and Charges Template.
+    
+    Sums rates from template taxes where:
+    - charge_type = "On Net Total" (tax applies to base amount)
+    - account_head is in configured VAT accounts list
+    
+    Args:
+        template_doc: frappe.get_doc("Purchase Taxes and Charges Template", name)
+        vat_accounts: List of VAT account names (e.g., ["2110.10 - PPN Masukan - IFI"])
+        
+    Returns:
+        Total VAT rate as decimal (e.g., 0.11, 0.12)
+        Returns 0 if no matching taxes found
+        
+    Example:
+        >>> vat_accounts = get_vat_input_accounts("PT Imogi")
+        >>> template = frappe.get_doc("Purchase Taxes and Charges Template", "PPN 11%")
+        >>> rate = get_template_vat_rate(template, vat_accounts)
+        >>> rate
+        0.11
+    """
+    if not template_doc or not hasattr(template_doc, "taxes"):
+        return 0.0
+    
+    total_rate = 0.0
+    for tax_row in template_doc.taxes:
+        if (
+            tax_row.charge_type == "On Net Total"
+            and tax_row.account_head in vat_accounts
+        ):
+            total_rate += (tax_row.rate or 0.0) / 100.0
+    
+    return total_rate
+
+
+def get_ppn_template_from_type(ppn_type: str, company: str | None = None, template_type: str = "Purchase") -> str | None:
+    """Look up tax template for the given PPN Type from Tax Invoice OCR Settings mapping table.
+
+    Lookup priority:
+    1. Company-specific row  (ppn_type + company match)
+    2. Global row            (ppn_type match, company empty)
+    3. Fallback: auto-scan all templates by VAT rate via get_template_vat_rate()
+       (only when company is known and settings mapping is empty)
+
+    Args:
+        ppn_type:      Exact PPN Type string, e.g. "Standard 11% (PPN 2022-2024)".
+        company:       Company name. Required for rate-scan fallback and per-company rows.
+        template_type: "Purchase" (default) or "Sales".
+
+    Returns:
+        Template name string, or None if no match found (never raises).
+    """
+    if not ppn_type:
+        return None
+
+    template_field = "purchase_template" if template_type == "Purchase" else "sales_template"
+
+    # ── Step 1 & 2: look up settings child table ──────────────────────────────
+    try:
+        rows = frappe.get_all(
+            "Tax Invoice PPN Template Mapping",
+            filters={
+                "parent": "Tax Invoice OCR Settings",
+                "parenttype": "Tax Invoice OCR Settings",
+                "ppn_type": ppn_type,
+            },
+            fields=["company", template_field],
+        )
+
+        # Company-specific first
+        if company:
+            for row in rows:
+                if row.get("company") == company and row.get(template_field):
+                    frappe.logger().debug(
+                        f"[PPN TEMPLATE] '{ppn_type}' + company '{company}' "
+                        f"→ {template_field}='{row[template_field]}' (settings-specific)"
+                    )
+                    return row[template_field]
+
+        # Global fallback (company column empty)
+        for row in rows:
+            if not row.get("company") and row.get(template_field):
+                frappe.logger().debug(
+                    f"[PPN TEMPLATE] '{ppn_type}' → {template_field}='{row[template_field]}' (settings-global)"
+                )
+                return row[template_field]
+
+    except Exception as exc:
+        frappe.logger().warning(f"[PPN TEMPLATE] Settings lookup failed: {exc}")
+
+    # ── Step 3: rate-scan fallback (requires company) ─────────────────────────
+    # Used when admin has not yet configured the mapping table.
+    if not company:
+        return None
+
+    try:
+        from imogi_finance.settings.utils import get_vat_input_accounts
+
+        rate_match = re.search(r"(\d+(?:\.\d+)?)", ppn_type or "")
+        if not rate_match:
+            return None
+
+        target_rate = float(rate_match.group(1)) / 100.0
+        vat_accounts = get_vat_input_accounts(company)
+        doctype = f"{template_type} Taxes and Charges Template"
+
+        for tmpl in frappe.get_all(doctype, filters={"company": company}, fields=["name"]):
+            try:
+                doc = frappe.get_doc(doctype, tmpl.name)
+                if abs(get_template_vat_rate(doc, vat_accounts) - target_rate) < 0.001:
+                    frappe.logger().info(
+                        f"[PPN TEMPLATE] '{ppn_type}' rate-scan fallback "
+                        f"→ '{tmpl.name}' (company='{company}'). "
+                        "Consider configuring Tax Invoice OCR Settings → PPN Template Mappings."
+                    )
+                    return tmpl.name
+            except Exception:
+                continue
+    except Exception as exc:
+        frappe.logger().warning(f"[PPN TEMPLATE] Rate-scan fallback failed: {exc}")
+
+    return None
+
 
 def infer_tax_rate(dpp: float = None, ppn: float = None, fp_date: str = None, docname: str = None) -> float:
     """
@@ -3076,8 +3200,11 @@ def _update_doc_after_ocr(
         try:
             # Reload to get fresh data
             doc.reload()
-            # Temporarily enable validation to generate verification notes
+            # Temporarily enable validation to generate verification notes.
+            # post_ocr_validate=True signals validate() to skip ppn_type required-throw
+            # (user hasn't selected ppn_type yet — OCR cannot auto-detect it).
             doc.flags.ignore_validate = False
+            doc.flags.post_ocr_validate = True
             doc.validate()  # This will populate verification_notes field
             # Save verification notes (skip validate to avoid recursion)
             doc.flags.ignore_validate = True
@@ -3435,12 +3562,25 @@ def sync_tax_invoice_upload(doc: Any, doctype: str, upload_name: str | None = No
         raise ValidationError(_("Tax Invoice OCR Upload {0} must be Verified before syncing.").format(upload_docname))
     _copy_tax_invoice_fields(upload_doc, "Tax Invoice OCR Upload", target_doc, doctype)
 
+    # Auto-copy recommended PPN template to ER / BER if ppn_template is not yet set.
+    # This feeds accounting.create_purchase_invoice_from_request() which requires
+    # request.ppn_template when is_ppn_applicable=1.
+    if doctype in ("Expense Request", "Branch Expense Request"):
+        recommended = getattr(upload_doc, "recommended_ppn_template", None)
+        if recommended and not getattr(target_doc, "ppn_template", None):
+            target_doc.ppn_template = recommended
+            frappe.logger().info(
+                f"[SYNC] {doctype} {getattr(target_doc, 'name', '?')}: "
+                f"ppn_template auto-set from OCR Upload → '{recommended}'"
+            )
+
     if save:
         target_doc.save(ignore_permissions=True)
 
     return {
         "upload": upload_doc.name,
         "status": _get_value(upload_doc, "Tax Invoice OCR Upload", "status"),
+        "recommended_ppn_template": getattr(upload_doc, "recommended_ppn_template", None),
     }
 
 
@@ -3451,8 +3591,12 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
     fp_no = _get_value(doc, doctype, "fp_no")
     if fp_no:
         fp_digits = re.sub(r"\D", "", str(fp_no))
-        if len(fp_digits) != 17:
-            notes.append(_("Tax invoice number must be exactly 16 digits."))
+        if len(fp_digits) != 16:
+            notes.append(_(
+                "Nomor Faktur Pajak harus tepat 16 digit. "
+                "Nomor '{0}' terdeteksi memiliki {1} digit. "
+                "Format yang benar: XXX.XXX-XX.XXXXXXXX (16 digit angka)."
+            ).format(fp_no, len(fp_digits)))
     company = getattr(doc, "company", None)
     if not company:
         cost_center = getattr(doc, "cost_center", None)
@@ -3577,6 +3721,10 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
             # For other doctypes, use normal mapping
             _set_value(doc, doctype, "notes", "\n".join(notes))
 
+    # 🔥 CRITICAL FIX: Prevent validate() from re-running and overriding the status/notes
+    # that this function just set.  verify_tax_invoice() is an EXPLICIT verification action
+    # by an authorised user and must be the final word on the status.
+    doc.flags.ignore_validate = True
     doc.save(ignore_permissions=True)
     return {"status": _get_value(doc, doctype, "status"), "notes": notes}
 

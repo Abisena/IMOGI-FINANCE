@@ -23,9 +23,10 @@
     "npwp_normalize",
 
     "section_verification",
-    "require_verification_before_submit_pi",
-    "require_verification_before_create_pi_from_expense_request",
-    "block_duplicate_fp_no"
+    "block_duplicate_fp_no",
+
+    "section_template_mapping",
+    "ppn_template_mappings"
   ],
   "fields": [
     {
@@ -118,21 +119,23 @@
     },
     {
       "default": "1",
-      "fieldname": "require_verification_before_submit_pi",
-      "fieldtype": "Check",
-      "label": "Require Verification before Submit PI"
-    },
-    {
-      "default": "1",
-      "fieldname": "require_verification_before_create_pi_from_expense_request",
-      "fieldtype": "Check",
-      "label": "Require Verification before Create PI from Expense Request"
-    },
-    {
-      "default": "1",
       "fieldname": "block_duplicate_fp_no",
       "fieldtype": "Check",
       "label": "Block Duplicate Tax Invoice No"
+    },
+
+    {
+      "fieldname": "section_template_mapping",
+      "fieldtype": "Section Break",
+      "label": "🗂️ PPN Template Mapping",
+      "description": "Konfigurasi mapping PPN Type → Purchase/Sales Tax Template. Digunakan untuk auto-suggest dan auto-copy template saat Tax Invoice OCR Upload di-sync ke Expense Request."
+    },
+    {
+      "fieldname": "ppn_template_mappings",
+      "fieldtype": "Table",
+      "label": "PPN Template Mappings",
+      "options": "Tax Invoice PPN Template Mapping",
+      "description": "Tambahkan baris per PPN Type. Kosongkan kolom Company untuk global default. Baris per-company diprioritaskan."
     }
   ],
   "hide_toolbar": 0,

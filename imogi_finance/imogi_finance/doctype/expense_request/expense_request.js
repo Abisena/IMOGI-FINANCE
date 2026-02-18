@@ -924,16 +924,14 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
     }
   }
 
-  const [ocrEnabled, requireVerified] = await Promise.all([
+  const [ocrEnabled] = await Promise.all([
     frappe.db.get_single_value('Tax Invoice OCR Settings', 'enable_tax_invoice_ocr'),
-    frappe.db.get_single_value(
-      'Tax Invoice OCR Settings',
-      'require_verification_before_create_pi_from_expense_request'
-    ),
   ]);
 
   const isPpnApplicable = Boolean(frm.doc.is_ppn_applicable);
-  const gateByVerification = Boolean(ocrEnabled && requireVerified && isPpnApplicable);
+  // Gate by verification when: OCR enabled + PPN applicable + upload is linked
+  // (removed 'require_verification_before_create_pi_from_expense_request' setting — field no longer exists)
+  const gateByVerification = Boolean(ocrEnabled && isPpnApplicable && frm.doc.ti_tax_invoice_upload);
   let isVerified = false;
 
   // Source of truth: if upload linked, check upload; else check ER field

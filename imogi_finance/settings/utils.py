@@ -245,6 +245,25 @@ def get_ppn_accounts(company: str) -> tuple[str, str]:
     return tp.ppn_input_account, tp.ppn_output_account
 
 
+def get_vat_input_accounts(company: str) -> list[str]:
+    """Get list of VAT input accounts for filtering template taxes.
+    
+    Used to identify which taxes in a Purchase Taxes and Charges Template
+    are PPN-related (for expected PPN calculation).
+    
+    Args:
+        company: Company name
+        
+    Returns:
+        List containing PPN input account (single item for now)
+        
+    Raises:
+        frappe.ValidationError: If Tax Profile or account not configured
+    """
+    ppn_input, _ = get_ppn_accounts(company)
+    return [ppn_input]
+
+
 def get_default_prepaid_account(company: str | None) -> str:
     """Get default prepaid account from GL Mappings (Finance Control Settings).
     

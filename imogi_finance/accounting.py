@@ -198,27 +198,6 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     settings = get_settings()
     sync_tax_invoice_upload(request, "Expense Request", save=False)
 
-    # ============================================================================
-    # RECALCULATE PPN VARIANCE BEFORE PI CREATION (LEGACY/EDGE CASE HANDLING)
-    # ============================================================================
-    # For new ERs: variance item is created during ER submit (before_submit hook)
-    # For legacy ERs or edge cases (OCR synced after submit): recalculate here
-    # This ensures variance is always calculated from latest OCR data before PI creation.
-    ocr_ppn = flt(getattr(request, "ti_fp_ppn", 0) or 0)
-    expected_ppn = flt(getattr(request, "total_ppn", 0) or 0)
-    old_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
-
-    if ocr_ppn > 0:
-        new_variance = ocr_ppn - expected_ppn
-        if abs(new_variance - old_variance) > 0.001:  # Variance changed
-            frappe.logger().info(
-                f"[PPN VARIANCE RECALC] ER {request.name}: "
-                f"old={old_variance}, new={new_variance}, "
-                f"ocr_ppn={ocr_ppn}, expected_ppn={expected_ppn}"
-            )
-            request.ti_ppn_variance = new_variance
-            request.db_set("ti_ppn_variance", new_variance, update_modified=False)
-
     enforce_mode = (settings.get("enforce_mode") or "").lower()
     if settings.get("enable_budget_lock") and enforce_mode in {"approval only", "both"}:
         lock_status = getattr(request, "budget_lock_status", None)
@@ -237,35 +216,6 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             ic_status = frappe.db.get_value("Internal Charge Request", ic_name, "status")
             if ic_status != "Approved":
                 frappe.throw(_("Internal Charge Request {0} must be Approved.").format(ic_name))
-
-    require_verified = (
-        cint(settings.get("enable_tax_invoice_ocr"))
-        and cint(settings.get("require_verification_before_create_pi_from_expense_request"))
-        and bool(getattr(request, "is_ppn_applicable", 0))
-    )
-
-    if require_verified:
-        upload_name = getattr(request, "ti_tax_invoice_upload", None)
-
-        # Source of truth: if upload linked, check upload; else check ER field
-        if upload_name:
-            upload_status = frappe.db.get_value(
-                "Tax Invoice OCR Upload", upload_name, "verification_status"
-            )
-            if upload_status != "Verified":
-                status_msg = f". Current upload status: {upload_status}" if upload_status else ""
-                _raise_verification_error(
-                    _(
-                        "Tax Invoice OCR Upload {0} must be Verified before creating a Purchase Invoice from this request{1}"
-                    ).format(upload_name, status_msg)
-                )
-        else:
-            # No upload linked, check ER field
-            er_status = getattr(request, "ti_verification_status", "") or ""
-            if er_status != "Verified":
-                _raise_verification_error(
-                    _("Tax Invoice must be verified before creating a Purchase Invoice from this request.")
-                )
 
     pph_items = [item for item in request_items if getattr(item, "is_pph_applicable", 0)]
     has_item_level_pph = bool(pph_items)
@@ -317,26 +267,32 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 _("PPN Template is required in Expense Request {0} before creating Purchase Invoice").format(request.name)
             )
 
-        # Validate template exists in system
+        # Validate template exists in system (Purchase Invoice uses Purchase Taxes and Charges Template)
         # Try exact match first, then try with stripped whitespace
-        template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template)
+        _PURCHASE_TAX_DOCTYPE = "Purchase Taxes and Charges Template"
+        template_exists = frappe.db.exists(_PURCHASE_TAX_DOCTYPE, ppn_template)
 
         if not template_exists:
             # Try with stripped whitespace in case there's spacing issue
             ppn_template_stripped = ppn_template.strip()
-            template_exists = frappe.db.exists("Sales Taxes and Charges Template", ppn_template_stripped)
+            template_exists = frappe.db.exists(_PURCHASE_TAX_DOCTYPE, ppn_template_stripped)
 
             if template_exists:
                 # Update the value to use stripped version
                 ppn_template = ppn_template_stripped
             else:
                 # Still doesn't exist - throw error with helpful message
+                available = frappe.db.get_list(_PURCHASE_TAX_DOCTYPE, pluck="name")
                 frappe.logger().error(
                     f"[PPN ERROR] ER {request.name}: Template '{ppn_template}' not found. "
-                    f"Available templates: {frappe.db.get_list('Sales Taxes and Charges Template', pluck='name')}"
+                    f"Available: {available}"
                 )
                 frappe.throw(
-                    _("PPN Template '{0}' does not exist in system. Please select a valid template from the dropdown.").format(ppn_template)
+                    _(
+                        "PPN Template '{0}' tidak ditemukan di sistem.\n"
+                        "Pastikan template Purchase Taxes and Charges yang sesuai sudah dibuat "
+                        "dan dipilih di field PPN Template pada Expense Request."
+                    ).format(ppn_template)
                 )
 
     # Validate PPh category exists in system when PPh applicable
@@ -480,6 +436,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         if is_variance:
             # Flag for exemption logic (after PPN account known)
             pi_item_doc._is_variance_item = True
+            # Set persistent custom field if exists
+            if hasattr(pi_item_doc, "is_ppn_variance_row"):
+                pi_item_doc.is_ppn_variance_row = 1
             frappe.logger().info(
                 f"[VARIANCE ITEM] PI item {idx}: Flagged variance item for tax exemption"
             )

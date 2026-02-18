@@ -307,22 +307,105 @@ class ExpenseRequest(Document):
         self._set_totals()
 
     def _set_totals(self):
-        """Calculate and set all total fields."""
+        """Calculate and set all total fields + manage PPN variance row idempotently."""
         items = self.get("items") or []
         total_expense = flt(getattr(self, "amount", 0) or 0)
 
-        # Calculate variance total from variance items (excluded from expense total by validate_amounts)
-        variance_total = sum(
-            flt(getattr(item, "amount", 0) or 0)
-            for item in items
-            if getattr(item, "is_variance_item", 0)
-        )
-
         # Calculate PPN from items total using template rate (NOT from OCR)
         total_ppn = 0
+        ppn_rate = 0
         if getattr(self, "is_ppn_applicable", 0):
+            # STRICT: Throw if PPN applicable but no template
+            ppn_template = getattr(self, "ppn_template", None)
+            if not ppn_template:
+                frappe.throw("PPN Template wajib dipilih (Tab Tax) karena Apply PPN aktif.")
+            # STRICT: Throw if no VAT account configured in Tax Profile
+            try:
+                from imogi_finance.settings.utils import get_vat_input_accounts
+                company = self._get_company()
+                vat_accounts = get_vat_input_accounts(company)
+            except frappe.ValidationError as e:
+                frappe.throw(str(e))
             ppn_rate = self._get_ppn_rate()
             total_ppn = total_expense * ppn_rate / 100
+
+        # ========== IDEMPOTENT PPN VARIANCE MANAGEMENT ==========
+        # Calculate expected PPN and variance from OCR
+        ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
+        expected_ppn = total_ppn
+        
+        # STRICT ZERO TOLERANCE: Use int(round()) for numerical normalization
+        variance_raw = ocr_ppn - expected_ppn
+        variance = int(round(variance_raw))
+        
+        # Get PPN Variance account from GL mappings
+        variance_account = None
+        if variance != 0:
+            try:
+                from imogi_finance.settings.utils import get_gl_account
+                from imogi_finance.settings.gl_purposes import PPN_VARIANCE
+                company = self._get_company()
+                variance_account = get_gl_account(PPN_VARIANCE, company=company, required=True)
+            except frappe.DoesNotExistError:
+                frappe.throw("GL Account Mapping untuk purpose 'PPN_VARIANCE' belum ada. Tambahkan di GL Purposes/Mapping.")
+            except Exception as e:
+                frappe.throw(str(e))
+        
+        # IDEMPOTENT: Query existing variance rows
+        ppn_var_rows = [
+            r for r in items 
+            if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
+        ]
+        
+        if variance == 0:
+            # Delete all variance rows if variance is 0
+            if ppn_var_rows:
+                for row in ppn_var_rows:
+                    self.remove(row)
+                frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Deleted {len(ppn_var_rows)} variance row(s) (variance = 0)")
+        
+        elif len(ppn_var_rows) == 0:
+            # CREATE: No variance row exists, create new one
+            if variance_account:
+                self.append("items", {
+                    "expense_account": variance_account,
+                    "description": "PPN Variance",
+                    "amount": variance,
+                    "is_variance_item": 1,
+                    "is_pph_applicable": 0,
+                    "is_deferred_expense": 0,
+                })
+                frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Created variance row = {variance}")
+        
+        elif len(ppn_var_rows) == 1:
+            # UPDATE: Exactly 1 row exists, update it
+            row = ppn_var_rows[0]
+            row.amount = variance
+            row.description = "PPN Variance"
+            frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Updated variance row = {variance}")
+        
+        else:
+            # MERGE: Multiple rows exist, merge to 1
+            # Keep first row, delete others
+            first_row = ppn_var_rows[0]
+            first_row.amount = variance
+            first_row.description = "PPN Variance"
+            
+            for duplicate in ppn_var_rows[1:]:
+                self.remove(duplicate)
+            
+            frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Merged {len(ppn_var_rows)} rows to 1, variance = {variance}")
+        
+        # Save variance for reference
+        self.ti_ppn_variance = variance_raw
+        
+        # ========== CALCULATE TOTALS (AFTER VARIANCE MANAGEMENT) ==========
+        # Recalculate variance total from items
+        variance_total = sum(
+            flt(getattr(item, "amount", 0) or 0)
+            for item in self.get("items") or []
+            if getattr(item, "is_variance_item", 0)
+        )
 
         total_ppnbm = flt(getattr(self, "ti_fp_ppnbm", None) or getattr(self, "ppnbm", None) or 0)
         item_pph_total = sum(
@@ -399,7 +482,7 @@ class ExpenseRequest(Document):
         FinanceValidator.validate_tax_fields(self)
 
     def validate_tax_invoice_ocr_before_submit(self):
-        """Validate NPWP and calculate variance (no tolerance blocking)."""
+        """Validate NPWP before submit. Variance handled automatically in _set_totals()."""
         try:
             from imogi_finance.tax_invoice_ocr import get_settings, normalize_npwp
         except ImportError:
@@ -412,7 +495,7 @@ class ExpenseRequest(Document):
         if not getattr(self, "ti_tax_invoice_upload", None):
             return
 
-        # ========== 1. NPWP VALIDATION (BLOCKING) ==========
+        # ========== NPWP VALIDATION (BLOCKING) ==========
         supplier_npwp = getattr(self, "supplier_tax_id", None)
         if supplier_npwp:
             supplier_npwp_normalized = normalize_npwp(supplier_npwp)
@@ -420,126 +503,13 @@ class ExpenseRequest(Document):
 
             if ocr_npwp and supplier_npwp_normalized and ocr_npwp != supplier_npwp_normalized:
                 frappe.throw(
-                    _("NPWP from OCR ({0}) does not match Supplier NPWP ({1})").format(
+                    _("NPWP dari OCR ({0}) tidak sesuai dengan NPWP Supplier ({1})").format(
                         getattr(self, "ti_fp_npwp", ""), supplier_npwp
                     ),
-                    title=_("NPWP Mismatch")
+                    title=_("NPWP Tidak Cocok")
                 )
             elif ocr_npwp and supplier_npwp_normalized:
                 self.ti_npwp_match = 1
-
-        # ========== 2. VARIANCE CALCULATION (NO BLOCKING) ==========
-        # Expected dari totals ER yang sudah dihitung (dari _set_totals)
-        expected_dpp = flt(getattr(self, "amount", 0) or 0)
-        expected_ppn = flt(getattr(self, "total_ppn", 0) or 0)
-
-        # OCR sebagai reference
-        ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
-        ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
-
-        # Calculate & save PPN variance only
-        # DPP is user input (expected to be correct), only PPN differs due to rate/rounding
-        if ocr_ppn > 0:
-            new_variance = ocr_ppn - expected_ppn
-            self.ti_ppn_variance = new_variance
-
-            # ========== CREATE VARIANCE LINE ITEM ==========
-            # Variance shown as line item for visibility AND added to tax amount
-            if abs(new_variance) > 0.001:
-                # Remove existing variance items first (prevent duplicates on amend/re-submit)
-                items = self.get("items") or []
-                non_variance_items = [item for item in items if not getattr(item, "is_variance_item", 0)]
-                self.items = []
-                for item in non_variance_items:
-                    self.append("items", item.as_dict() if hasattr(item, "as_dict") else item)
-
-                # Get variance account from GL mappings
-                try:
-                    from imogi_finance.settings.utils import get_gl_account
-                    from imogi_finance.settings.gl_purposes import PPN_VARIANCE
-                    company = self._get_company()
-                    variance_account = get_gl_account(PPN_VARIANCE, company=company, required=False)
-                except Exception:
-                    variance_account = None
-
-                # Validate variance account exists and is valid
-                if variance_account:
-                    if not frappe.db.exists("Account", variance_account):
-                        frappe.msgprint(
-                            _("PPN Variance account '{0}' does not exist in Chart of Accounts. "
-                              "Variance line item will not be created.").format(variance_account),
-                            indicator="orange",
-                            title=_("Variance Account Missing")
-                        )
-                        variance_account = None
-                    else:
-                        account_doc = frappe.get_cached_value("Account", variance_account,
-                                                              ["disabled", "is_group", "company"], as_dict=True)
-                        if account_doc.get("disabled"):
-                            frappe.msgprint(
-                                _("PPN Variance account '{0}' is disabled.").format(variance_account),
-                                indicator="orange",
-                                title=_("Account Disabled")
-                            )
-                            variance_account = None
-                        elif account_doc.get("is_group"):
-                            frappe.msgprint(
-                                _("PPN Variance account '{0}' is a group account.").format(variance_account),
-                                indicator="orange",
-                                title=_("Invalid Account Type")
-                            )
-                            variance_account = None
-                        elif account_doc.get("company") != company:
-                            frappe.msgprint(
-                                _("PPN Variance account does not belong to company."),
-                                indicator="orange",
-                                title=_("Company Mismatch")
-                            )
-                            variance_account = None
-
-                if variance_account:
-                    # Create variance line item
-                    self.append("items", {
-                        "expense_account": variance_account,
-                        "description": "PPN Variance Adjustment" if new_variance > 0 else "PPN Variance Reduction",
-                        "amount": new_variance,
-                        "is_variance_item": 1,
-                        "is_pph_applicable": 0,
-                        "is_deferred_expense": 0,
-                    })
-
-                    frappe.logger().info(
-                        f"[PPN VARIANCE ITEM] ER {self.name}: Created variance line item "
-                        f"amount={new_variance}, variance will also be added to PPN tax in PI"
-                    )
-        else:
-            self.ti_ppn_variance = 0
-
-        # ========== 3. OCR CONSISTENCY VALIDATION (WARNING) ==========
-        # Validate that OCR PPN matches OCR DPP × tax rate
-        if ocr_dpp > 0 and ocr_ppn > 0:
-            ppn_rate = self._get_ppn_rate()
-            if ppn_rate > 0:
-                expected_ppn_from_ocr_dpp = ocr_dpp * ppn_rate / 100
-                ocr_consistency_variance = abs(ocr_ppn - expected_ppn_from_ocr_dpp)
-
-                # Show warning if OCR data is internally inconsistent
-                if ocr_consistency_variance > 0.01:  # More than 1 cent difference
-                    frappe.msgprint(
-                        _("⚠️ OCR Data Inconsistency Detected: PPN from OCR ({0}) does not match "
-                          "DPP from OCR ({1}) × {2}% = {3}. "
-                          "Difference: {4}. Please verify the tax invoice manually.").format(
-                            frappe.format_value(ocr_ppn, {"fieldtype": "Currency"}),
-                            frappe.format_value(ocr_dpp, {"fieldtype": "Currency"}),
-                            ppn_rate,
-                            frappe.format_value(expected_ppn_from_ocr_dpp, {"fieldtype": "Currency"}),
-                            frappe.format_value(ocr_consistency_variance, {"fieldtype": "Currency"})
-                        ),
-                        indicator="orange",
-                        title=_("OCR Consistency Warning")
-                    )
-
-        # DPP variance validation removed - only PPN variance is tracked and handled in PI creation
 
     def validate_deferred_expense(self):
         """Validate deferred expense configuration."""

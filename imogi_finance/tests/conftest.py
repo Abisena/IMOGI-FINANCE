@@ -62,6 +62,9 @@ utils.get_last_day = getattr(utils, "get_last_day", lambda date_obj=None: None)
 utils.nowdate = getattr(utils, "nowdate", lambda: "")
 utils.cint = getattr(utils, "cint", lambda value, *args, **kwargs: int(value or 0))
 utils.getdate = getattr(utils, "getdate", lambda value=None: value)
+utils.add_months = getattr(utils, "add_months", lambda date, months=0: date)
+utils.add_days = getattr(utils, "add_days", lambda date, days=0: date)
+utils.get_datetime = getattr(utils, "get_datetime", lambda value=None: value)
 sys.modules["frappe.utils"] = utils
 
 xlsxutils = sys.modules.setdefault("frappe.utils.xlsxutils", types.ModuleType("frappe.utils.xlsxutils"))

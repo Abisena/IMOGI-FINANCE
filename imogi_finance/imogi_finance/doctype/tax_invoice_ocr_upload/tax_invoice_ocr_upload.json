@@ -26,6 +26,10 @@
     "dpp",
     "ppn",
     "ppnbm",
+    "dpp_nilai_lain_flag",
+    "nilai_lain_factor",
+    "nilai_lain_note",
+    "recommended_ppn_template",
     "section_verification",
     "verification_status",
     "section_verification_notes",
@@ -106,6 +110,13 @@
       "description": "Nomor Pokok Wajib Pajak"
     },
     {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "description": "Opsional — digunakan untuk mencari PPN Template yang sesuai secara otomatis."
+    },
+    {
       "fieldname": "ppn_type",
       "fieldtype": "Select",
       "label": "Tipe PPN",
@@ -153,6 +164,40 @@
       "fieldname": "ppnbm",
       "fieldtype": "Currency",
       "label": "PPnBM (Pajak Penjualan Barang Mewah)"
+    },
+    {
+      "default": "0",
+      "fieldname": "dpp_nilai_lain_flag",
+      "fieldtype": "Check",
+      "label": "Nilai Lain Detected",
+      "read_only": 1,
+      "hidden": 1,
+      "description": "System-set flag: DPP calculation indicates Nilai Lain scenario"
+    },
+    {
+      "fieldname": "nilai_lain_factor",
+      "fieldtype": "Float",
+      "label": "Nilai Lain Factor",
+      "read_only": 1,
+      "hidden": 1,
+      "precision": 6,
+      "description": "Calculated factor if Nilai Lain detected (e.g., 0.9167 for 11/12)"
+    },
+    {
+      "fieldname": "nilai_lain_note",
+      "fieldtype": "Small Text",
+      "label": "Nilai Lain Note",
+      "read_only": 1,
+      "hidden": 1,
+      "description": "Note about Nilai Lain detection for audit trail"
+    },
+    {
+      "fieldname": "recommended_ppn_template",
+      "fieldtype": "Link",
+      "label": "Recommended PPN Template",
+      "options": "Purchase Taxes and Charges Template",
+      "read_only": 1,
+      "description": "Template PPN yang disarankan berdasarkan PPN Type dan tarif yang terdeteksi. Akan di-copy otomatis ke field PPN Template di Expense Request saat sync."
     },
     {
       "collapsible": 0,

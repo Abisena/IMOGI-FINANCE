@@ -19,6 +19,10 @@ frappe.utils = types.SimpleNamespace(
     flt=lambda x: float(x),
     format_value=lambda v, *_args, **_kwargs: v,
     get_site_path=lambda path: path,
+    add_months=lambda date, months=0: date,
+    add_days=lambda date, days=0: date,
+    get_datetime=lambda value=None: value,
+    now_datetime=lambda: None,
 )
 sys.modules.setdefault("frappe.utils", frappe.utils)
 sys.modules.setdefault("frappe.utils.formatters", types.SimpleNamespace(format_value=lambda v, *_a, **_k: v))
@@ -55,62 +59,80 @@ class ThrowCalled(Exception):
 
 
 def test_purchase_invoice_submit_requires_verified(monkeypatch):
-    monkeypatch.setattr(
-        purchase_invoice,
-        "get_settings",
-        lambda: {"enable_tax_invoice_ocr": 1, "require_verification_before_submit_pi": 1},
-    )
+    """PI submit is blocked by validate_tax_invoice_upload_link when upload not Verified.
+
+    New architecture: gate is unconditional via upload verification_status check,
+    not via 'require_verification_before_submit_pi' settings flag (removed).
+    """
     monkeypatch.setattr(purchase_invoice, "sync_tax_invoice_upload", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(purchase_invoice, "validate_tax_invoice_upload_link", lambda *_args, **_kwargs: None)
 
-    def fake_throw(msg, title=None):
-        raise ThrowCalled(msg)
+    # Mock DB: upload exists but verification_status is Needs Review
+    def fake_db_get_value(doctype, name, field, *args, **kwargs):
+        if doctype == "Tax Invoice OCR Upload" and field == "verification_status":
+            return "Needs Review"
+        return None
 
-    monkeypatch.setattr(frappe, "throw", fake_throw)
+    monkeypatch.setattr(frappe.db, "get_value", fake_db_get_value)
+    monkeypatch.setattr(frappe, "get_all", lambda *_args, **_kwargs: [])
 
-    doc = types.SimpleNamespace(ti_verification_status="Needs Review", ti_tax_invoice_upload="TI-0001")
+    doc = types.SimpleNamespace(
+        name="PI-TEST",
+        ti_tax_invoice_upload="TI-0001",
+        ti_fp_no=None, ti_fp_date=None, ti_fp_npwp=None,
+        ti_fp_harga_jual=None, ti_fp_dpp=None, ti_fp_ppn=None, ti_fp_ppnbm=None,
+        imogi_expense_request=None, branch_expense_request=None,
+        apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
+    )
 
-    with pytest.raises(ThrowCalled):
+    with pytest.raises(ValidationError):
         purchase_invoice.validate_before_submit(doc)
 
 
 def test_purchase_invoice_submit_allows_when_ocr_disabled(monkeypatch):
-    monkeypatch.setattr(
-        purchase_invoice,
-        "get_settings",
-        lambda: {"enable_tax_invoice_ocr": 0, "require_verification_before_submit_pi": 1},
+    """PI submit passes when no OCR upload is linked (no gate triggered)."""
+    monkeypatch.setattr(purchase_invoice, "sync_tax_invoice_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe.db, "get_value", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe, "get_all", lambda *_args, **_kwargs: [])
+
+    doc = types.SimpleNamespace(
+        ti_verification_status=None,
+        imogi_expense_request=None,
+        branch_expense_request=None,
+        apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
     )
-
-    def fake_throw(msg, title=None):
-        raise ThrowCalled(msg)
-
-    monkeypatch.setattr(frappe, "throw", fake_throw)
-
-    doc = types.SimpleNamespace(ti_verification_status=None)
 
     purchase_invoice.validate_before_submit(doc)
 
 
 def test_purchase_invoice_submit_ignores_string_zero(monkeypatch):
-    monkeypatch.setattr(
-        purchase_invoice,
-        "get_settings",
-        lambda: {"enable_tax_invoice_ocr": "0", "require_verification_before_submit_pi": 1},
-    )
+    """PI submit passes when no OCR upload linked (string '0' for ocr_enabled is irrelevant now)."""
+    monkeypatch.setattr(purchase_invoice, "sync_tax_invoice_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe.db, "get_value", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe, "get_all", lambda *_args, **_kwargs: [])
 
-    doc = types.SimpleNamespace(ti_verification_status=None)
+    doc = types.SimpleNamespace(
+        ti_verification_status=None,
+        imogi_expense_request=None,
+        branch_expense_request=None,
+        apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
+    )
 
     purchase_invoice.validate_before_submit(doc)
 
 
 def test_purchase_invoice_submit_allows_without_upload(monkeypatch):
-    monkeypatch.setattr(
-        purchase_invoice,
-        "get_settings",
-        lambda: {"enable_tax_invoice_ocr": 1, "require_verification_before_submit_pi": 1},
-    )
+    """PI submit passes when no OCR upload is linked, even if verification_status is Needs Review."""
+    monkeypatch.setattr(purchase_invoice, "sync_tax_invoice_upload", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe.db, "get_value", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(frappe, "get_all", lambda *_args, **_kwargs: [])
 
-    doc = types.SimpleNamespace(ti_verification_status="Needs Review", ti_tax_invoice_upload=None)
+    doc = types.SimpleNamespace(
+        ti_verification_status="Needs Review",
+        ti_tax_invoice_upload=None,
+        imogi_expense_request=None,
+        branch_expense_request=None,
+        apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
+    )
 
     purchase_invoice.validate_before_submit(doc)
 
