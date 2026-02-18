@@ -1086,10 +1086,23 @@ async function proceedCreatePI(frm) {
 frappe.ui.form.on('Expense Request Item', {
   amount(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
+    // Calculate net_amount = amount - discount_amount
+    const amount = flt(row.amount) || 0;
+    const discount = flt(row.discount_amount) || 0;
+    frappe.model.set_value(cdt, cdn, 'net_amount', amount - discount);
+    
     // Only auto-update pph_base_amount in draft mode
     if (frm.doc.docstatus === 0 && row?.is_pph_applicable) {
       frappe.model.set_value(cdt, cdn, 'pph_base_amount', row.amount || 0);
     }
+    updateTotalsSummary(frm);
+  },
+  discount_amount(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    // Calculate net_amount = amount - discount_amount
+    const amount = flt(row.amount) || 0;
+    const discount = flt(row.discount_amount) || 0;
+    frappe.model.set_value(cdt, cdn, 'net_amount', amount - discount);
     updateTotalsSummary(frm);
   },
   pph_base_amount(frm) {

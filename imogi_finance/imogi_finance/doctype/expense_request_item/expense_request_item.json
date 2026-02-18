@@ -10,6 +10,8 @@
     "expense_account",
     "description",
     "amount",
+    "discount_amount",
+    "net_amount",
     "target_cost_center",
     "column_break_item",
     "is_pph_applicable",
@@ -48,7 +50,24 @@
       "label": "Amount",
       "reqd": 1,
       "columns": 2,
-      "description": "Expense amount before tax"
+      "description": "Expense amount before discount"
+    },
+    {
+      "fieldname": "discount_amount",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Discount",
+      "columns": 1,
+      "description": "Discount or reduction amount (will be subtracted from amount)"
+    },
+    {
+      "fieldname": "net_amount",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Net Amount",
+      "read_only": 1,
+      "columns": 2,
+      "description": "Amount after discount (Amount - Discount)"
     },
     {
       "fieldname": "target_cost_center",
@@ -83,7 +102,7 @@
       "default": "0",
       "fieldname": "is_deferred_expense",
       "fieldtype": "Check",
-      "in_list_view": 1,  
+      "in_list_view": 1,
       "label": "Deferred Expense",
       "columns": 1,
       "description": "Enable for prepaid expenses that require amortization"
