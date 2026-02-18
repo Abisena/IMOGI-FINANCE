@@ -472,16 +472,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
         pi_item_doc = pi.append("items", pi_item)
 
-        # CRITICAL: Exempt variance item from PPN (tax-exempt)
-        # Variance is PPN adjustment itself, should NOT be taxed again
+        # Mark variance item for later tax exemption
         is_variance = bool(getattr(item, "is_variance_item", 0))
         if is_variance:
-            # Set item_tax_rate to exempt this item from all taxes
-            # Format: {"Account Head": 0}
-            pi_item_doc.item_tax_rate = "{}"
+            # Flag for exemption logic (after PPN account known)
+            pi_item_doc._is_variance_item = True
             frappe.logger().info(
-                f"[VARIANCE ITEM] PI item {idx}: Set tax-exempt for variance item"
+                f"[VARIANCE ITEM] PI item {idx}: Flagged variance item for tax exemption"
             )
+
+        # Set item_tax_rate to exempt this item from all taxes (will be updated with specific account later)
+        # Format: {"Account Head": 0}
+        if is_variance:
+            pi_item_doc.item_tax_rate = "{}"
 
         # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
@@ -611,6 +614,24 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             pi.save(ignore_permissions=True)
             pi.reload()
 
+            # CRITICAL: Exempt variance items from PPN before tax calculation
+            # Set item_tax_rate with specific PPN account to zero out tax on variance
+            if first_ppn_account:
+                for item_row in pi.items:
+                    if getattr(item_row, "_is_variance_item", False) or getattr(item_row, "is_variance_item", 0):
+                        # Set item_tax_rate to exempt this item from PPN
+                        # Format: {"Account Head": 0}
+                        import json
+                        item_row.item_tax_rate = json.dumps({first_ppn_account: 0})
+                        frappe.logger().info(
+                            f"[VARIANCE ITEM] PI {pi.name} item {item_row.idx}: "
+                            f"Exempted from PPN tax {first_ppn_account}"
+                        )
+
+                # Save with exempted variance items
+                pi.save(ignore_permissions=True)
+                pi.reload()
+
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
                 pi.save(ignore_permissions=True)
@@ -698,27 +719,16 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     break
 
             if variance_applied:
-                # Save the variance adjustment WITHOUT recalculating
-                # db_set bypasses calculate_taxes_and_totals()
-                for idx, tax_row in enumerate(pi.taxes):
-                    if tax_row.account_head == first_ppn_account:
-                        # Update child table row directly in DB
-                        tax_row.db_update()
-                        break
-
-                # Update parent totals manually to reflect variance
+                # Update parent totals to reflect variance
+                # CRITICAL: Don't use db_set here, just modify and save
+                # Since variance item is tax-exempt, recalculation won't override this
                 pi.taxes_and_charges_added = flt(pi.taxes_and_charges_added) + ppn_variance
                 pi.total_taxes_and_charges = flt(pi.total_taxes_and_charges) + ppn_variance
                 pi.grand_total = flt(pi.grand_total) + ppn_variance
                 pi.rounded_total = flt(pi.rounded_total) + ppn_variance
 
-                # Save without recalculating
-                pi.db_set({
-                    "taxes_and_charges_added": pi.taxes_and_charges_added,
-                    "total_taxes_and_charges": pi.total_taxes_and_charges,
-                    "grand_total": pi.grand_total,
-                    "rounded_total": pi.rounded_total
-                }, update_modified=False)
+                # Save totals (tax row already updated in memory)
+                pi.save(ignore_permissions=True)
 
                 frappe.logger().info(
                     f"[PPN VARIANCE] PI {pi.name}: Applied variance to totals - "
