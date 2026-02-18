@@ -563,12 +563,36 @@ function lockVarianceItemRows(frm) {
       }
     }
 
-    // Add visual indicator for variance row
-    if (row.row && typeof row.row.css === 'function') {
+    // Add visual indicator for variance row with stronger styling
+    if (row.row && row.row.length) {
       row.row.css({
-        'background-color': '#f0f4f8',  // Light blue-gray background
-        'opacity': '0.95'
+        'background-color': '#fff3cd !important',  // Light yellow background
+        'border-left': '3px solid #ffc107 !important'
       });
+
+      // Make text visible and styled
+      row.row.find('input, textarea, select, .static-area').css({
+        'color': '#856404 !important',
+        'font-style': 'italic'
+      });
+
+      // Style the description field specifically
+      const descField = row.row.find('[data-fieldname="description"]');
+      if (descField.length) {
+        descField.css({
+          'color': '#856404 !important',
+          'font-weight': '500'
+        });
+      }
+
+      // Style the amount field
+      const amountField = row.row.find('[data-fieldname="amount"]');
+      if (amountField.length) {
+        amountField.css({
+          'color': '#856404 !important',
+          'font-weight': 'bold'
+        });
+      }
     }
   });
 }

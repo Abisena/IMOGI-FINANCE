@@ -3027,7 +3027,8 @@ def _update_doc_after_ocr(
         if key not in allowed_keys:
             continue
 
-        if key in {"dpp", "ppn"}:
+        # Sanitize all currency fields (not just dpp and ppn)
+        if key in {"dpp", "ppn", "ppnbm", "harga_jual", "potongan_harga", "uang_muka"}:
             sanitized = _sanitize_amount(value)
             if sanitized is None:
                 extra_notes.append(_("OCR ignored invalid {0} value").format(key.upper()))
