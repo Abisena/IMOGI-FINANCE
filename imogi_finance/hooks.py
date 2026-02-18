@@ -364,7 +364,16 @@ doc_events = {
         ],
     },
     "Transfer Application": {
-        "validate": ["imogi_finance.events.metadata_fields.set_created_by"],
+        "validate": [
+            "imogi_finance.events.metadata_fields.set_created_by",
+            "imogi_finance.events.transfer_application.sync_status_with_workflow",
+        ],
+        "on_update": [
+            "imogi_finance.events.transfer_application.sync_status_with_workflow",
+        ],
+        "on_update_after_submit": [
+            "imogi_finance.events.transfer_application.sync_status_with_workflow",
+        ],
         "on_submit": ["imogi_finance.events.metadata_fields.set_submit_on"],
     },
     "Payment Entry": {
