@@ -46,7 +46,7 @@ DEFAULT_SETTINGS = {
     "tesseract_cmd": None,
 }
 
-ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "potongan_harga", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes", "ocr_error_log"}
+ALLOWED_OCR_FIELDS = {"fp_no", "fp_date", "npwp", "harga_jual", "potongan_harga", "uang_muka", "dpp", "ppn", "ppnbm", "ppn_type", "tax_rate", "notes", "ocr_error_log"}
 
 
 def _raise_validation_error(message: str):
@@ -3202,6 +3202,15 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                     parsed["ppn"] = layout_ppn
                     if layout_result.get("harga_jual", 0) > 0:
                         parsed["harga_jual"] = layout_result["harga_jual"]
+                    # Copy potongan_harga from layout parser
+                    if layout_result.get("potongan_harga", 0) > 0:
+                        parsed["potongan_harga"] = layout_result["potongan_harga"]
+                    # Copy uang_muka from layout parser
+                    if layout_result.get("uang_muka", 0) > 0:
+                        parsed["uang_muka"] = layout_result["uang_muka"]
+                    # Copy ppnbm from layout parser
+                    if layout_result.get("ppnbm", 0) > 0:
+                        parsed["ppnbm"] = layout_result["ppnbm"]
                     if layout_result.get("detected_tax_rate"):
                         parsed["tax_rate"] = layout_result["detected_tax_rate"]
 
@@ -3209,7 +3218,8 @@ def _run_ocr_job(name: str, target_doctype: str, provider: str):
                         f"[OCR] Layout-aware override applied: "
                         f"DPP {old_dpp} → {layout_dpp}, "
                         f"PPN {old_ppn} → {layout_ppn}, "
-                        f"Harga Jual {old_hj} → {parsed.get('harga_jual')} "
+                        f"Harga Jual {old_hj} → {parsed.get('harga_jual')}, "
+                        f"Potongan Harga → {parsed.get('potongan_harga')} "
                         f"(method={layout_result.get('extraction_method')})"
                     )
 
