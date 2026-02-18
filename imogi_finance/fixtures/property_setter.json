@@ -25,5 +25,14 @@
     "property_type": "Check",
     "value": "1",
     "doctype_or_field": "DocField"
+  },
+  {
+    "doctype": "Property Setter",
+    "doc_type": "Transfer Application",
+    "field_name": "workflow_state",
+    "property": "allow_on_submit",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
   }
 ]

@@ -129,9 +129,9 @@ fixtures = [
     {
         "doctype": "Property Setter",
         "filters": {
-            "doc_type": ["in", ["Purchase Invoice", "Sales Invoice", "Expense Claim"]],
+            "doc_type": ["in", ["Purchase Invoice", "Sales Invoice", "Expense Claim", "Transfer Application"]],
             "property": "allow_on_submit",
-            "field_name": "advances"
+            "field_name": ["in", ["advances", "workflow_state"]]
         }
     },
     {"doctype": "Role", "filters": {"name": ["in", ["Expense Approver", "Branch Approver"]]}},
@@ -175,6 +175,7 @@ fixtures = [
     "fixtures/item.json",
     "fixtures/finance_control_settings.json",
     "fixtures/transfer_application_settings.json",
+    "fixtures/property_setter.json",
 ]
 
 # Uninstallation
