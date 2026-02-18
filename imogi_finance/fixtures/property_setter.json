@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Property Setter",
+    "name": "Purchase Invoice-advances-allow_on_submit",
     "doc_type": "Purchase Invoice",
     "field_name": "advances",
     "property": "allow_on_submit",
@@ -10,6 +11,7 @@
   },
   {
     "doctype": "Property Setter",
+    "name": "Sales Invoice-advances-allow_on_submit",
     "doc_type": "Sales Invoice",
     "field_name": "advances",
     "property": "allow_on_submit",
@@ -19,6 +21,7 @@
   },
   {
     "doctype": "Property Setter",
+    "name": "Expense Claim-advances-allow_on_submit",
     "doc_type": "Expense Claim",
     "field_name": "advances",
     "property": "allow_on_submit",
@@ -28,6 +31,7 @@
   },
   {
     "doctype": "Property Setter",
+    "name": "Transfer Application-workflow_state-allow_on_submit",
     "doc_type": "Transfer Application",
     "field_name": "workflow_state",
     "property": "allow_on_submit",
