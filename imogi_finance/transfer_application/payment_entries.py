@@ -121,8 +121,7 @@ def create_payment_entry_for_transfer_application(
         if first_item.party_type and first_item.party:
             payment_entry.party_type = first_item.party_type
             payment_entry.party = first_item.party
-            if hasattr(payment_entry, "party_account"):
-                payment_entry.party_account = paid_to
+            payment_entry.party_account = paid_to
 
         # Add reference documents from items
         for item in items:
@@ -139,8 +138,7 @@ def create_payment_entry_for_transfer_application(
         if hasattr(payment_entry, "transfer_application"):
             payment_entry.transfer_application = transfer_application.name
 
-        if hasattr(payment_entry, "set_missing_values"):
-            payment_entry.set_missing_values()
+        payment_entry.set_missing_values()
 
         payment_entry.flags.ignore_permissions = ignore_permissions
         payment_entry.insert(ignore_permissions=ignore_permissions)
