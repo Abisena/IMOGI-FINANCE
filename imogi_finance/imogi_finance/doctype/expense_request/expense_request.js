@@ -565,7 +565,10 @@ function lockVarianceItemRows(frm) {
 
     // Add visual indicator for variance row
     if (row.row && typeof row.row.css === 'function') {
-      row.row.css('background-color', '#fff8e1');  // Light yellow background
+      row.row.css({
+        'background-color': '#f0f4f8',  // Light blue-gray background
+        'opacity': '0.95'
+      });
     }
   });
 }
