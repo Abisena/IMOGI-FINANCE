@@ -444,7 +444,7 @@ class ExpenseRequest(Document):
             self.ti_ppn_variance = new_variance
 
             # ========== CREATE VARIANCE LINE ITEM ==========
-            # Only create if variance is significant (> 0.001) and no existing variance item
+            # Variance shown as line item for visibility AND added to tax amount
             if abs(new_variance) > 0.001:
                 # Remove existing variance items first (prevent duplicates on amend/re-submit)
                 items = self.get("items") or []
@@ -462,47 +462,43 @@ class ExpenseRequest(Document):
                 except Exception:
                     variance_account = None
 
-                # Validate variance account exists and is valid before creating line item
+                # Validate variance account exists and is valid
                 if variance_account:
-                    # Check if account actually exists in Chart of Accounts
                     if not frappe.db.exists("Account", variance_account):
                         frappe.msgprint(
                             _("PPN Variance account '{0}' does not exist in Chart of Accounts. "
-                              "Please create this account or update GL Account Mappings in Finance Control Settings. "
                               "Variance line item will not be created.").format(variance_account),
                             indicator="orange",
                             title=_("Variance Account Missing")
                         )
                         variance_account = None
                     else:
-                        # Validate account is active and can be used
                         account_doc = frappe.get_cached_value("Account", variance_account,
                                                               ["disabled", "is_group", "company"], as_dict=True)
                         if account_doc.get("disabled"):
                             frappe.msgprint(
-                                _("PPN Variance account '{0}' is disabled. Please enable it or select another account.").format(variance_account),
+                                _("PPN Variance account '{0}' is disabled.").format(variance_account),
                                 indicator="orange",
                                 title=_("Account Disabled")
                             )
                             variance_account = None
                         elif account_doc.get("is_group"):
                             frappe.msgprint(
-                                _("PPN Variance account '{0}' is a group account. Please select a ledger account instead.").format(variance_account),
+                                _("PPN Variance account '{0}' is a group account.").format(variance_account),
                                 indicator="orange",
                                 title=_("Invalid Account Type")
                             )
                             variance_account = None
                         elif account_doc.get("company") != company:
                             frappe.msgprint(
-                                _("PPN Variance account '{0}' does not belong to company '{1}'.").format(variance_account, company),
+                                _("PPN Variance account does not belong to company."),
                                 indicator="orange",
                                 title=_("Company Mismatch")
                             )
                             variance_account = None
 
                 if variance_account:
-                    # Create variance line item with validated account
-                    # Note: cost_center and project are taken from header level, not item level
+                    # Create variance line item
                     self.append("items", {
                         "expense_account": variance_account,
                         "description": "PPN Variance Adjustment" if new_variance > 0 else "PPN Variance Reduction",
@@ -514,8 +510,10 @@ class ExpenseRequest(Document):
 
                     frappe.logger().info(
                         f"[PPN VARIANCE ITEM] ER {self.name}: Created variance line item "
-                        f"amount={new_variance}, account={variance_account}"
+                        f"amount={new_variance}, variance will also be added to PPN tax in PI"
                     )
+        else:
+            self.ti_ppn_variance = 0
 
         # ========== 3. OCR CONSISTENCY VALIDATION (WARNING) ==========
         # Validate that OCR PPN matches OCR DPP × tax rate

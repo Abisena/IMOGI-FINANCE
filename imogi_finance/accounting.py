@@ -494,47 +494,17 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 })
 
     # ============================================================================
-    # PPN VARIANCE LINE ITEM HANDLING
+    # PPN VARIANCE HANDLING - NO LINE ITEM
     # ============================================================================
-    # Check if variance item already exists in ER items (created during ER submit)
-    # If not, create variance item here as fallback for backward compatibility
-    has_variance_item_in_er = any(
-        getattr(item, "is_variance_item", 0) for item in request_items
-    )
-
+    # PPN Variance will be added to tax amount in Purchase Taxes table
+    # NOT as a separate line item (changed per user requirement)
+    # Store variance for later use when adding PPN taxes
     ppn_variance = flt(getattr(request, "ti_ppn_variance", 0) or 0)
-    if ppn_variance != 0 and not has_variance_item_in_er:
-        # Variance item not in ER (legacy ER or edge case) - create in PI
+
+    if ppn_variance != 0:
         frappe.logger().info(
-            f"[PPN VARIANCE FALLBACK] ER {request.name}: Creating variance item in PI "
-            f"(not found in ER items), variance={ppn_variance}"
+            f"[PPN VARIANCE] ER {request.name}: Will adjust PPN tax amount by {ppn_variance}"
         )
-        try:
-            variance_account = get_gl_account(PPN_VARIANCE, company=company, required=False)
-        except frappe.ValidationError:
-            variance_account = None
-
-        # Validate that the configured account actually exists
-        if variance_account and not frappe.db.exists("Account", variance_account):
-            frappe.throw(
-                _("PPN Variance account '{0}' does not exist. "
-                  "Please create this account in Chart of Accounts or update GL Account Mappings "
-                  "in Finance Control Settings.").format(variance_account),
-                title=_("Invalid Variance Account")
-            )
-
-        if variance_account:
-            variance_item = {
-                "item_name": "PPN Variance Adjustment" if ppn_variance > 0 else "PPN Variance Reduction",
-                "description": f"PPN variance adjustment (OCR vs Calculated): {flt(ppn_variance):,.2f}",
-                "expense_account": variance_account,
-                "cost_center": request.cost_center,
-                "project": request.project,
-                "qty": 1,
-                "rate": ppn_variance,  # Can be positive or negative
-                "amount": ppn_variance,
-            }
-            pi.append("items", variance_item)
 
     # Build item_wise_tax_detail with correct indices AFTER all items are added
     # This ensures index mapping is accurate regardless of variance items
@@ -602,14 +572,23 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             ppn_template_doc = frappe.get_doc("Purchase Taxes and Charges Template", request.ppn_template)
 
             if ppn_template_doc and ppn_template_doc.taxes:
+                # Store first PPN tax row info for variance adjustment later
+                first_ppn_account = None
+
                 # Add each tax row from template
                 for tax_row in ppn_template_doc.taxes:
-                    pi.append("taxes", {
+                    tax_dict = {
                         "charge_type": tax_row.charge_type,
                         "account_head": tax_row.account_head,
                         "description": tax_row.description,
                         "rate": tax_row.rate,
-                    })
+                    }
+
+                    # Track first PPN tax row for variance adjustment
+                    if tax_row.charge_type == "On Net Total" and not first_ppn_account:
+                        first_ppn_account = tax_row.account_head
+
+                    pi.append("taxes", tax_dict)
 
                 frappe.logger().info(
                     f"[PPN] PI {pi.name}: Added {len(ppn_template_doc.taxes)} PPN tax row(s)"
@@ -622,6 +601,43 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
                 pi.save(ignore_permissions=True)
+
+            # Apply PPN variance to tax amount (after calculation)
+            if ppn_variance != 0 and first_ppn_account:
+                variance_applied = False
+                for tax_row in pi.taxes:
+                    # Find the PPN tax row by matching account_head
+                    if tax_row.account_head == first_ppn_account:
+                        # Add variance to calculated tax_amount
+                        original_amount = flt(tax_row.tax_amount)
+                        new_amount = original_amount + ppn_variance
+                        tax_row.tax_amount = new_amount
+
+                        # Update description to show variance adjustment
+                        variance_note = _("(incl. OCR variance: {0})").format(
+                            frappe.format_value(ppn_variance, {"fieldtype": "Currency"})
+                        )
+                        if tax_row.description:
+                            tax_row.description = f"{tax_row.description} {variance_note}"
+                        else:
+                            tax_row.description = variance_note
+
+                        frappe.logger().info(
+                            f"[PPN VARIANCE] PI {pi.name}: Adjusted PPN from {original_amount:,.2f} "
+                            f"to {new_amount:,.2f} (variance={ppn_variance:,.2f})"
+                        )
+                        variance_applied = True
+                        break
+
+                if not variance_applied:
+                    frappe.logger().warning(
+                        f"[PPN VARIANCE] PI {pi.name}: Could not find PPN tax row to apply variance"
+                    )
+
+                # Recalculate totals after variance adjustment
+                if variance_applied and hasattr(pi, "calculate_taxes_and_totals"):
+                    pi.calculate_taxes_and_totals()
+                    pi.save(ignore_permissions=True)
 
             frappe.logger().info(
                 f"[PPN] PI {pi.name}: PPN calculated - Added={flt(pi.taxes_and_charges_added):,.2f}"
