@@ -610,11 +610,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     f"[PPN] PI {pi.name}: Added {len(ppn_template_doc.taxes)} PPN tax row(s)"
                 )
 
-            # Save and recalculate
-            pi.save(ignore_permissions=True)
-            pi.reload()
-
-            # CRITICAL: Exempt variance items from PPN before tax calculation
+            # CRITICAL: Exempt variance items from PPN BEFORE first save/calculation
             # Set item_tax_rate with specific PPN account to zero out tax on variance
             if first_ppn_account:
                 for item_row in pi.items:
@@ -628,9 +624,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                             f"Exempted from PPN tax {first_ppn_account}"
                         )
 
-                # Save with exempted variance items
-                pi.save(ignore_permissions=True)
-                pi.reload()
+            # Save and recalculate with variance items exempted
+            pi.save(ignore_permissions=True)
+            pi.reload()
 
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
@@ -700,6 +696,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     # Add variance to calculated tax_amount
                     original_amount = flt(tax_row.tax_amount)
                     new_amount = original_amount + ppn_variance
+                    # ROUND to integer for IDR currency (no decimals)
+                    new_amount = round(new_amount)
                     tax_row.tax_amount = new_amount
 
                     # Update description to show variance adjustment
@@ -720,19 +718,50 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
             if variance_applied:
                 # Update parent totals to reflect variance
-                # CRITICAL: Don't use db_set here, just modify and save
-                # Since variance item is tax-exempt, recalculation won't override this
-                pi.taxes_and_charges_added = flt(pi.taxes_and_charges_added) + ppn_variance
-                pi.total_taxes_and_charges = flt(pi.total_taxes_and_charges) + ppn_variance
-                pi.grand_total = flt(pi.grand_total) + ppn_variance
-                pi.rounded_total = flt(pi.rounded_total) + ppn_variance
+                # CRITICAL: Use db_set to bypass calculate_taxes_and_totals()
+                # which would recalculate tax from rate and remove variance
+                # ROUND all totals to integer for IDR currency
+                new_taxes_added = round(flt(pi.taxes_and_charges_added) + ppn_variance)
+                new_total_taxes = round(flt(pi.total_taxes_and_charges) + ppn_variance)
+                new_grand_total = round(flt(pi.grand_total) + ppn_variance)
+                new_rounded_total = round(flt(pi.rounded_total) + ppn_variance)
 
-                # Save totals (tax row already updated in memory)
-                pi.save(ignore_permissions=True)
+                # Find and update the tax row in database directly
+                updated_tax_amount = 0
+                for tax_row in pi.taxes:
+                    if tax_row.account_head == first_ppn_account:
+                        updated_tax_amount = tax_row.tax_amount
+                        # Update child table row directly via db_update (bypass hooks)
+                        frappe.db.set_value(
+                            "Purchase Taxes and Charges",
+                            tax_row.name,
+                            {
+                                "tax_amount": tax_row.tax_amount,
+                                "description": tax_row.description,
+                            },
+                            update_modified=False
+                        )
+                        break
+
+                # Update parent fields directly in DB
+                frappe.db.set_value(
+                    "Purchase Invoice",
+                    pi.name,
+                    {
+                        "taxes_and_charges_added": new_taxes_added,
+                        "total_taxes_and_charges": new_total_taxes,
+                        "grand_total": new_grand_total,
+                        "rounded_total": new_rounded_total,
+                    },
+                    update_modified=False
+                )
+
+                # Reload to get updated values
+                pi.reload()
 
                 frappe.logger().info(
                     f"[PPN VARIANCE] PI {pi.name}: Applied variance to totals - "
-                    f"Grand Total: {pi.grand_total:,.2f}"
+                    f"Grand Total: {new_grand_total:,.2f}, PPN: {updated_tax_amount:,.2f}"
                 )
             else:
                 frappe.logger().warning(
