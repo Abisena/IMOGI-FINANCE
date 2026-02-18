@@ -698,5 +698,20 @@
     "bold": 1,
     "options": "currency",
     "description": "Remaining amount to be paid (Grand Total - Advance Paid)"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Transfer Application-workflow_state",
+    "dt": "Transfer Application",
+    "fieldname": "workflow_state",
+    "fieldtype": "Link",
+    "label": "Workflow State",
+    "options": "Workflow State",
+    "allow_on_submit": 1,
+    "read_only": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "bold": 1,
+    "description": "Current workflow state - can be updated after submission"
   }
 ]
