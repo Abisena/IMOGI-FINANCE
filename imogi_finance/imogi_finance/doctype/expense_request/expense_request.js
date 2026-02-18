@@ -1090,7 +1090,7 @@ frappe.ui.form.on('Expense Request Item', {
     const amount = flt(row.amount) || 0;
     const discount = flt(row.discount_amount) || 0;
     frappe.model.set_value(cdt, cdn, 'net_amount', amount - discount);
-    
+
     // Only auto-update pph_base_amount in draft mode
     if (frm.doc.docstatus === 0 && row?.is_pph_applicable) {
       frappe.model.set_value(cdt, cdn, 'pph_base_amount', row.amount || 0);

@@ -50,9 +50,18 @@ class FinanceValidator:
             # the expense base used for PPN/PPh/budget calculations
             if getattr(item, "is_variance_item", 0):
                 continue
-            qty = flt(getattr(item, "qty", 0)) or 0
-            rate = flt(getattr(item, "rate", 0)) or flt(getattr(item, "amount", 0))
-            amount = flt(getattr(item, "amount", qty * rate))
+
+            # Use net_amount if available (amount after discount), otherwise use amount
+            net_amount = flt(getattr(item, "net_amount", None))
+            if net_amount:
+                # net_amount is already calculated as (amount - discount_amount)
+                amount = net_amount
+            else:
+                # Fallback to regular amount calculation
+                qty = flt(getattr(item, "qty", 0)) or 0
+                rate = flt(getattr(item, "rate", 0)) or flt(getattr(item, "amount", 0))
+                amount = flt(getattr(item, "amount", qty * rate))
+
             total += amount
             account = getattr(item, "expense_account", None)
             if account:

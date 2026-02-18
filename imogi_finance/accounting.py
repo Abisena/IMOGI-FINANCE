@@ -53,7 +53,10 @@ def summarize_request_items(
     accounts = set()
 
     for item in items:
-        amount = _get_item_value(item, "amount")
+        # Use net_amount if available (amount after discount), otherwise use amount
+        net_amount = _get_item_value(item, "net_amount")
+        amount = net_amount if net_amount is not None else _get_item_value(item, "amount")
+
         if amount is None or amount <= 0:
             if skip_invalid_items:
                 continue
