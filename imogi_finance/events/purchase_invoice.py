@@ -127,12 +127,16 @@ def manage_ppn_variance_validate(doc, method=None):
             f"Rate = {ppn_rate*100:.2f}%, Expected PPN = {calculated_ppn:,.2f}"
         )
 
-    # STRICT ZERO TOLERANCE: Use int(round()) for numerical normalization
-    variance_raw = ocr_ppn - calculated_ppn
-    variance = int(round(variance_raw))
+    # Calculate variance with decimal precision (don't round to integer)
+    # This allows tracking sub-rupiah variances like Rp 0.11
+    variance = round(ocr_ppn - calculated_ppn, 2)  # Round to 2 decimal places
 
-    if variance == 0:
+    # Skip only if variance is truly negligible (< 1 sen)
+    if abs(variance) < 0.01:
         # No variance adjustment needed
+        frappe.logger().info(
+            f"[PPN VARIANCE] PI {doc.name}: Variance {variance:.2f} is negligible, skipping"
+        )
         return
 
     # Apply variance to first PPN tax row
@@ -141,7 +145,7 @@ def manage_ppn_variance_validate(doc, method=None):
 
     # Update description to show variance
     original_desc = getattr(first_ppn_row, "description", "") or ""
-    variance_note = f"(+OCR variance: Rp {variance:,.0f})" if variance > 0 else f"(OCR variance: Rp {variance:,.0f})"
+    variance_note = f"(+OCR variance: Rp {variance:,.2f})" if variance > 0 else f"(OCR variance: Rp {variance:,.2f})"
 
     if "OCR variance" in original_desc:
         # Replace existing variance note
@@ -153,7 +157,7 @@ def manage_ppn_variance_validate(doc, method=None):
 
     frappe.logger().info(
         f"[PPN VARIANCE] PI {doc.name}: Adjusted PPN from {calculated_ppn:,.2f} "
-        f"to {new_tax_amount:,.2f} (variance={variance:,.0f})"
+        f"to {new_tax_amount:,.2f} (variance={variance:,.2f})"
     )
 
     # Recalculate totals with adjusted tax
@@ -224,9 +228,9 @@ def manage_direct_pi_ppn_variance(doc, method=None):
             f"Rate = {ppn_rate*100:.2f}%, Expected PPN = {expected_ppn:,.2f}"
         )
 
-    # STRICT ZERO TOLERANCE
-    variance_raw = ocr_ppn - expected_ppn
-    variance = int(round(variance_raw))
+    # Calculate variance with decimal precision (don't round to integer)
+    # This allows tracking sub-rupiah variances like Rp 0.11
+    variance = round(ocr_ppn - expected_ppn, 2)  # Round to 2 decimal places
 
     # Get PPN Variance account
     try:
@@ -246,12 +250,17 @@ def manage_direct_pi_ppn_variance(doc, method=None):
         if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
     ]
 
-    if variance == 0:
-        # Delete all variance rows
+    # Skip only if variance is truly negligible (< 1 sen)
+    if abs(variance) < 0.01:
+        # Delete all variance rows if exists
         if ppn_var_rows:
             for row in ppn_var_rows:
                 doc.remove(row)
-            frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Deleted {len(ppn_var_rows)} variance row(s) (variance = 0)")
+            frappe.logger().info(
+                f"[DIRECT PI VARIANCE] PI {doc.name}: Variance {variance:.2f} is negligible, "
+                f"deleted {len(ppn_var_rows)} variance row(s)"
+            )
+        return  # Skip creating variance item
 
     elif len(ppn_var_rows) == 0:
         # CREATE: No variance row exists, create new one
