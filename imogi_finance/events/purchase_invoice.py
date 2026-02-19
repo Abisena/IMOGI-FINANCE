@@ -255,7 +255,7 @@ def manage_direct_pi_ppn_variance(doc, method=None):
 
     elif len(ppn_var_rows) == 0:
         # CREATE: No variance row exists, create new one
-        doc.append("items", {
+        new_item = doc.append("items", {
             "item_name": "PPN Variance",
             "description": "PPN Variance (OCR adjustment)",
             "expense_account": variance_account,
@@ -265,9 +265,21 @@ def manage_direct_pi_ppn_variance(doc, method=None):
             "amount": variance,
             "is_variance_item": 1,
         })
+
+        # CRITICAL: Set item_tax_rate to exempt from PPN
+        # Get PPN account from first tax row
+        import json
+        first_ppn_account = ppn_tax_rows[0].account_head if ppn_tax_rows else None
+        if first_ppn_account:
+            new_item.item_tax_rate = json.dumps({first_ppn_account: 0})
+            frappe.logger().info(
+                f"[DIRECT PI VARIANCE] PI {doc.name}: Set item_tax_rate for variance item to exempt from {first_ppn_account}"
+            )
+
         # Set custom field if exists
-        if items and hasattr(items[-1], "is_ppn_variance_row"):
-            items[-1].is_ppn_variance_row = 1
+        if hasattr(new_item, "is_ppn_variance_row"):
+            new_item.is_ppn_variance_row = 1
+
         frappe.logger().info(f"[DIRECT PI VARIANCE] PI {doc.name}: Created variance row = {variance}")
 
     elif len(ppn_var_rows) == 1:

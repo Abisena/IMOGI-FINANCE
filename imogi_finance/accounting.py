@@ -435,19 +435,24 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         # Mark variance item for later tax exemption
         is_variance = bool(getattr(item, "is_variance_item", 0))
         if is_variance:
-            # Flag for exemption logic (after PPN account known)
-            pi_item_doc._is_variance_item = True
-            # Set persistent custom field if exists
+            # Set persistent custom field if exists (CRITICAL: do this FIRST)
             if hasattr(pi_item_doc, "is_ppn_variance_row"):
                 pi_item_doc.is_ppn_variance_row = 1
+            # Also set standard variance flag
+            if hasattr(pi_item_doc, "is_variance_item"):
+                pi_item_doc.is_variance_item = 1
             frappe.logger().info(
                 f"[VARIANCE ITEM] PI item {idx}: Flagged variance item for tax exemption"
             )
 
-        # Set item_tax_rate to exempt this item from all taxes (will be updated with specific account later)
-        # Format: {"Account Head": 0}
+        # Set item_tax_rate to exempt variance items from all taxes
+        # This will be updated with specific PPN account later
+        # CRITICAL: Set this BEFORE any tax calculations
         if is_variance:
             pi_item_doc.item_tax_rate = "{}"
+            frappe.logger().info(
+                f"[VARIANCE ITEM] PI item {idx}: Set item_tax_rate to empty (will exempt from all taxes)"
+            )
 
         # Set item-level apply_tds flag if PPh applies
         if apply_pph and hasattr(pi_item_doc, "apply_tds"):
@@ -578,18 +583,20 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             if first_ppn_account:
                 exempt_count = 0
                 for item_row in pi.items:
-                    if getattr(item_row, "_is_variance_item", False) or getattr(item_row, "is_variance_item", 0):
+                    # Check PERSISTENT fields, not runtime flags
+                    is_var = (
+                        getattr(item_row, "is_variance_item", 0) or
+                        getattr(item_row, "is_ppn_variance_row", 0)
+                    )
+                    if is_var:
                         # Set item_tax_rate to exempt this item from PPN
                         # Format: {"Account Head": 0}
                         import json
                         item_row.item_tax_rate = json.dumps({first_ppn_account: 0})
-                        # Also set the field that ERPNext uses for tax calculation
-                        if hasattr(item_row, "is_null") or not item_row.item_tax_rate:
-                            item_row.item_tax_rate = json.dumps({first_ppn_account: 0})
                         exempt_count += 1
                         frappe.logger().info(
                             f"[VARIANCE ITEM] PI {pi.name} item {item_row.idx}: "
-                            f"Exempted from PPN tax {first_ppn_account}"
+                            f"Set item_tax_rate = {item_row.item_tax_rate} to exempt from PPN {first_ppn_account}"
                         )
 
                 if exempt_count > 0:
