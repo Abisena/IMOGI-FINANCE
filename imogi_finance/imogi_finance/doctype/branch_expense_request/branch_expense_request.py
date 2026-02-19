@@ -84,10 +84,10 @@ class BranchExpenseRequest(Document):
         self.validate_amounts()
         self.apply_branch_defaults()
         self.validate_tax_fields()
-        
+
         # Validate tax invoice OCR data if OCR is enabled and applicable
         self.validate_tax_invoice_ocr_before_submit()
-        
+
         self._validate_deferred_expense()
         self._update_totals()
         self._set_fiscal_year()
@@ -262,7 +262,7 @@ class BranchExpenseRequest(Document):
 
         # Note: Branch Expense Request does not have supplier field,
         # so NPWP validation against supplier is not applicable
-        
+
         # Get PPN type - only validate amounts for Standard PPN
         ppn_type = getattr(self, "ti_fp_ppn_type", None)
         if ppn_type and ppn_type != "Standard":
@@ -274,18 +274,18 @@ class BranchExpenseRequest(Document):
                     title=_("Tax Invoice Validation Error")
                 )
             return
-        
+
         # Hardcoded tolerance 2% - consistent with PPN Type validation
         tolerance_pct = 2.0
-        
+
         # Get OCR values
         ocr_dpp = flt(getattr(self, "ti_fp_dpp", 0) or 0)
         ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
         ocr_ppnbm = flt(getattr(self, "ti_fp_ppnbm", 0) or 0)
-        
+
         # Calculate expected values from expense request
         expected_dpp = flt(getattr(self, "amount", 0) or 0)  # Total expense as DPP
-        
+
         # Expected PPN calculation - try to get rate from template first
         ppn_template = getattr(self, "ppn_template", None)
         ppn_rate = None
@@ -296,23 +296,23 @@ class BranchExpenseRequest(Document):
                 if tax.rate:
                     ppn_rate = flt(tax.rate)
                     break
-        
+
         # Fallback: use date-based inference if no template rate
         if ppn_rate is None:
             from imogi_finance.tax_invoice_ocr import infer_tax_rate
             fp_date = getattr(self, "ti_fp_date", None)
             ppn_rate = infer_tax_rate(dpp=expected_dpp, ppn=ocr_ppn, fp_date=fp_date) * 100  # Convert to percentage
-        
+
         expected_ppn = expected_dpp * ppn_rate / 100
-        
+
         # DPP variance removed - DPP is user input and expected to be correct
         # Only PPN variance is tracked due to rate/rounding differences
-        
+
         # Check PPN difference using percentage tolerance only
         if ocr_ppn > 0:
             ppn_diff = abs(ocr_ppn - expected_ppn)
             ppn_diff_pct = (ppn_diff / expected_ppn * 100) if expected_ppn > 0 else 0
-            
+
             if ppn_diff_pct > tolerance_pct:
                 errors.append(
                     _("PPN dari OCR ({0}) berbeda dengan PPN yang dihitung ({1}). Selisih: {2} atau {3:.2f}% (toleransi: {4}%)").format(
@@ -323,10 +323,10 @@ class BranchExpenseRequest(Document):
                         tolerance_pct
                     )
                 )
-        
+
         # PPnBM validation (if applicable) - usually PPnBM should be 0 or match expected
         # For now, just note if PPnBM exists but we can add validation later if needed
-        
+
         # Show warnings as msgprint (non-blocking)
         if warnings:
             frappe.msgprint(
@@ -334,7 +334,7 @@ class BranchExpenseRequest(Document):
                 title=_("Tax Invoice Validation Warning"),
                 indicator="orange"
             )
-        
+
         # Show errors and block submission
         if errors:
             frappe.throw(
@@ -404,7 +404,9 @@ class BranchExpenseRequest(Document):
 
     def _set_requester(self):
         if getattr(self, "requester", None) in {None, "", "frappe.session.user"}:
-            self.requester = getattr(getattr(frappe, "session", None), "user", None)
+            session_user = getattr(getattr(frappe, "session", None), "user", None)
+            # Fallback to Administrator if session user is not available
+            self.requester = session_user or "Administrator"
         if not getattr(self, "posting_date", None):
             self.posting_date = nowdate()
 
@@ -820,11 +822,11 @@ class BranchExpenseRequest(Document):
     def get_route_snapshot(self) -> dict | None:
         """Get approval route snapshot."""
         from imogi_finance.branch_approval import parse_route_snapshot
-        
+
         snapshot = getattr(self, "approval_route_snapshot", None)
         if not snapshot:
             return None
-        
+
         parsed = parse_route_snapshot(snapshot)
         return parsed if parsed else None
 

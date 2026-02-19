@@ -333,11 +333,11 @@ class ExpenseRequest(Document):
         # Calculate expected PPN and variance from OCR
         ocr_ppn = flt(getattr(self, "ti_fp_ppn", 0) or 0)
         expected_ppn = total_ppn
-        
+
         # STRICT ZERO TOLERANCE: Use int(round()) for numerical normalization
         variance_raw = ocr_ppn - expected_ppn
         variance = int(round(variance_raw))
-        
+
         # Get PPN Variance account from GL mappings
         variance_account = None
         if variance != 0:
@@ -350,20 +350,20 @@ class ExpenseRequest(Document):
                 frappe.throw("GL Account Mapping untuk purpose 'PPN_VARIANCE' belum ada. Tambahkan di GL Purposes/Mapping.")
             except Exception as e:
                 frappe.throw(str(e))
-        
+
         # IDEMPOTENT: Query existing variance rows
         ppn_var_rows = [
-            r for r in items 
+            r for r in items
             if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
         ]
-        
+
         if variance == 0:
             # Delete all variance rows if variance is 0
             if ppn_var_rows:
                 for row in ppn_var_rows:
                     self.remove(row)
                 frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Deleted {len(ppn_var_rows)} variance row(s) (variance = 0)")
-        
+
         elif len(ppn_var_rows) == 0:
             # CREATE: No variance row exists, create new one
             if variance_account:
@@ -376,29 +376,29 @@ class ExpenseRequest(Document):
                     "is_deferred_expense": 0,
                 })
                 frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Created variance row = {variance}")
-        
+
         elif len(ppn_var_rows) == 1:
             # UPDATE: Exactly 1 row exists, update it
             row = ppn_var_rows[0]
             row.amount = variance
             row.description = "PPN Variance"
             frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Updated variance row = {variance}")
-        
+
         else:
             # MERGE: Multiple rows exist, merge to 1
             # Keep first row, delete others
             first_row = ppn_var_rows[0]
             first_row.amount = variance
             first_row.description = "PPN Variance"
-            
+
             for duplicate in ppn_var_rows[1:]:
                 self.remove(duplicate)
-            
+
             frappe.logger().info(f"[PPN VARIANCE] ER {self.name}: Merged {len(ppn_var_rows)} rows to 1, variance = {variance}")
-        
+
         # Save variance for reference
         self.ti_ppn_variance = variance_raw
-        
+
         # ========== CALCULATE TOTALS (AFTER VARIANCE MANAGEMENT) ==========
         # Recalculate variance total from items
         variance_total = sum(
@@ -603,7 +603,9 @@ class ExpenseRequest(Document):
     def _set_requester_to_creator(self):
         """Set requester to current user if not set."""
         if not getattr(self, "requester", None):
-            self.requester = frappe.session.user
+            session_user = getattr(frappe, "session", None)
+            # Fallback to Administrator if session user is not available
+            self.requester = getattr(session_user, "user", None) or "Administrator"
 
     def _reset_status_if_copied(self):
         """Clear status when copying from submitted doc."""
