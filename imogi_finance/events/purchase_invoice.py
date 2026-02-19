@@ -145,10 +145,13 @@ def manage_ppn_variance_validate(doc, method=None):
     # This allows tracking sub-rupiah variances like Rp 0.11
     variance = round(ocr_ppn - calculated_ppn, 2)  # Round to 2 decimal places
 
-    # Get existing variance items
+    # Get existing variance items - query by item_name instead of field flag
+    # (is_variance_item field may not exist in Purchase Invoice Item DocType)
     ppn_var_rows = [
         item for item in doc.get("items") or []
-        if getattr(item, "is_variance_item", 0) or getattr(item, "is_ppn_variance_row", 0)
+        if (getattr(item, "item_name", None) == "PPN Variance" or
+            getattr(item, "is_variance_item", 0) or
+            getattr(item, "is_ppn_variance_row", 0))
     ]
 
     # Tolerance check: if variance is negligible, DELETE existing variance items
@@ -295,11 +298,13 @@ def manage_direct_pi_ppn_variance(doc, method=None):
     except Exception as e:
         frappe.throw(str(e))
 
-    # IDEMPOTENT: Query existing variance rows
+    # IDEMPOTENT: Query existing variance rows - by item_name instead of field flag
+    # (is_variance_item field may not exist in Purchase Invoice Item DocType)
     items = doc.get("items") or []
     ppn_var_rows = [
         r for r in items
-        if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
+        if (getattr(r, "item_name", None) == "PPN Variance" or
+            (getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account))
     ]
 
     # Skip only if variance is truly negligible (< 1 sen)

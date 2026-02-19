@@ -352,10 +352,12 @@ class ExpenseRequest(Document):
             except Exception as e:
                 frappe.throw(str(e))
 
-        # IDEMPOTENT: Query existing variance rows
+        # IDEMPOTENT: Query existing variance rows - by description/account instead of field flag
+        # (is_variance_item field may not persist correctly)
         ppn_var_rows = [
             r for r in items
-            if getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account
+            if (getattr(r, "description", None) == "PPN Variance" or
+                (getattr(r, "is_variance_item", 0) and getattr(r, "expense_account", None) == variance_account))
         ]
 
         # Tolerance check: if variance is negligible (< 1 sen), delete variance items
