@@ -399,7 +399,11 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         deferred_periods = getattr(item, "deferred_periods", None)
 
         qty = getattr(item, "qty", 1) or 1
-        item_amount = flt(getattr(item, "amount", 0))
+
+        # CRITICAL: Use net_amount (after discount), not amount (before discount)
+        # ER has: amount (before discount), discount_amount, net_amount (after discount)
+        item_net_amount = flt(getattr(item, "net_amount", 0) or getattr(item, "amount", 0))
+        item_discount = flt(getattr(item, "discount_amount", 0) or 0)
 
         # Determine which account to use for PI item
         pi_expense_account = prepaid_account if (is_deferred and prepaid_account) else expense_account
@@ -414,9 +418,14 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             "cost_center": request.cost_center,
             "project": request.project,
             "qty": qty,
-            "rate": item_amount / qty if qty > 0 else item_amount,
-            "amount": item_amount,
+            "rate": item_net_amount / qty if qty > 0 else item_net_amount,
+            "amount": item_net_amount,  # Use net amount (after discount)
         }
+
+        # Copy discount_amount if PI supports it
+        if item_discount > 0 and hasattr(pi, "items"):
+            # Check if PI item supports discount_amount field
+            pi_item["discount_amount"] = item_discount
 
         if is_deferred and prepaid_account:
             service_end = add_months(deferred_start_date, deferred_periods or 0)
