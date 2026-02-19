@@ -418,6 +418,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             "cost_center": request.cost_center,
             "project": request.project,
             "qty": qty,
+            "uom": "Nos",  # Default UOM for expense items
             "rate": item_net_amount / qty if qty > 0 else item_net_amount,
             "amount": item_net_amount,  # Use net amount (after discount)
         }
