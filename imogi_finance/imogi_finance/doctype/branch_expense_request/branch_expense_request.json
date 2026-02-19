@@ -448,6 +448,7 @@
       "description": "Current status and workflow information"
     },
     {
+      "allow_on_submit": 1,
       "fieldname": "status",
       "fieldtype": "Data",
       "in_list_view": 1,
@@ -455,6 +456,7 @@
       "read_only": 1
     },
     {
+      "allow_on_submit": 1,
       "fieldname": "workflow_state",
       "fieldtype": "Link",
       "label": "Workflow State",
@@ -471,6 +473,7 @@
       "description": "Approval levels and routing information"
     },
     {
+      "allow_on_submit": 1,
       "default": "0",
       "description": "Current level in approval flow (0 = not started)",
       "fieldname": "current_approval_level",
