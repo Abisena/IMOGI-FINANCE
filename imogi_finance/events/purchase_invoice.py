@@ -73,14 +73,15 @@ def prevent_double_wht_validate(doc, method=None):
 
 
 def manage_ppn_variance_validate(doc, method=None):
-    """Manage PPN variance row idempotently in PI validate hook.
+    """Manage PPN variance for PI from ER - creates variance item and adjusts tax.
 
-    Runs AFTER calculate_taxes_and_totals() to adjust PPN tax based on OCR variance.
-    Only processes if:
-    - PI has taxes table with PPN
-    - Tax Invoice OCR Upload is linked
-    - OCR has PPN amount
+    Only runs for PI WITH Expense Request link.
+    Creates/updates/deletes variance item in items table based on OCR vs calculated PPN.
     """
+    # Only run for PI WITH Expense Request link
+    if not getattr(doc, "imogi_expense_request", None):
+        return
+
     # Skip if no tax invoice upload or no OCR PPN
     if not getattr(doc, "ti_tax_invoice_upload", None):
         return
@@ -101,6 +102,18 @@ def manage_ppn_variance_validate(doc, method=None):
 
     if not ppn_tax_rows:
         return
+
+    # Get variance account from settings
+    try:
+        from imogi_finance.settings.utils import get_vat_input_accounts
+        vat_accounts = get_vat_input_accounts()
+        if not vat_accounts:
+            frappe.throw("VAT Input Account di Tax Profile belum dikonfigurasi. Harap hubungi administrator.")
+
+        # Use first VAT account as variance account
+        variance_account = vat_accounts[0]
+    except Exception as e:
+        frappe.throw(f"Error getting VAT account: {str(e)}")
 
     # CRITICAL FIX: Calculate expected PPN from items EXCLUDING variance items
     # This prevents double-counting variance (once as item, once as tax adjustment)
@@ -131,36 +144,73 @@ def manage_ppn_variance_validate(doc, method=None):
     # This allows tracking sub-rupiah variances like Rp 0.11
     variance = round(ocr_ppn - calculated_ppn, 2)  # Round to 2 decimal places
 
-    # Skip only if variance is truly negligible (< 1 sen)
+    # Get existing variance items
+    ppn_var_rows = [
+        item for item in doc.get("items") or []
+        if getattr(item, "is_variance_item", 0) or getattr(item, "is_ppn_variance_row", 0)
+    ]
+
+    # Tolerance check: if variance is negligible, DELETE existing variance items
     if abs(variance) < 0.01:
-        # No variance adjustment needed
-        frappe.logger().info(
-            f"[PPN VARIANCE] PI {doc.name}: Variance {variance:.2f} is negligible, skipping"
-        )
-        return
+        if ppn_var_rows:
+            for var_row in ppn_var_rows:
+                doc.remove(var_row)
+            frappe.logger().info(
+                f"[PPN VARIANCE] PI {doc.name}: Variance {variance:.2f} is negligible, "
+                f"deleted {len(ppn_var_rows)} variance row(s)"
+            )
+        return  # Skip creating variance item
 
-    # Apply variance to first PPN tax row
-    new_tax_amount = calculated_ppn + variance
-    first_ppn_row.tax_amount = new_tax_amount
+    elif len(ppn_var_rows) == 0:
+        # CREATE: No variance row exists, create new one
+        new_item = doc.append("items", {
+            "item_name": "PPN Variance",
+            "description": "PPN Variance (OCR adjustment)",
+            "expense_account": variance_account,
+            "cost_center": getattr(doc, "cost_center", None),
+            "qty": 1,
+            "rate": variance,
+            "amount": variance,
+            "is_variance_item": 1,
+        })
 
-    # Update description to show variance
-    original_desc = getattr(first_ppn_row, "description", "") or ""
-    variance_note = f"(+OCR variance: Rp {variance:,.2f})" if variance > 0 else f"(OCR variance: Rp {variance:,.2f})"
+        # CRITICAL: Set item_tax_rate to exempt from PPN
+        # Get PPN account from first tax row
+        import json
+        first_ppn_account = ppn_tax_rows[0].account_head if ppn_tax_rows else None
+        if first_ppn_account:
+            new_item.item_tax_rate = json.dumps({first_ppn_account: 0})
+            frappe.logger().info(
+                f"[PPN VARIANCE] PI {doc.name}: Set item_tax_rate for variance item to exempt from {first_ppn_account}"
+            )
 
-    if "OCR variance" in original_desc:
-        # Replace existing variance note
-        import re
-        first_ppn_row.description = re.sub(r'\(.*OCR variance:.*?\)', variance_note, original_desc)
+        # Set custom field if exists
+        if hasattr(new_item, "is_ppn_variance_row"):
+            new_item.is_ppn_variance_row = 1
+
+        frappe.logger().info(f"[PPN VARIANCE] PI {doc.name}: Created variance row = {variance:,.2f}")
+
+    elif len(ppn_var_rows) == 1:
+        # UPDATE: Exactly 1 row exists, update it
+        row = ppn_var_rows[0]
+        row.amount = variance
+        row.rate = variance
+        row.description = "PPN Variance (OCR adjustment)"
+        frappe.logger().info(f"[PPN VARIANCE] PI {doc.name}: Updated variance row = {variance:,.2f}")
+
     else:
-        # Append variance note
-        first_ppn_row.description = f"{original_desc} {variance_note}".strip()
+        # MERGE: Multiple rows exist, merge to 1
+        first_row = ppn_var_rows[0]
+        first_row.amount = variance
+        first_row.rate = variance
+        first_row.description = "PPN Variance (OCR adjustment)"
 
-    frappe.logger().info(
-        f"[PPN VARIANCE] PI {doc.name}: Adjusted PPN from {calculated_ppn:,.2f} "
-        f"to {new_tax_amount:,.2f} (variance={variance:,.2f})"
-    )
+        for duplicate in ppn_var_rows[1:]:
+            doc.remove(duplicate)
 
-    # Recalculate totals with adjusted tax
+        frappe.logger().info(f"[PPN VARIANCE] PI {doc.name}: Merged {len(ppn_var_rows)} rows to 1, variance = {variance:,.2f}")
+
+    # Recalculate totals after variance item changes
     if hasattr(doc, "calculate_taxes_and_totals"):
         doc.calculate_taxes_and_totals()
 
