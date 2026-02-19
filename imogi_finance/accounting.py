@@ -576,24 +576,37 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             # CRITICAL: Exempt variance items from PPN BEFORE first save/calculation
             # Set item_tax_rate with specific PPN account to zero out tax on variance
             if first_ppn_account:
+                exempt_count = 0
                 for item_row in pi.items:
                     if getattr(item_row, "_is_variance_item", False) or getattr(item_row, "is_variance_item", 0):
                         # Set item_tax_rate to exempt this item from PPN
                         # Format: {"Account Head": 0}
                         import json
                         item_row.item_tax_rate = json.dumps({first_ppn_account: 0})
+                        # Also set the field that ERPNext uses for tax calculation
+                        if hasattr(item_row, "is_null") or not item_row.item_tax_rate:
+                            item_row.item_tax_rate = json.dumps({first_ppn_account: 0})
+                        exempt_count += 1
                         frappe.logger().info(
                             f"[VARIANCE ITEM] PI {pi.name} item {item_row.idx}: "
                             f"Exempted from PPN tax {first_ppn_account}"
                         )
 
+                if exempt_count > 0:
+                    frappe.logger().info(
+                        f"[PPN] PI {pi.name}: Exempted {exempt_count} variance item(s) from PPN"
+                    )
+
             # Save and recalculate with variance items exempted
             pi.save(ignore_permissions=True)
             pi.reload()
 
+            # CRITICAL: Force recalculation to ensure exemptions are applied
             if hasattr(pi, "calculate_taxes_and_totals"):
                 pi.calculate_taxes_and_totals()
+                # Save again to persist the calculated taxes
                 pi.save(ignore_permissions=True)
+                pi.reload()
 
             frappe.logger().info(
                 f"[PPN] PI {pi.name}: PPN calculated - Added={flt(pi.taxes_and_charges_added):,.2f}"
