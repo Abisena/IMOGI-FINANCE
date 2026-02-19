@@ -109,12 +109,12 @@ class TaxInvoiceOCRUpload(Document):
 
         # Original validation logic continues...
         # Only runs on USER-initiated saves (from UI or API)
-        
+
         if not self.fp_no:
             frappe.throw(_("Tax Invoice Number is required."))
         if not self.tax_invoice_pdf:
             frappe.throw(_("Faktur Pajak PDF is required."))
-        
+
         # 🆕 PPN Type is now REQUIRED - user must select before saving.
         # Exception: post_ocr_validate flag means this is called from background OCR job;
         # user has not had a chance to select ppn_type yet → skip throw, add note instead.
@@ -193,42 +193,42 @@ class TaxInvoiceOCRUpload(Document):
                         f"[VALIDATE] {self.name}: Tax Invoice Type '{self.tax_invoice_type}' "
                         "tidak ada di master — lewati cross-check (master belum dikonfigurasi)."
                     )
-        
+
         # 🆕 Cross-check FP Number: Compare doctype fp_no (autoname) vs OCR extracted fp_no
         # ⚠️ CRITICAL: fp_no is autoname (document name), cannot be changed after save
         fp_no_match = False
         ocr_fp_no = None
-        
+
         # Only validate if OCR has run (ocr_text exists)
         if self.ocr_text:
             ocr_fp_no = _extract_fp_number_from_ocr(self.ocr_text, expected_fp_no=self.fp_no)
-            
+
             # Normalize both for comparison (remove dots, spaces, dashes)
             if ocr_fp_no:
                 fp_normalized = normalize_identifier_digits(self.fp_no) or ""
                 ocr_normalized = normalize_identifier_digits(ocr_fp_no) or ""
-                
+
                 if fp_normalized == ocr_normalized:
                     fp_no_match = True
             else:
                 # Fallback: simple substring check
                 fp_normalized = normalize_identifier_digits(self.fp_no) or ""
                 ocr_text_normalized = re.sub(r'\D', '', self.ocr_text or "")
-                
+
                 if fp_normalized in ocr_text_normalized:
                     fp_no_match = True
                     ocr_fp_no = self.fp_no  # Assumed match
-        
+
         # 🆕 Auto-set verification status based on multiple checks
         verification_notes_parts = []
-        
+
         # ALWAYS show basic info first
         verification_notes_parts.append(f"📄 FP Number: {self.fp_no}")
         if self.fp_date:
             verification_notes_parts.append(f"📅 FP Date: {self.fp_date}")
         if self.npwp:
             verification_notes_parts.append(f"🏢 NPWP: {self.npwp}")
-        
+
         # ALWAYS show amounts
         verification_notes_parts.append("")
         verification_notes_parts.append(f"Harga Jual: Rp {self.harga_jual:,.2f}" if self.harga_jual else "Harga Jual: Not set")
@@ -248,7 +248,8 @@ class TaxInvoiceOCRUpload(Document):
             verification_notes_parts.append(
                 f"💡 Recommended PPN Template: {self.recommended_ppn_template}\n"
                 f"   → Template ini akan otomatis di-copy ke field PPN Template\n"
-                f"     di Expense Request saat Anda klik Sync / Apply."
+                f"     di Expense Request saat Anda Save/Submit ER dengan OCR ini\n"
+                f"     (jika field PPN Template masih kosong)."
             )
         elif self.ppn_type:
             verification_notes_parts.append("")
@@ -262,7 +263,7 @@ class TaxInvoiceOCRUpload(Document):
 
         # Validation checks section
         verification_notes_parts.append("🔍 VALIDATION CHECKS:")
-        
+
         if ppn_type_match:
             verification_notes_parts.append("   ✅ PPN Type matches Tax Invoice Type")
         elif not self.ppn_type:
@@ -314,7 +315,7 @@ class TaxInvoiceOCRUpload(Document):
                 )
         else:
             verification_notes_parts.append("   ⚠️ PPN Type validation incomplete")
-        
+
         if fp_no_match:
             verification_notes_parts.append(f"   ✅ FP Number verified in OCR")
         elif not self.ocr_text:
@@ -344,21 +345,21 @@ class TaxInvoiceOCRUpload(Document):
                 )
         else:
             verification_notes_parts.append("   ⚠️ FP Number not verified in OCR text")
-        
+
         if self.dpp and self.ppn is not None:
             verification_notes_parts.append("   ✅ DPP and PPN amounts present")
         else:
             verification_notes_parts.append("   ⚠️ Missing DPP or PPN values")
-        
+
         # 🆕 Validate PPN amount matches selected PPN Type
         ppn_amount_match = False
         if self.ppn_type and self.dpp and self.ppn is not None:
             dpp_value = float(self.dpp)
             ppn_value = float(self.ppn)
-            
+
             if dpp_value > 0:
                 actual_rate = ppn_value / dpp_value if ppn_value > 0 else 0
-                
+
                 # Check rate based on PPN Type
                 if "Standard 11%" in self.ppn_type:
                     expected_rate = 0.11
@@ -377,7 +378,7 @@ class TaxInvoiceOCRUpload(Document):
                             f"   → Periksa apakah DPP dan PPN sudah benar di faktur pajak.\n"
                             f"   → Jika menggunakan Nilai Lain (DPP faktor 11/12), pilih PPN Type yang sesuai."
                         )
-                
+
                 elif "Standard 12%" in self.ppn_type:
                     expected_rate = 0.12
                     if ppn_value == 0:
@@ -395,7 +396,7 @@ class TaxInvoiceOCRUpload(Document):
                             f"   → Periksa apakah DPP dan PPN sudah benar di faktur pajak.\n"
                             f"   → Jika menggunakan Nilai Lain (DPP faktor 11/12), pilih PPN Type yang sesuai."
                         )
-                
+
                 elif "Zero Rated" in self.ppn_type or "Ekspor" in self.ppn_type:
                     if ppn_value == 0:
                         ppn_amount_match = True
@@ -404,7 +405,7 @@ class TaxInvoiceOCRUpload(Document):
                         verification_notes_parts.append(
                             f"⚠️ Zero Rated should have PPN=0, but got Rp {ppn_value:,.0f}"
                         )
-                
+
                 elif "Tidak Dipungut" in self.ppn_type or "Dibebaskan" in self.ppn_type:
                     if ppn_value == 0:
                         ppn_amount_match = True
@@ -413,7 +414,7 @@ class TaxInvoiceOCRUpload(Document):
                         verification_notes_parts.append(
                             f"⚠️ {self.ppn_type} should have PPN=0, but got Rp {ppn_value:,.0f}"
                         )
-                
+
                 elif "Bukan Objek PPN" in self.ppn_type:
                     if ppn_value == 0:
                         ppn_amount_match = True
@@ -422,7 +423,7 @@ class TaxInvoiceOCRUpload(Document):
                         verification_notes_parts.append(
                             f"⚠️ Bukan Objek PPN should have PPN=0, but got Rp {ppn_value:,.0f}"
                         )
-                
+
                 elif "Digital 1.1%" in self.ppn_type or "PMSE" in self.ppn_type:
                     expected_rate = 0.011
                     if abs(actual_rate - expected_rate) <= 0.005:  # 0.5% tolerance
@@ -432,14 +433,14 @@ class TaxInvoiceOCRUpload(Document):
                         verification_notes_parts.append(
                             f"⚠️ PPN rate mismatch: Expected 1.1%, actual {actual_rate:.2%}"
                         )
-                
+
                 elif "Custom" in self.ppn_type or "Other" in self.ppn_type:
                     # Custom tariff - always pass but show rate
                     ppn_amount_match = True
                     verification_notes_parts.append(
                         f"ℹ️ Custom PPN Type: Actual rate is {actual_rate:.2%}"
                     )
-                
+
                 else:
                     # PPN Type string tidak cocok dengan pola yang dikenali.
                     # Jangan blokir auto-verify hanya karena string PPN Type berbeda.
@@ -450,7 +451,7 @@ class TaxInvoiceOCRUpload(Document):
                         f"(rate aktual: {actual_rate:.2%}). "
                         f"Verifikasi nominal PPN secara manual."
                     )
-        
+
         # Final status summary
         verification_notes_parts.append("")
         verification_notes_parts.append("─" * 50)
@@ -480,7 +481,7 @@ class TaxInvoiceOCRUpload(Document):
                 pending.append("PPN belum diekstrak oleh OCR")
             pending_str = "; ".join(pending) if pending else "verifikasi manual diperlukan"
             verification_notes_parts.append(f"\u26a0\ufe0f STATUS: Needs Review \u2014 {pending_str}.")
-        
+
         # Always set verification notes
         self.verification_notes = "\n".join(verification_notes_parts)
 
