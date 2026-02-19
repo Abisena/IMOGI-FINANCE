@@ -222,7 +222,8 @@ class BranchExpenseRequest(Document):
         total, expense_accounts = FinanceValidator.validate_amounts(self.get("items"))
         self.total_amount = total
         self.amount = total
-        self.expense_accounts = expense_accounts
+        # Convert tuple to newline-separated string for Small Text field
+        self.expense_accounts = "\n".join(expense_accounts) if expense_accounts else ""
         self.expense_account = expense_accounts[0] if len(expense_accounts) == 1 else None
 
     def apply_branch_defaults(self):
@@ -496,9 +497,9 @@ class BranchExpenseRequest(Document):
         self.total_amount = sum(flt(getattr(item, "amount", 0)) for item in items)
         self.amount = self.total_amount
         if getattr(self, "expense_accounts", None):
-            self.expense_account = (
-                self.expense_accounts[0] if len(self.expense_accounts) == 1 else None
-            )
+            # expense_accounts is stored as newline-separated string
+            accounts = self.expense_accounts.split("\n") if self.expense_accounts else []
+            self.expense_account = accounts[0] if len(accounts) == 1 else None
 
     def _get_budget_window(self, settings) -> tuple[date | None, date | None]:
         basis = (getattr(settings, "budget_check_basis", None) or "Fiscal Year").lower()
