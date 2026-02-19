@@ -91,7 +91,8 @@ def _sync_request_amounts(
 
     for field, value in updates.items():
         setattr(request, field, value)
-    setattr(request, "expense_accounts", expense_accounts)
+    # Convert tuple to newline-separated string for Small Text field
+    setattr(request, "expense_accounts", "\n".join(expense_accounts) if expense_accounts else "")
 
 
 def _get_pph_base_amount(request: frappe.model.document.Document) -> float:
