@@ -8,6 +8,7 @@
   "editable_grid": 0,
   "engine": "InnoDB",
   "field_order": [
+    "tab_details",
     "primary_section",
     "posting_date",
     "request_type",
@@ -19,6 +20,7 @@
     "fiscal_year",
     "purpose_section",
     "purpose",
+    "tab_items",
     "items_section",
     "items",
     "totals_section",
@@ -29,6 +31,7 @@
     "expense_account",
     "expense_accounts",
     "currency",
+    "tab_taxes",
     "taxes_section",
     "is_ppn_applicable",
     "ppn_template",
@@ -55,6 +58,7 @@
     "budget_check_status",
     "column_break_budget",
     "budget_check_message",
+    "tab_approval",
     "approval_status_section",
     "status",
     "workflow_state",
@@ -75,12 +79,18 @@
     "level_3_user",
     "column_break_level_3",
     "level_3_role",
+    "tab_documents",
     "attachments_section",
     "attachments",
     "created_by_user",
     "submit_on"
   ],
   "fields": [
+    {
+      "fieldname": "tab_details",
+      "fieldtype": "Tab Break",
+      "label": "Details"
+    },
     {
       "fieldname": "primary_section",
       "fieldtype": "Section Break",
@@ -165,6 +175,11 @@
       "description": "Describe the purpose of this expense request"
     },
     {
+      "fieldname": "tab_items",
+      "fieldtype": "Tab Break",
+      "label": "Items & Totals"
+    },
+    {
       "fieldname": "items_section",
       "fieldtype": "Section Break",
       "label": "📦 Expense Items",
@@ -231,6 +246,11 @@
       "fieldtype": "Link",
       "label": "Currency",
       "options": "Currency"
+    },
+    {
+      "fieldname": "tab_taxes",
+      "fieldtype": "Tab Break",
+      "label": "Taxes & Tax Invoice"
     },
     {
       "collapsible": 1,
@@ -416,6 +436,11 @@
       "read_only": 1
     },
     {
+      "fieldname": "tab_approval",
+      "fieldtype": "Tab Break",
+      "label": "Approval & Workflow"
+    },
+    {
       "collapsible": 1,
       "fieldname": "approval_status_section",
       "fieldtype": "Section Break",
@@ -586,6 +611,11 @@
       "label": "Role",
       "options": "Role",
       "read_only": 1
+    },
+    {
+      "fieldname": "tab_documents",
+      "fieldtype": "Tab Break",
+      "label": "Documents"
     },
     {
       "collapsible": 1,

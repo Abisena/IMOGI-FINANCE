@@ -176,6 +176,7 @@ fixtures = [
     "fixtures/finance_control_settings.json",
     "fixtures/transfer_application_settings.json",
     "fixtures/property_setter.json",
+    "fixtures/branch_expense_request_workflow.json",
 ]
 
 # Uninstallation
