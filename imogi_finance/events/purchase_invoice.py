@@ -106,7 +106,8 @@ def manage_ppn_variance_validate(doc, method=None):
     # Get variance account from settings
     try:
         from imogi_finance.settings.utils import get_vat_input_accounts
-        vat_accounts = get_vat_input_accounts()
+        company = getattr(doc, "company", None)
+        vat_accounts = get_vat_input_accounts(company)
         if not vat_accounts:
             frappe.throw("VAT Input Account di Tax Profile belum dikonfigurasi. Harap hubungi administrator.")
 
