@@ -374,19 +374,19 @@ def _infer_nilai_lain_factor_from_amounts(dpp_value: Any, ppn_value: Any) -> tup
 
 def get_template_vat_rate(template_doc, vat_accounts: list[str]) -> float:
     """Calculate expected VAT rate from Purchase Taxes and Charges Template.
-    
+
     Sums rates from template taxes where:
     - charge_type = "On Net Total" (tax applies to base amount)
     - account_head is in configured VAT accounts list
-    
+
     Args:
         template_doc: frappe.get_doc("Purchase Taxes and Charges Template", name)
         vat_accounts: List of VAT account names (e.g., ["2110.10 - PPN Masukan - IFI"])
-        
+
     Returns:
         Total VAT rate as decimal (e.g., 0.11, 0.12)
         Returns 0 if no matching taxes found
-        
+
     Example:
         >>> vat_accounts = get_vat_input_accounts("PT Imogi")
         >>> template = frappe.get_doc("Purchase Taxes and Charges Template", "PPN 11%")
@@ -396,7 +396,7 @@ def get_template_vat_rate(template_doc, vat_accounts: list[str]) -> float:
     """
     if not template_doc or not hasattr(template_doc, "taxes"):
         return 0.0
-    
+
     total_rate = 0.0
     for tax_row in template_doc.taxes:
         if (
@@ -404,7 +404,7 @@ def get_template_vat_rate(template_doc, vat_accounts: list[str]) -> float:
             and tax_row.account_head in vat_accounts
         ):
             total_rate += (tax_row.rate or 0.0) / 100.0
-    
+
     return total_rate
 
 
@@ -726,9 +726,52 @@ def _copy_tax_invoice_fields(source_doc: Any, source_doctype: str, target_doc: A
         if key not in source_map or key not in target_map:
             continue
         value = _get_value(source_doc, source_doctype, key)
+
+        # Normalize ppn_type to match simplified options in BER/ER
+        if key == "ppn_type" and value:
+            value = _normalize_ppn_type(value)
+
         _set_value(target_doc, target_doctype, key, value)
         if target_doctype == "Sales Invoice" and key == "npwp":
             setattr(target_doc, "out_buyer_tax_id", value)
+
+
+def _normalize_ppn_type(ppn_type: str) -> str:
+    """
+    Normalize PPN Type from detailed format to simplified format.
+
+    Legacy formats (from Tax Invoice OCR Upload):
+    - "Standard 11% (PPN 2022-2024)" -> "Standard"
+    - "Standard 12% (PPN 2025+)" -> "Standard"
+    - "Zero Rated (Ekspor)" -> "Zero Rated"
+    - "PPN Tidak Dipungut (Fasilitas)" -> "Exempt/Not PPN"
+    - "PPN Dibebaskan (Fasilitas)" -> "Exempt/Not PPN"
+    - "Bukan Objek PPN" -> "Exempt/Not PPN"
+    - "Digital 1.1% (PMSE)" -> "Standard"
+    - "Custom/Other (Tarif Khusus)" -> "Standard"
+
+    Args:
+        ppn_type: Original PPN Type value
+
+    Returns:
+        Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
+    """
+    if not ppn_type:
+        return ppn_type
+
+    ppn_type_lower = ppn_type.lower()
+
+    # Check for Zero Rated
+    if "zero rated" in ppn_type_lower or "ekspor" in ppn_type_lower:
+        return "Zero Rated"
+
+    # Check for Exempt/Not PPN
+    if any(x in ppn_type_lower for x in ["tidak dipungut", "dibebaskan", "bukan objek", "exempt"]):
+        return "Exempt/Not PPN"
+
+    # Everything else (Standard 11%, Standard 12%, Digital, Custom) -> Standard
+    return "Standard"
+
 
 
 def _extract_section(text: str, start_label: str, end_label: str | None = None) -> str:
@@ -3629,78 +3672,39 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
 
     # Verify PPN Type selection against actual amounts
     if ppn_type:
-        if "Standard 11%" in ppn_type:
-            expected_rate = 0.11
+        if ppn_type == "Standard":
+            # Standard rate can be 11% or 12% depending on period
             if ppn_value == 0 and dpp > 0:
-                notes.append(_("PPN Type is '11%' but PPN amount is 0. Should this be Zero Rated?"))
+                notes.append(_("PPN Type is 'Standard' but PPN amount is 0. Should this be Zero Rated?"))
             elif dpp > 0:
                 actual_rate = ppn_value / dpp
-                if abs(actual_rate - expected_rate) > 0.02:  # 2% tolerance
+                # Accept both 11% and 12% as valid standard rates
+                if not (abs(actual_rate - 0.11) <= 0.02 or abs(actual_rate - 0.12) <= 0.02):
                     notes.append(_(
-                        "PPN Type is 'Standard 11%' but actual rate is {0:.2%}. "
-                        "Please verify if type selection is correct."
+                        "PPN Type is 'Standard' but actual rate is {0:.2%}. "
+                        "Expected 11% or 12%. Please verify if type selection is correct."
                     ).format(actual_rate))
 
-        elif "Standard 12%" in ppn_type:
-            expected_rate = 0.12
-            if ppn_value == 0 and dpp > 0:
-                notes.append(_("PPN Type is '12%' but PPN amount is 0. Should this be Zero Rated?"))
-            elif dpp > 0:
-                actual_rate = ppn_value / dpp
-                if abs(actual_rate - expected_rate) > 0.02:  # 2% tolerance
-                    notes.append(_(
-                        "PPN Type is 'Standard 12%' but actual rate is {0:.2%}. "
-                        "Please verify if type selection is correct."
-                    ).format(actual_rate))
-
-        elif "Zero Rated" in ppn_type or "Ekspor" in ppn_type:
+        elif ppn_type == "Zero Rated":
             if ppn_value > 0:
                 notes.append(_(
-                    "PPN Type is 'Zero Rated (Ekspor)' but PPN amount is Rp {0:,.2f}. "
+                    "PPN Type is 'Zero Rated' but PPN amount is Rp {0:,.2f}. "
                     "Zero Rated invoices should have PPN = 0."
                 ).format(ppn_value))
 
-        elif "Tidak Dipungut" in ppn_type or "Dibebaskan" in ppn_type:
+        elif ppn_type == "Exempt/Not PPN":
             if ppn_value > 0:
                 notes.append(_(
-                    "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
-                    "This type should have PPN = 0."
-                ).format(ppn_type, ppn_value))
-
-        elif "Bukan Objek PPN" in ppn_type:
-            if ppn_value > 0:
-                notes.append(_(
-                    "PPN Type is 'Bukan Objek PPN' but PPN amount is Rp {0:,.2f}. "
-                    "Non-PPN transactions should have PPN = 0."
+                    "PPN Type is 'Exempt/Not PPN' but PPN amount is Rp {0:,.2f}. "
+                    "Exempt transactions should have PPN = 0."
                 ).format(ppn_value))
-
-        elif "Digital 1.1%" in ppn_type or "PMSE" in ppn_type:
-            expected_rate = 0.011
-            if dpp > 0:
-                actual_rate = ppn_value / dpp
-                if abs(actual_rate - expected_rate) > 0.005:  # 0.5% tolerance
-                    notes.append(_(
-                        "PPN Type is 'Digital 1.1%' but actual rate is {0:.2%}. "
-                        "Please verify if this is a PMSE transaction."
-                    ).format(actual_rate))
-
-        elif "Custom" in ppn_type or "Other" in ppn_type:
-            # ✅ Custom tariff - show actual rate for user reference
-            if dpp > 0 and ppn_value > 0:
-                actual_rate = ppn_value / dpp
-                notes.append(_(
-                    "Custom PPN Type selected. Actual rate: {0:.2%}. "
-                    "Please verify this is correct for your transaction."
-                ).format(actual_rate))
     else:
         notes.append(_("PPN Type is required. Please select the appropriate PPN type."))
 
     # PPnBM validation (if present)
     if ppnbm_value > 0 and dpp > 0:
-        ppn_rate_actual = (ppn_value / dpp) * 100
-        # PPnBM rule: PPN rate is typically 11% (standard rate for luxury goods)
-        # This is a regulatory guideline, not strict requirement
-        if ppn_type and "Standard 11%" not in ppn_type and "Standard 12%" not in ppn_type:
+        # PPnBM typically applies with Standard PPN rate
+        if ppn_type and ppn_type != "Standard":
             notes.append(_(
                 "PPnBM is present (Rp {0:,.2f}). Verify that PPN Type is correct. "
                 "PPnBM typically applies with Standard PPN rate."

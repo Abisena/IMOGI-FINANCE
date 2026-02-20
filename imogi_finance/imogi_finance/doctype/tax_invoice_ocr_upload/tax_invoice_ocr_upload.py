@@ -107,6 +107,10 @@ class TaxInvoiceOCRUpload(Document):
         if self.flags.get("ignore_validate"):
             return
 
+        # 🆕 Normalize ppn_type to simplified format if legacy value detected
+        if self.ppn_type:
+            self.ppn_type = self._normalize_ppn_type_value(self.ppn_type)
+
         # Original validation logic continues...
         # Only runs on USER-initiated saves (from UI or API)
 
@@ -283,21 +287,16 @@ class TaxInvoiceOCRUpload(Document):
 
             if detected_rate is not None:
                 if detected_rate == 0:
-                    # 3 separate options — show all so user can pick the right one
-                    suggested_type = (
-                        "Zero Rated (Ekspor)  — atau —  "
-                        "PPN Tidak Dipungut (Fasilitas)  — atau —  "
-                        "Bukan Objek PPN"
-                    )
-                elif abs(detected_rate - 0.12) <= 0.02:
-                    suggested_type = "Standard 12% (PPN 2025+)"
-                elif abs(detected_rate - 0.11) <= 0.02:
-                    suggested_type = "Standard 11% (PPN 2022-2024)"
+                    suggested_type = "Zero Rated"
+                elif abs(detected_rate - 0.12) <= 0.02 or abs(detected_rate - 0.11) <= 0.02:
+                    # Standard rate covers both 11% and 12%
+                    suggested_type = "Standard"
                 elif abs(detected_rate - 0.011) <= 0.005:
-                    suggested_type = "Digital 1.1% (PMSE)"
+                    # Digital services - treat as Standard for now
+                    suggested_type = "Standard"
                 else:
-                    # Option name stays clean; rate is already shown in the line above
-                    suggested_type = "Custom/Other (Tarif Khusus)"
+                    # Other rates - suggest Exempt/Not PPN for review
+                    suggested_type = "Exempt/Not PPN"
 
             if suggested_type and detected_rate is not None:
                 verification_notes_parts.append(
@@ -640,6 +639,42 @@ class TaxInvoiceOCRUpload(Document):
                 )
 
         return "\n".join(note_lines)
+
+    def _normalize_ppn_type_value(self, ppn_type: str) -> str:
+        """
+        Normalize PPN Type from detailed format to simplified format.
+
+        Legacy formats (being phased out):
+        - "Standard 11% (PPN 2022-2024)" -> "Standard"
+        - "Standard 12% (PPN 2025+)" -> "Standard"
+        - "Zero Rated (Ekspor)" -> "Zero Rated"
+        - "PPN Tidak Dipungut (Fasilitas)" -> "Exempt/Not PPN"
+        - "PPN Dibebaskan (Fasilitas)" -> "Exempt/Not PPN"
+        - "Bukan Objek PPN" -> "Exempt/Not PPN"
+        - "Digital 1.1% (PMSE)" -> "Standard"
+        - "Custom/Other (Tarif Khusus)" -> "Standard"
+
+        Args:
+            ppn_type: Original PPN Type value
+
+        Returns:
+            Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
+        """
+        if not ppn_type:
+            return ppn_type
+
+        ppn_type_lower = ppn_type.lower()
+
+        # Check for Zero Rated
+        if "zero rated" in ppn_type_lower or "ekspor" in ppn_type_lower:
+            return "Zero Rated"
+
+        # Check for Exempt/Not PPN
+        if any(x in ppn_type_lower for x in ["tidak dipungut", "dibebaskan", "bukan objek", "exempt"]):
+            return "Exempt/Not PPN"
+
+        # Everything else (Standard 11%, Standard 12%, Digital, Custom) -> Standard
+        return "Standard"
 
     @frappe.whitelist()
     def refresh_status(self):
