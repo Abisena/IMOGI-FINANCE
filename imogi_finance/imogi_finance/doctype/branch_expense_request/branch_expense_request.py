@@ -395,6 +395,13 @@ class BranchExpenseRequest(Document):
         if not getattr(self, "ti_tax_invoice_upload", None):
             return
 
+        # 🔥 FIX: Only sync on first save (when doc is new)
+        # Prevents infinite loop where sync changes fields -> triggers validate -> sync again
+        # For existing docs, OCR data should already be synced from first save
+        if not self.is_new():
+            # Doc already exists, skip sync to prevent field changes
+            return
+
         sync_tax_invoice_upload(self, "Branch Expense Request", save=False)
 
     def _ensure_enabled(self, settings):
@@ -862,6 +869,11 @@ class BranchExpenseRequest(Document):
             Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
         """
         if not ppn_type:
+            return ppn_type
+
+        # 🔥 CRITICAL: If already normalized, return original value (same reference)
+        # This prevents Frappe from detecting field change and marking document as dirty
+        if ppn_type in ["Standard", "Zero Rated", "Exempt/Not PPN"]:
             return ppn_type
 
         ppn_type_lower = ppn_type.lower()
