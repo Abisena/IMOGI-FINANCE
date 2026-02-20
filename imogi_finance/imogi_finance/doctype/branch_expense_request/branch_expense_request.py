@@ -844,3 +844,108 @@ def apply_default_amounts(item):
     item.qty = flt(getattr(item, "qty", 0)) or 0
     item.rate = flt(getattr(item, "rate", 0)) or 0
     item.amount = flt(item.qty) * flt(item.rate)
+
+
+@frappe.whitelist()
+def make_purchase_invoice(source_name, target_doc=None):
+    """Create Purchase Invoice from Branch Expense Request"""
+    from frappe.model.mapper import get_mapped_doc
+
+    def set_missing_values(source, target):
+        # Set supplier as required by Purchase Invoice
+        # User will need to select supplier manually
+        target.supplier = None
+        target.bill_no = source.name
+        target.bill_date = source.posting_date
+
+        # Copy branch if available
+        if getattr(source, "branch", None):
+            target.branch = source.branch
+
+        # Set taxes if applicable
+        if getattr(source, "is_ppn_applicable", 0) and getattr(source, "ppn_template", None):
+            target.taxes_and_charges = source.ppn_template
+
+            # Get tax template and copy taxes
+            template = frappe.get_doc("Purchase Taxes and Charges Template", source.ppn_template)
+            for tax_row in template.get("taxes", []):
+                target.append("taxes", {
+                    "charge_type": tax_row.charge_type,
+                    "account_head": tax_row.account_head,
+                    "description": tax_row.description,
+                    "rate": tax_row.rate,
+                    "cost_center": tax_row.cost_center or source.get("cost_center"),
+                })
+
+        # Copy tax invoice data if available
+        if getattr(source, "ti_fp_no", None):
+            target.tax_invoice_number = source.ti_fp_no
+        if getattr(source, "ti_fp_date", None):
+            target.tax_invoice_date = source.ti_fp_date
+
+        target.run_method("calculate_taxes_and_totals")
+        target.run_method("set_missing_values")
+
+    def update_item(source_doc, target_doc, source_parent):
+        # Map item fields
+        target_doc.cost_center = source_doc.cost_center
+        target_doc.expense_account = source_doc.expense_account or source_parent.expense_account
+        target_doc.qty = source_doc.qty
+        target_doc.rate = source_doc.rate
+        target_doc.amount = source_doc.amount
+
+        # Handle deferred expense
+        if getattr(source_doc, "is_deferred_expense", 0):
+            target_doc.enable_deferred_expense = 1
+            target_doc.deferred_expense_account = source_doc.prepaid_account
+            target_doc.service_start_date = source_doc.deferred_start_date
+
+            # Calculate service end date based on periods
+            from dateutil.relativedelta import relativedelta
+            from frappe.utils import getdate
+            start_date = getdate(source_doc.deferred_start_date)
+            end_date = start_date + relativedelta(months=source_doc.deferred_periods)
+            target_doc.service_end_date = end_date
+
+        # Copy project if available
+        if getattr(source_doc, "project", None):
+            target_doc.project = source_doc.project
+
+    # Check if source document is approved
+    source_doc = frappe.get_doc("Branch Expense Request", source_name)
+    if source_doc.docstatus != 1:
+        frappe.throw(_("Branch Expense Request must be submitted before creating Purchase Invoice"))
+
+    if source_doc.status != "Approved":
+        frappe.throw(_("Branch Expense Request must be approved before creating Purchase Invoice"))
+
+    doclist = get_mapped_doc(
+        "Branch Expense Request",
+        source_name,
+        {
+            "Branch Expense Request": {
+                "doctype": "Purchase Invoice",
+                "field_map": {
+                    "name": "branch_expense_request",
+                    "posting_date": "posting_date",
+                    "company": "company",
+                    "fiscal_year": "fiscal_year",
+                    "currency": "currency",
+                },
+            },
+            "Branch Expense Request Item": {
+                "doctype": "Purchase Invoice Item",
+                "field_map": {
+                    "description": "description",
+                    "qty": "qty",
+                    "rate": "rate",
+                    "amount": "amount",
+                },
+                "postprocess": update_item,
+            },
+        },
+        target_doc,
+        set_missing_values,
+    )
+
+    return doclist

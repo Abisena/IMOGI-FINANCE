@@ -63,12 +63,12 @@ async function syncBerUpload(frm) {
 	if (!frm.doc.ti_tax_invoice_upload) {
 		return;
 	}
-	
+
 	// Skip sync for non-draft documents - OCR fields are read-only and already saved
 	if (frm.doc.docstatus !== 0) {
 		return;
 	}
-	
+
 	const cachedUpload = frm.taxInvoiceUploadCache?.[frm.doc.ti_tax_invoice_upload];
 	const upload = cachedUpload || await frappe.db.get_doc("Tax Invoice OCR Upload", frm.doc.ti_tax_invoice_upload);
 	const updates = {};
@@ -107,17 +107,17 @@ function formatApprovalTimestamps(frm) {
 		const userField = `level_${level}_user`;
 		const approvedField = `level_${level}_approved_on`;
 		const rejectedField = `level_${level}_rejected_on`;
-		
+
 		if (!frm.doc[userField]) {
 			continue; // Skip levels without approver
 		}
-		
+
 		// Update field descriptions to show timestamps
 		if (frm.doc[approvedField]) {
 			const formattedTime = frappe.datetime.str_to_user(frm.doc[approvedField]);
 			frm.set_df_property(approvedField, 'description', `✅ Approved at ${formattedTime}`);
 		}
-		
+
 		if (frm.doc[rejectedField]) {
 			const formattedTime = frappe.datetime.str_to_user(frm.doc[rejectedField]);
 			frm.set_df_property(rejectedField, 'description', `❌ Rejected at ${formattedTime}`);
@@ -367,6 +367,7 @@ frappe.ui.form.on("Branch Expense Request", {
 		// OCR button removed - OCR only via Tax Invoice OCR Upload DocType
 		maybeAddUploadActions(frm);
 		addCheckRouteButton(frm);
+		addCreatePurchaseInvoiceButton(frm);
 	},
 	items_add(frm) {
 		update_totals(frm);
@@ -594,3 +595,18 @@ function addCheckRouteButton(frm) {
 		}
 	}, __('Actions'));
 }
+
+function addCreatePurchaseInvoiceButton(frm) {
+	// Only show button for approved and submitted documents
+	if (frm.doc.docstatus !== 1 || frm.doc.status !== "Approved") {
+		return;
+	}
+
+	frm.add_custom_button(__('Purchase Invoice'), () => {
+		frappe.model.open_mapped_doc({
+			method: 'imogi_finance.imogi_finance.doctype.branch_expense_request.branch_expense_request.make_purchase_invoice',
+			frm: frm
+		});
+	}, __('Create'));
+}
+
