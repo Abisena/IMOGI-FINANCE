@@ -13,12 +13,12 @@ def execute(filters=None):
 	"""
 	if not filters:
 		filters = {}
-	
+
 	# Security: Enforce user can only see their own approvals
 	# Only System Manager can view other users' approvals
 	current_user = frappe.session.user
 	is_system_manager = "System Manager" in frappe.get_roles(current_user)
-	
+
 	if not is_system_manager:
 		# Force filter to current user - prevent viewing other users' approvals
 		filters["user"] = current_user
@@ -26,12 +26,12 @@ def execute(filters=None):
 		# System Manager can view any user, but default to self
 		if not filters.get("user"):
 			filters["user"] = current_user
-	
+
 	columns = get_columns()
 	data = get_data(filters)
 	chart = get_chart_data(data)
 	report_summary = get_report_summary(data)
-	
+
 	return columns, data, None, chart, report_summary
 
 
@@ -135,7 +135,7 @@ def get_data(filters):
 		{
 			"doctype": "Branch Expense Request",
 			"amount_field": "amount",
-			"cost_center_field": "cost_center",
+			"cost_center_field": None,
 			"branch_field": "branch",
 			"pending_states": ["Pending Review"]
 		},
@@ -175,12 +175,12 @@ def get_data(filters):
 			"pending_states": ["Generated"]
 		}
 	]
-	
+
 	all_data = []
 	user = filters.get("user")
 	from_date = filters.get("from_date")
 	to_date = filters.get("to_date")
-	
+
 	# Convert date strings to proper date objects
 	if from_date:
 		try:
@@ -192,43 +192,43 @@ def get_data(filters):
 			to_date = getdate(to_date)
 		except:
 			to_date = None
-	
+
 	doctype_filter = filters.get("doctype")
 	approval_level_filter = filters.get("approval_level")
-	
+
 	# Convert approval level to int if provided
 	if approval_level_filter:
 		try:
 			approval_level_filter = int(approval_level_filter)
 		except:
 			approval_level_filter = None
-	
+
 	cost_center_filter = filters.get("cost_center")
 	branch_filter = filters.get("branch")
-	
+
 	for doctype_config in approval_doctypes:
 		doctype = doctype_config["doctype"]
-		
+
 		# Skip if doctype filter is applied and this doctype is not selected
 		if doctype_filter and doctype not in doctype_filter:
 			continue
-		
+
 		# Check if doctype exists
 		if not frappe.db.exists("DocType", doctype):
 			continue
-		
+
 		# Query for each approval level (1, 2, 3)
 		for level in [1, 2, 3]:
 			# Skip if approval level filter is applied and this level doesn't match
 			if approval_level_filter and level != approval_level_filter:
 				continue
-			
+
 			level_user_field = f"level_{level}_user"
-			
+
 			# Check if level field exists in doctype
 			if not frappe.db.exists("DocField", {"parent": doctype, "fieldname": level_user_field}):
 				continue
-			
+
 			# Build filter conditions
 			filter_conditions = {
 				"workflow_state": ["in", doctype_config["pending_states"]],
@@ -236,7 +236,7 @@ def get_data(filters):
 				"current_approval_level": level,
 				level_user_field: user
 			}
-			
+
 			# Add date filters only if both are provided
 			if from_date and to_date:
 				filter_conditions["modified"] = ["between", [from_date, to_date]]
@@ -244,28 +244,28 @@ def get_data(filters):
 				filter_conditions["modified"] = [">=", from_date]
 			elif to_date:
 				filter_conditions["modified"] = ["<=", to_date]
-			
+
 			# Add cost center filter if applicable
 			if cost_center_filter and doctype_config["cost_center_field"]:
 				filter_conditions[doctype_config["cost_center_field"]] = cost_center_filter
-			
+
 			# Add branch filter if applicable
 			if branch_filter and doctype_config["branch_field"]:
 				filter_conditions[doctype_config["branch_field"]] = branch_filter
-			
+
 			# Build fields list
 			fields = [
-				"name", "creation", "modified", "owner", "workflow_state", 
+				"name", "creation", "modified", "owner", "workflow_state",
 				"current_approval_level", level_user_field
 			]
-			
+
 			if doctype_config["amount_field"]:
 				fields.append(doctype_config["amount_field"])
 			if doctype_config["cost_center_field"]:
 				fields.append(doctype_config["cost_center_field"])
 			if doctype_config["branch_field"]:
 				fields.append(doctype_config["branch_field"])
-			
+
 			try:
 				# Execute query
 				pending_docs = frappe.get_all(
@@ -274,19 +274,19 @@ def get_data(filters):
 					fields=fields,
 					order_by="modified desc"
 				)
-				
+
 				# Process results
 				for doc in pending_docs:
 					# Calculate days pending
 					days_pending = date_diff(getdate(), getdate(doc.modified))
-					
+
 					# Determine aging category
 					aging_category = get_aging_category(days_pending)
-					
+
 					# Get approver full name
 					approver_user = doc.get(level_user_field)
 					approver_name = frappe.db.get_value("User", approver_user, "full_name") or approver_user
-					
+
 					# Build row data
 					row = {
 						"doctype": doctype,
@@ -302,13 +302,13 @@ def get_data(filters):
 						"aging_category": aging_category,
 						"approver": approver_name
 					}
-					
+
 					all_data.append(row)
-					
+
 			except Exception as e:
 				frappe.log_error(f"Error querying {doctype} for approval level {level}: {str(e)}")
 				continue
-	
+
 	return all_data
 
 
@@ -332,19 +332,19 @@ def get_report_summary(data):
 	"""
 	if not data:
 		return []
-	
+
 	total_pending = len(data)
-	
+
 	# Calculate average days pending
 	total_days = sum(row["days_pending"] for row in data)
 	avg_days = round(total_days / total_pending, 1) if total_pending > 0 else 0
-	
+
 	# Find oldest document
 	oldest_days = max(row["days_pending"] for row in data) if data else 0
-	
+
 	# Count critical approvals (>30 days)
 	critical_count = sum(1 for row in data if row["days_pending"] > 30)
-	
+
 	return [
 		{
 			"value": total_pending,
@@ -379,13 +379,13 @@ def get_chart_data(data):
 	"""
 	if not data:
 		return None
-	
+
 	# Chart 1: Approvals by Document Type (Pie Chart)
 	doctype_counts = {}
 	for row in data:
 		doctype = row["doctype"]
 		doctype_counts[doctype] = doctype_counts.get(doctype, 0) + 1
-	
+
 	# Chart 2: Approvals by Aging Category (Bar Chart)
 	aging_counts = {
 		"0-7 days": 0,
@@ -396,7 +396,7 @@ def get_chart_data(data):
 	for row in data:
 		aging_category = row["aging_category"]
 		aging_counts[aging_category] = aging_counts.get(aging_category, 0) + 1
-	
+
 	return {
 		"data": {
 			"labels": list(aging_counts.keys()),

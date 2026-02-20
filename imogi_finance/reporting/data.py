@@ -420,12 +420,11 @@ def load_daily_inputs(
     # Fallback: calculate from all transactions if no previous report
     if openings is None:
         openings = derive_opening_balances(all_transactions, report_date=resolved_date)
-        # Log that we're using fallback calculation
-        if getattr(frappe, "log_error", None):
-            frappe.log_error(
-                f"No previous report found for {resolved_date}, calculating opening from transactions",
-                "Opening Balance Calculation"
-            )
+        # Log that we're using fallback calculation (informational, not an error)
+        frappe.logger().info(
+            f"[Cash Bank Report] No previous report found for {resolved_date}, "
+            f"calculating opening balance from all transactions for account {account_for_lookup}"
+        )
 
     return day_transactions, openings
 
