@@ -517,12 +517,12 @@ class TaxPeriodClosing(Document):
             reference=self.name,
         )
 
-        # Update closing document
-        self.vat_netting_journal_entry = je_name
-        self.netting_posting_date = posting_date
+        # Update closing document using db_set to allow updates after submission
+        self.db_set("vat_netting_journal_entry", je_name)
+        self.db_set("netting_posting_date", posting_date)
 
-        if save:
-            self.save(ignore_permissions=True)
+        # Reload to refresh current instance
+        self.reload()
 
         return je_name
 
