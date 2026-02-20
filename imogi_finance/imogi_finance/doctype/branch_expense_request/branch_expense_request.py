@@ -58,6 +58,11 @@ class BranchExpenseRequest(Document):
         self._reset_status_if_copied()
 
     def validate(self):
+        # 🔥 FIX: Normalize ppn_type BEFORE Frappe validates Select field options
+        # This prevents validation error when old data has "Standard 11% (PPN 2022-2024)" etc.
+        if getattr(self, "ti_fp_ppn_type", None):
+            self.ti_fp_ppn_type = self._normalize_ppn_type_value(self.ti_fp_ppn_type)
+
         settings = get_settings()
         self._ensure_enabled(settings)
         self._set_requester()
@@ -79,6 +84,10 @@ class BranchExpenseRequest(Document):
         self._sync_status_field()
 
     def before_submit(self):
+        # 🔥 FIX: Normalize ppn_type before submit validation
+        if getattr(self, "ti_fp_ppn_type", None):
+            self.ti_fp_ppn_type = self._normalize_ppn_type_value(self.ti_fp_ppn_type)
+
         settings = get_settings()
         self._validate_items(settings)
         self.validate_amounts()
@@ -831,6 +840,42 @@ class BranchExpenseRequest(Document):
 
         parsed = parse_route_snapshot(snapshot)
         return parsed if parsed else None
+
+    def _normalize_ppn_type_value(self, ppn_type: str) -> str:
+        """
+        Normalize PPN Type from detailed format to simplified format.
+
+        Legacy formats (from Tax Invoice OCR Upload):
+        - "Standard 11% (PPN 2022-2024)" -> "Standard"
+        - "Standard 12% (PPN 2025+)" -> "Standard"
+        - "Zero Rated (Ekspor)" -> "Zero Rated"
+        - "PPN Tidak Dipungut (Fasilitas)" -> "Exempt/Not PPN"
+        - "PPN Dibebaskan (Fasilitas)" -> "Exempt/Not PPN"
+        - "Bukan Objek PPN" -> "Exempt/Not PPN"
+        - "Digital 1.1% (PMSE)" -> "Standard"
+        - "Custom/Other (Tarif Khusus)" -> "Standard"
+
+        Args:
+            ppn_type: Original PPN Type value
+
+        Returns:
+            Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
+        """
+        if not ppn_type:
+            return ppn_type
+
+        ppn_type_lower = ppn_type.lower()
+
+        # Check for Zero Rated
+        if "zero rated" in ppn_type_lower or "ekspor" in ppn_type_lower:
+            return "Zero Rated"
+
+        # Check for Exempt/Not PPN
+        if any(x in ppn_type_lower for x in ["tidak dipungut", "dibebaskan", "bukan objek", "exempt"]):
+            return "Exempt/Not PPN"
+
+        # Everything else (Standard 11%, Standard 12%, Digital, Custom) -> Standard
+        return "Standard"
 
     def _get_expense_accounts(self) -> tuple[str, ...]:
         """Get expense accounts from items."""
