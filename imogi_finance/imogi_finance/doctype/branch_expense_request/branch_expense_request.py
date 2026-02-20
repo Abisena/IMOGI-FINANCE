@@ -847,14 +847,20 @@ def apply_default_amounts(item):
 
 
 @frappe.whitelist()
-def make_purchase_invoice(source_name, target_doc=None):
-    """Create Purchase Invoice from Branch Expense Request"""
+def make_purchase_invoice(source_name, target_doc=None, supplier=None):
+    """Create Purchase Invoice from Branch Expense Request
+
+    Args:
+        source_name: Branch Expense Request name
+        target_doc: Target Purchase Invoice document (optional)
+        supplier: Supplier name to set in Purchase Invoice (optional)
+    """
     from frappe.model.mapper import get_mapped_doc
 
     def set_missing_values(source, target):
-        # Set supplier as required by Purchase Invoice
-        # User will need to select supplier manually
-        target.supplier = None
+        # Set supplier from parameter if provided
+        if supplier:
+            target.supplier = supplier
         target.bill_no = source.name
         target.bill_date = source.posting_date
 

@@ -603,10 +603,25 @@ function addCreatePurchaseInvoiceButton(frm) {
 	}
 
 	frm.add_custom_button(__('Purchase Invoice'), () => {
-		frappe.model.open_mapped_doc({
-			method: 'imogi_finance.imogi_finance.doctype.branch_expense_request.branch_expense_request.make_purchase_invoice',
-			frm: frm
-		});
+		// Prompt user to select supplier before creating PI
+		frappe.prompt([
+			{
+				fieldname: 'supplier',
+				label: __('Supplier'),
+				fieldtype: 'Link',
+				options: 'Supplier',
+				reqd: 1,
+				description: __('Select supplier for the Purchase Invoice')
+			}
+		], (values) => {
+			frappe.model.open_mapped_doc({
+				method: 'imogi_finance.imogi_finance.doctype.branch_expense_request.branch_expense_request.make_purchase_invoice',
+				frm: frm,
+				freeze_message: __('Creating Purchase Invoice...'),
+				args: {
+					supplier: values.supplier
+				}
+			});
+		}, __('Create Purchase Invoice'), __('Create'));
 	}, __('Create'));
 }
-
