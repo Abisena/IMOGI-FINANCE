@@ -614,12 +614,19 @@ function addCreatePurchaseInvoiceButton(frm) {
 				description: __('Select supplier for the Purchase Invoice')
 			}
 		], (values) => {
-			frappe.model.open_mapped_doc({
+			frappe.call({
 				method: 'imogi_finance.imogi_finance.doctype.branch_expense_request.branch_expense_request.make_purchase_invoice',
-				frm: frm,
-				freeze_message: __('Creating Purchase Invoice...'),
 				args: {
+					source_name: frm.doc.name,
 					supplier: values.supplier
+				},
+				freeze: true,
+				freeze_message: __('Creating Purchase Invoice...'),
+				callback: (r) => {
+					if (r.message) {
+						frappe.model.sync(r.message);
+						frappe.set_route('Form', r.message.doctype, r.message.name);
+					}
 				}
 			});
 		}, __('Create Purchase Invoice'), __('Create'));

@@ -857,22 +857,19 @@ def make_purchase_invoice(source_name, target_doc=None, supplier=None):
     """
     from frappe.model.mapper import get_mapped_doc
 
+    # Store supplier in variable accessible to closure
+    selected_supplier = supplier
+
+    # Debug log
+    frappe.logger().info(f"[make_purchase_invoice] source_name={source_name}, supplier={selected_supplier}")
+
     def set_missing_values(source, target):
         # Set supplier from parameter if provided
-        if supplier:
-            target.supplier = supplier
-        target.bill_no = source.name
-        target.bill_date = source.posting_date
-
-        # Copy branch if available
-        if getattr(source, "branch", None):
-            target.branch = source.branch
-
-        # Set taxes if applicable
-        if getattr(source, "is_ppn_applicable", 0) and getattr(source, "ppn_template", None):
-            target.taxes_and_charges = source.ppn_template
-
-            # Get tax template and copy taxes
+        if selected_supplier:
+            target.supplier = selected_supplier
+            frappe.logger().info(f"[make_purchase_invoice] Setting supplier to: {selected_supplier}")
+        else:
+            frappe.logger().warning(f"[make_purchase_invoice] No supplier provided!")
             template = frappe.get_doc("Purchase Taxes and Charges Template", source.ppn_template)
             for tax_row in template.get("taxes", []):
                 target.append("taxes", {
@@ -899,6 +896,19 @@ def make_purchase_invoice(source_name, target_doc=None, supplier=None):
         target_doc.qty = source_doc.qty
         target_doc.rate = source_doc.rate
         target_doc.amount = source_doc.amount
+
+        # CRITICAL: Set item_name and description from source
+        # BER doesn't have item_code, so we use description or expense_account as item_name
+        item_name = getattr(source_doc, "description", None) or getattr(source_doc, "expense_account", None)
+        target_doc.item_name = item_name
+        target_doc.description = getattr(source_doc, "description", None)
+        target_doc.uom = "Nos"  # Default UOM for expense items
+
+        frappe.logger().info(
+            f"[make_purchase_invoice] Item mapped: item_name={item_name}, "
+            f"expense_account={target_doc.expense_account}, qty={target_doc.qty}, "
+            f"rate={target_doc.rate}, amount={target_doc.amount}"
+        )
 
         # Handle deferred expense
         if getattr(source_doc, "is_deferred_expense", 0):
