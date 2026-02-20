@@ -97,19 +97,19 @@ def _get_gl_total(company: str, accounts: list[str], date_from: date | str | Non
 def build_register_snapshot(company: str, date_from: date | str | None, date_to: date | str | None) -> dict:
 	"""
 	Build tax register snapshot using modern register reports with verification filtering.
-	
+
 	This is the primary data source for Tax Period Closing, pulling from:
 	- VAT Input Register Verified (Purchase Invoices with GL validation)
 	- VAT Output Register Verified (Sales Invoices with GL validation)
 	- Withholding Register (GL Entry based PPh tracking)
-	
+
 	Only includes verified/validated transactions that are properly posted to GL.
-	
+
 	Args:
 		company: Company name
 		date_from: Period start date
 		date_to: Period end date
-		
+
 	Returns:
 		Snapshot dict with VAT totals, PPh totals, PB1, BPJS, and metadata
 	"""
@@ -117,12 +117,12 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 		get_all_register_data,
 		RegisterIntegrationError
 	)
-	
+
 	profile = _get_tax_profile(company)
-	
+
 	# Get PPh accounts for withholding register
 	pph_accounts = [row.payable_account for row in getattr(profile, "pph_accounts", []) or [] if row.payable_account]
-	
+
 	# Get comprehensive register data with verification filtering
 	try:
 		register_data = get_all_register_data(
@@ -155,18 +155,18 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 				"to_date": date_to
 			}
 		}
-	
+
 	# Extract summary values
 	summary = register_data.get("summary", {})
 	input_total = summary.get("input_vat_total", 0.0)
 	output_total = summary.get("output_vat_total", 0.0)
 	vat_net = summary.get("vat_net", 0.0)
 	pph_total = summary.get("withholding_total", 0.0)
-	
+
 	# Handle PB1 multi-branch or single account (GL-based, not in registers)
 	pb1_total = 0.0
 	pb1_breakdown = {}
-	
+
 	if getattr(profile, "enable_pb1_multi_branch", 0) and getattr(profile, "pb1_account_mappings", None):
 		# Multi-branch: calculate per branch and aggregate
 		for mapping in profile.pb1_account_mappings or []:
@@ -176,7 +176,7 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 				branch_total = _get_gl_total(company, [pb1_account], date_from, date_to)
 				pb1_breakdown[branch] = branch_total
 				pb1_total += branch_total
-		
+
 		# Add default account if exists and not covered by mappings
 		default_account = getattr(profile, "pb1_payable_account", None)
 		if default_account:
@@ -189,11 +189,11 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 		# Single account (backward compatible)
 		pb1_account = getattr(profile, "pb1_payable_account", None)
 		pb1_total = _get_gl_total(company, [pb1_account], date_from, date_to) if pb1_account else 0.0
-	
+
 	# BPJS (GL-based, not in registers)
 	bpjs_account = getattr(profile, "bpjs_payable_account", None)
 	bpjs_total = _get_gl_total(company, [bpjs_account], date_from, date_to) if bpjs_account else 0.0
-	
+
 	# Build comprehensive snapshot
 	snapshot = {
 		"input_vat_total": input_total,
@@ -221,16 +221,16 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 			"register_version": "v15+"
 		},
 	}
-	
+
 	# Add pb1_breakdown if multi-branch
 	if pb1_breakdown:
 		snapshot["pb1_breakdown"] = pb1_breakdown
-	
+
 	# Add error flag if present
 	if "error" in register_data.get("metadata", {}):
 		snapshot["meta"]["error"] = register_data["metadata"]["error"]
 		snapshot["meta"]["data_source"] = "fallback_empty"
-	
+
 	return snapshot
 
 
@@ -645,6 +645,31 @@ def create_tax_payment_entry(batch: Document) -> str:
     return pe.name
 
 
+def _get_or_create_tax_authority_supplier() -> str:
+    """
+    Get or create default supplier for tax authority payments.
+    Used for VAT netting journal entries where payable account requires party.
+
+    Returns:
+        str: Supplier name (Government - Tax Authority)
+    """
+    supplier_name = "Government - Tax Authority"
+
+    # Check if supplier exists
+    if frappe.db.exists("Supplier", supplier_name):
+        return supplier_name
+
+    # Create supplier if not exists
+    supplier = frappe.new_doc("Supplier")
+    supplier.supplier_name = supplier_name
+    supplier.supplier_group = frappe.db.get_value("Supplier Group", {"is_group": 0}, "name") or "All Supplier Groups"
+    supplier.supplier_type = "Company"
+    supplier.country = "Indonesia"
+    supplier.insert(ignore_permissions=True)
+
+    return supplier.name
+
+
 def build_vat_netting_lines(
     *,
     input_vat_total: float,
@@ -652,6 +677,7 @@ def build_vat_netting_lines(
     input_account: str,
     output_account: str,
     payable_account: str,
+    party: str | None = None,
 ) -> list[dict]:
     if not input_account or not output_account or not payable_account:
         frappe.throw(_("VAT netting requires Input VAT, Output VAT, and Payable accounts."))
@@ -680,13 +706,18 @@ def build_vat_netting_lines(
         )
 
     if net_payable > 0:
-        lines.append(
-            {
-                "account": payable_account,
-                "debit_in_account_currency": 0,
-                "credit_in_account_currency": net_payable,
-            }
-        )
+        payable_line = {
+            "account": payable_account,
+            "debit_in_account_currency": 0,
+            "credit_in_account_currency": net_payable,
+        }
+
+        # Add party information if provided (required for Payable account types)
+        if party:
+            payable_line["party_type"] = "Supplier"
+            payable_line["party"] = party
+
+        lines.append(payable_line)
 
     return lines
 
@@ -704,12 +735,16 @@ def create_vat_netting_entry(
     posting_date: str | None = None,
     reference: str | None = None,
 ) -> str:
+    # Get or create tax authority supplier for payable account
+    tax_supplier = _get_or_create_tax_authority_supplier()
+
     lines = build_vat_netting_lines(
         input_vat_total=input_vat_total,
         output_vat_total=output_vat_total,
         input_account=input_account,
         output_account=output_account,
         payable_account=payable_account,
+        party=tax_supplier,
     )
 
     if not lines:
@@ -737,21 +772,21 @@ def generate_vat_out_batch_excel(
     for_upload: bool = True
 ) -> str:
     """Generate Excel file for VAT OUT Batch.
-    
+
     Args:
         batch_name: Name of VAT OUT Batch
         include_fp_numbers: Whether to include FP numbers (for reconciliation)
         for_upload: True for CoreTax upload, False for reconciliation
-        
+
     Returns:
         str: File URL
     """
     # Get batch
     batch = frappe.get_doc("VAT OUT Batch", batch_name)
-    
+
     # Get invoices from batch
     invoices = batch.get_batch_invoices()
-    
+
     # Group invoices by group_id
     groups_map = {}
     for inv in invoices:
@@ -770,17 +805,17 @@ def generate_vat_out_batch_excel(
                 "fp_date": inv.out_fp_date or "",
                 "invoices": []
             }
-        
+
         groups_map[gid]["total_dpp"] += inv.out_fp_dpp or 0
         groups_map[gid]["total_ppn"] += inv.out_fp_ppn or 0
         groups_map[gid]["invoices"].append(inv)
-    
+
     # Build data structure
     # Faktur sheet: 1 row per group
     faktur_data = []
     for gid in sorted(groups_map.keys()):
         group = groups_map[gid]
-        
+
         faktur_row = {
             "Group ID": group["group_id"],
             "Customer": group["customer_name"] or group["customer"],
@@ -788,27 +823,27 @@ def generate_vat_out_batch_excel(
             "Total DPP": group["total_dpp"],
             "Total PPN": group["total_ppn"],
         }
-        
+
         if include_fp_numbers:
             faktur_row["FP No Seri"] = group["fp_no_seri"]
             faktur_row["FP No Faktur"] = group["fp_no_faktur"]
             faktur_row["FP Date"] = group["fp_date"]
-        
+
         faktur_data.append(faktur_row)
-    
+
     # DetailFaktur sheet: 1 row per invoice
     detail_data = []
     for gid in sorted(groups_map.keys()):
         group = groups_map[gid]
-        
+
         for inv in group["invoices"]:
             # Get item descriptions
             si_doc = frappe.get_doc("Sales Invoice", inv.name)
             item_desc = ", ".join([
-                item.item_name or item.item_code 
+                item.item_name or item.item_code
                 for item in si_doc.items
             ])
-            
+
             detail_row = {
                 "Group ID": group["group_id"],
                 "Sales Invoice": inv.name,
@@ -818,24 +853,24 @@ def generate_vat_out_batch_excel(
                 "PPN": inv.out_fp_ppn or 0,
                 "Grand Total": inv.grand_total
             }
-            
+
             detail_data.append(detail_row)
-    
+
     # Create Excel file
     from frappe.utils.xlsxutils import make_xlsx
-    
+
     # Prepare sheets
     sheets = {
         "Faktur": faktur_data,
         "DetailFaktur": detail_data
     }
-    
+
     # Generate filename
     if for_upload:
         filename = f"coretax-vat-out-{batch.company}-{batch.date_from}-{batch.date_to}"
     else:
         filename = f"reconciliation-vat-out-{batch.company}-{batch.date_from}-{batch.date_to}"
-    
+
     # Create XLSX
     xlsx_data = {}
     for sheet_name, data in sheets.items():
@@ -843,11 +878,11 @@ def generate_vat_out_batch_excel(
             headers = list(data[0].keys())
             rows = [[row[h] for h in headers] for row in data]
             xlsx_data[sheet_name] = {"columns": headers, "data": rows}
-    
+
     # Serialize
     xlsx_file = make_xlsx(xlsx_data, sheet_name="Faktur")
     filedata = xlsx_file.getvalue()
-    
+
     # Save as File
     file_doc = frappe.get_doc({
         "doctype": "File",
@@ -856,5 +891,5 @@ def generate_vat_out_batch_excel(
         "is_private": 1,
     })
     file_doc.save(ignore_permissions=True)
-    
+
     return file_doc.file_url
