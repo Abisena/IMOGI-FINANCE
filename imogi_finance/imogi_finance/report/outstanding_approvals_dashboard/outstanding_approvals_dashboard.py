@@ -149,22 +149,22 @@ def get_data(filters):
 		{
 			"doctype": "Budget Reclass Request",
 			"amount_field": "amount",
-			"cost_center_field": "cost_center",
+			"cost_center_field": None,
 			"branch_field": None,
 			"pending_states": ["Pending Approval"]
 		},
 		{
 			"doctype": "Internal Charge Request",
 			"amount_field": "total_amount",
-			"cost_center_field": "cost_center",
-			"branch_field": "branch",
+			"cost_center_field": None,
+			"branch_field": None,
 			"pending_states": ["Pending L1 Approval", "Pending L2 Approval", "Pending L3 Approval"]
 		},
 		{
 			"doctype": "Administrative Payment Voucher",
 			"amount_field": "total_amount",
 			"cost_center_field": "cost_center",
-			"branch_field": None,
+			"branch_field": "branch",
 			"pending_states": ["Pending Approval"]
 		},
 		{
