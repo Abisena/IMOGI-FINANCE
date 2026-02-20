@@ -753,12 +753,14 @@ def create_vat_netting_entry(
     je = frappe.new_doc("Journal Entry")
     je.company = company
     je.posting_date = posting_date or nowdate()
-    je.user_remark = _("VAT netting for {0}-{1}").format(period_month, period_year)
+
+    # Include reference in user remark if provided
+    if reference:
+        je.user_remark = _("VAT netting for {0}-{1} (Ref: {2})").format(period_month, period_year, reference)
+    else:
+        je.user_remark = _("VAT netting for {0}-{1}").format(period_month, period_year)
 
     for line in lines:
-        if reference:
-            line["reference_type"] = "Tax Period Closing"
-            line["reference_name"] = reference
         je.append("accounts", line)
 
     je.insert(ignore_permissions=True)
