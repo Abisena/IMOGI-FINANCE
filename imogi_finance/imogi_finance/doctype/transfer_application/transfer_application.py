@@ -285,8 +285,6 @@ class TransferApplication(Document):
         Export transfer items to Excel file.
         Only available for Finance Controller after approval.
         """
-        from frappe import roles as frappe_roles
-
         # Check role permission
         if not frappe.has_role(["Finance Controller", "System Manager"]):
             frappe.throw(_("Only Finance Controller can export transfer list."))

@@ -222,9 +222,10 @@ class BranchExpenseRequest(Document):
         total, expense_accounts = FinanceValidator.validate_amounts(self.get("items"))
         self.total_amount = total
         self.amount = total
-        # Convert tuple to newline-separated string for Small Text field
-        self.expense_accounts = "\n".join(expense_accounts) if expense_accounts else ""
-        self.expense_account = expense_accounts[0] if len(expense_accounts) == 1 else None
+        # Convert tuple to list then to newline-separated string for Small Text field
+        expense_accounts_list = list(expense_accounts) if expense_accounts else []
+        self.expense_accounts = "\n".join(expense_accounts_list)
+        self.expense_account = expense_accounts_list[0] if len(expense_accounts_list) == 1 else None
 
     def apply_branch_defaults(self):
         branch = resolve_branch(
