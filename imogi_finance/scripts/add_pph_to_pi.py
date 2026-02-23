@@ -130,16 +130,24 @@ def add_pph_row_to_pi(pi_name):
             "cost_center": cost_center
         })
 
-        # Set PPh fields on header
+        # Set PPh fields on header BEFORE calculation
         pi.apply_tds = 1
         pi.tax_withholding_category = pph_type
         if hasattr(pi, "imogi_pph_type"):
             pi.imogi_pph_type = pph_type
 
-        # Calculate totals
+        # CRITICAL: Call validate to ensure all calculations run
+        # This triggers calculate_taxes_and_totals AND other validations
+        pi.flags.ignore_validate_update_after_submit = True
+        pi.flags.ignore_permissions = True
+
+        # Calculate totals (this should update taxes_and_charges_deducted)
         pi.run_method("calculate_taxes_and_totals")
 
-        # Save
+        # Validate to ensure everything is calculated
+        pi.run_method("validate")
+
+        # Save with flags
         pi.save(ignore_permissions=True)
         frappe.db.commit()
 
