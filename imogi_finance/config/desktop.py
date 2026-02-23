@@ -20,6 +20,12 @@ def get_data():
                 },
                 {
                     "type": "doctype",
+                    "name": "Expense Request Multi CC",
+                    "label": "Expense Request Multi CC",
+                    "description": "Multi-cost center expense request.",
+                },
+                {
+                    "type": "doctype",
                     "name": "Expense Approval Setting",
                     "label": "Approval Settings",
                     "description": "Configure approval routes for expense requests.",

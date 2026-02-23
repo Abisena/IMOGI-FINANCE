@@ -292,6 +292,15 @@ doc_events = {
             "imogi_finance.events.metadata_fields.set_submit_on",
         ],
     },
+    "Expense Request Multi CC": {
+        "validate": [
+            "imogi_finance.tax_operations.validate_tax_period_lock",
+            "imogi_finance.events.metadata_fields.set_created_by",
+        ],
+        "on_submit": [
+            "imogi_finance.events.metadata_fields.set_submit_on",
+        ],
+    },
     "Internal Charge Request": {
         "validate": [
             "imogi_finance.events.metadata_fields.set_created_by",
