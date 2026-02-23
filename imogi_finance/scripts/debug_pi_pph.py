@@ -166,43 +166,51 @@ def force_add_pph_row(pi_name):
         # Use ER's calculated PPh amount
         pph_amount = total_pph_er
 
-        # Create new tax row child doc
-        tax_row = frappe.new_doc("Purchase Taxes and Charges")
-        tax_row.parent = pi_name
-        tax_row.parenttype = "Purchase Invoice"
-        tax_row.parentfield = "taxes"
-        tax_row.idx = next_idx
-        tax_row.charge_type = "Actual"
-        tax_row.account_head = account
-        tax_row.description = f"Tax Withheld - {pph_type}"
-        tax_row.tax_amount = -pph_amount
-        tax_row.base_tax_amount = -pph_amount
-        tax_row.add_deduct_tax = "Deduct"
-        tax_row.category = "Total"
-        tax_row.cost_center = cost_center
-        tax_row.insert(ignore_permissions=True)
-
-        # Update PI header
+        # Update PI header FIRST
         pi.apply_tds = 1
         pi.tax_withholding_category = pph_type
+        if hasattr(pi, "imogi_pph_type"):
+            pi.imogi_pph_type = pph_type
 
-        # Recalculate
-        pi.reload()
+        # Append PPh row to in-memory taxes list
+        pi.append("taxes", {
+            "charge_type": "Actual",
+            "account_head": account,
+            "description": f"Tax Withheld - {pph_type}",
+            "tax_amount": -pph_amount,
+            "base_tax_amount": -pph_amount,
+            "add_deduct_tax": "Deduct",
+            "category": "Total",
+            "cost_center": cost_center
+        })
+
+        # CRITICAL: Calculate totals BEFORE save
+        # This ensures grand_total is properly calculated with PPh deduction
+        pi.flags.ignore_validate_update_after_submit = True
+        pi.flags.ignore_permissions = True
         pi.run_method("calculate_taxes_and_totals")
-        pi.save(ignore_permissions=True)
 
+        # Save to database with calculated values
+        pi.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # Verify
+        # Verify final values
         pi.reload()
         final_pph = flt(getattr(pi, "taxes_and_charges_deducted", 0))
+
+        # Check if grand_total is correct
+        expected_grand_total = pi.total + flt(pi.total_taxes_and_charges) - final_pph
+        actual_grand_total = pi.grand_total
 
         return {
             "status": "success",
             "message": "PPh row inserted directly",
             "pph_amount": pph_amount,
             "pph_final": final_pph,
-            "grand_total": pi.grand_total
+            "grand_total": actual_grand_total,
+            "expected_grand_total": expected_grand_total,
+            "total": pi.total,
+            "total_taxes_added": flt(pi.total_taxes_and_charges)
         }
 
     except Exception as e:
