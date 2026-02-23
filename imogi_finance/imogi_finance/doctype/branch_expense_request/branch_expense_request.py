@@ -23,6 +23,7 @@ from ..expense_deferred_settings.expense_deferred_settings import get_deferrable
 from imogi_finance.tax_invoice_ocr import sync_tax_invoice_upload, validate_tax_invoice_upload_link
 from imogi_finance.validators.finance_validator import FinanceValidator
 from imogi_finance.validators.employee_validator import EmployeeValidator
+from imogi_finance.events.utils import normalize_ppn_type_value
 from ..branch_expense_request_settings.branch_expense_request_settings import get_settings
 
 
@@ -53,6 +54,14 @@ class BranchExpenseRequest(Document):
     STATUS_CANCELLED = "Cancelled"
     PENDING_REVIEW_STATE = "Pending Review"
 
+    def onload(self):
+        """
+        Called when document is loaded from database.
+        Normalize ppn_type BEFORE Frappe validates Select field options.
+        """
+        if getattr(self, "ti_fp_ppn_type", None):
+            self.ti_fp_ppn_type = normalize_ppn_type_value(self.ti_fp_ppn_type)
+
     def before_insert(self):
         self._set_requester()
         self._reset_status_if_copied()
@@ -61,7 +70,7 @@ class BranchExpenseRequest(Document):
         # 🔥 FIX: Normalize ppn_type BEFORE Frappe validates Select field options
         # This prevents validation error when old data has "Standard 11% (PPN 2022-2024)" etc.
         if getattr(self, "ti_fp_ppn_type", None):
-            self.ti_fp_ppn_type = self._normalize_ppn_type_value(self.ti_fp_ppn_type)
+            self.ti_fp_ppn_type = normalize_ppn_type_value(self.ti_fp_ppn_type)
 
         settings = get_settings()
         self._ensure_enabled(settings)
@@ -86,7 +95,7 @@ class BranchExpenseRequest(Document):
     def before_submit(self):
         # 🔥 FIX: Normalize ppn_type before submit validation
         if getattr(self, "ti_fp_ppn_type", None):
-            self.ti_fp_ppn_type = self._normalize_ppn_type_value(self.ti_fp_ppn_type)
+            self.ti_fp_ppn_type = normalize_ppn_type_value(self.ti_fp_ppn_type)
 
         settings = get_settings()
         self._validate_items(settings)
@@ -847,47 +856,6 @@ class BranchExpenseRequest(Document):
 
         parsed = parse_route_snapshot(snapshot)
         return parsed if parsed else None
-
-    def _normalize_ppn_type_value(self, ppn_type: str) -> str:
-        """
-        Normalize PPN Type from detailed format to simplified format.
-
-        Legacy formats (from Tax Invoice OCR Upload):
-        - "Standard 11% (PPN 2022-2024)" -> "Standard"
-        - "Standard 12% (PPN 2025+)" -> "Standard"
-        - "Zero Rated (Ekspor)" -> "Zero Rated"
-        - "PPN Tidak Dipungut (Fasilitas)" -> "Exempt/Not PPN"
-        - "PPN Dibebaskan (Fasilitas)" -> "Exempt/Not PPN"
-        - "Bukan Objek PPN" -> "Exempt/Not PPN"
-        - "Digital 1.1% (PMSE)" -> "Standard"
-        - "Custom/Other (Tarif Khusus)" -> "Standard"
-
-        Args:
-            ppn_type: Original PPN Type value
-
-        Returns:
-            Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
-        """
-        if not ppn_type:
-            return ppn_type
-
-        # 🔥 CRITICAL: If already normalized, return original value (same reference)
-        # This prevents Frappe from detecting field change and marking document as dirty
-        if ppn_type in ["Standard", "Zero Rated", "Exempt/Not PPN"]:
-            return ppn_type
-
-        ppn_type_lower = ppn_type.lower()
-
-        # Check for Zero Rated
-        if "zero rated" in ppn_type_lower or "ekspor" in ppn_type_lower:
-            return "Zero Rated"
-
-        # Check for Exempt/Not PPN
-        if any(x in ppn_type_lower for x in ["tidak dipungut", "dibebaskan", "bukan objek", "exempt"]):
-            return "Exempt/Not PPN"
-
-        # Everything else (Standard 11%, Standard 12%, Digital, Custom) -> Standard
-        return "Standard"
 
     def _get_expense_accounts(self) -> tuple[str, ...]:
         """Get expense accounts from items."""

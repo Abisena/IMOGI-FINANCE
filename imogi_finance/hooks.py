@@ -239,6 +239,7 @@ doc_events = {
         "before_submit": "imogi_finance.imogi_finance.events.bank_statement_import_handler.bank_statement_import_before_submit",
     },
     "Purchase Invoice": {
+        "onload": "imogi_finance.events.utils.normalize_tax_invoice_ppn_types",
         "validate": [
             "imogi_finance.events.purchase_invoice.prevent_double_wht_validate",
             "imogi_finance.tax_operations.validate_tax_period_lock",
@@ -255,6 +256,7 @@ doc_events = {
         "on_trash": "imogi_finance.events.purchase_invoice.on_trash",
     },
     "Sales Invoice": {
+        "onload": "imogi_finance.events.utils.normalize_tax_invoice_ppn_types",
         "validate": [
             "imogi_finance.tax_operations.validate_tax_period_lock",
             "imogi_finance.validators.finance_validator.validate_document_tax_fields",
