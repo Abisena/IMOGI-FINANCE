@@ -1,16 +1,18 @@
 ### Imogi Finance
 
-**Version**: v1.5.0 (Released Feb 10, 2026)  
-**Status**: ✅ Production Ready
+**Version**: v1.5.0 (Released Feb 10, 2026)
+**Status**: Production Ready
 
-App for managing expenses at IMOGI with comprehensive expense request workflows, OCR-powered tax invoice processing, budget control, and payment automation.
+App for managing expenses at IMOGI with comprehensive expense request workflows, OCR-powered tax invoice processing, budget control, payment automation, and Indonesian tax compliance features.
 
-> **📖 For detailed documentation, see [DOCUMENTATION_MASTER_INDEX.md](DOCUMENTATION_MASTER_INDEX.md) and [START_HERE.md](START_HERE.md)**
+> **For detailed documentation, see [DOCUMENTATION_MASTER_INDEX.md](DOCUMENTATION_MASTER_INDEX.md) and [START_HERE.md](START_HERE.md)**
 
-**⚠️ Requirements**:
+**Requirements**:
 - ERPNext v14+ (v15+ recommended for native Payment Ledger features)
 - Frappe v14+
-- Python 3.8+
+- Python 3.10+
+
+---
 
 ### Key Features
 
@@ -59,14 +61,18 @@ App for managing expenses at IMOGI with comprehensive expense request workflows,
 
 #### Advance Payments (Native First Strategy)
 
-> **⚠️ IMPORTANT**: IMOGI Finance uses **ERPNext native Payment Ledger** for advance payment tracking. Custom APE module is deprecated.  
-> **📖 Documentation**: [Native Payment Ledger User Guide](docs/NATIVE_PAYMENT_LEDGER_USER_GUIDE.md) | [Installation Guide](docs/NATIVE_PAYMENT_LEDGER_INSTALLATION.md)
+> **IMPORTANT**: IMOGI Finance uses **ERPNext native Payment Ledger** for advance payment tracking. Custom APE module is deprecated.
+> **Documentation**: [Native Payment Ledger User Guide](docs/NATIVE_PAYMENT_LEDGER_USER_GUIDE.md) | [Installation Guide](docs/NATIVE_PAYMENT_LEDGER_INSTALLATION.md)
 
 - **Native Payment Ledger**: ERPNext v15+ automatically tracks all advances via Payment Ledger Entry (zero custom code needed for Supplier/Customer advances).
 - **Enhanced Dashboard**: Custom report provides status visualization (Fully/Partially/Unallocated), aging analysis (0-30, 30-60, 60-90, 90+ days), and summary cards.
-- **Employee Advance Extension**: IMOGI Finance adds "Get Employee Advances" button to Expense Claim with auto-allocation on submit (150 lines enhancement).
+- **Employee Advance Extension**: IMOGI Finance adds "Get Employee Advances" button to Expense Claim with auto-allocation on submit.
 
-**Benefits**: Native Payment Ledger provides 77% less code, 95% less development time, 90% less maintenance vs custom APE. Zero upgrade conflicts.
+#### VAT Out Batch
+
+- **Grouped invoice management**: collects output VAT Sales Invoices into named batches for review, approval, and tax reporting. Invoices can be added/moved/removed across groups before locking.
+- **CSV template export**: generates CoreTax-compatible CSV for e-Faktur bulk upload.
+- **Integration with Tax Period Closing**: batch status is tracked against period lock to prevent edits after period closure.
 
 #### Tax, OCR, & CoreTax Export (v1.5.0 Enhanced)
 
@@ -91,78 +97,35 @@ App for managing expenses at IMOGI with comprehensive expense request workflows,
 - **Status tracking**: Tracks amortization creation status to prevent duplicate processing
 - **Flexible start date**: Amortization can start from invoice date or custom month
 
-### Feature usage guide
+#### Custom Reports & Dashboards
 
-Use this checklist to read through each feature area and verify behavior quickly in a bench site.
+Built-in reports accessible from the Finance workspaces:
 
-#### Expense Request & Approvals
+| Report | Description |
+|--------|-------------|
+| VAT Input Register Verified | Input VAT summary with verified faktur status |
+| VAT Output Register Verified | Output VAT summary for CoreTax reconciliation |
+| Withholding Tax Register | PPh 21/23/4(2) withholding summary by period |
+| PB1 Register | PB1 tax summary per branch/company |
+| Advanced Payment Dashboard | Advance payment aging (0-30, 30-60, 60-90, 90+ days) |
+| Budget Control Dashboard | Budget reservation/consumption status visualization |
+| Outstanding Approvals Dashboard | Pending approvals across all expense workflows |
+| Deferred Expense Tracker | Amortization schedule status and posting progress |
+| Customer Receipt Control Report | Receipt payment collection status |
+| Digital Stamp Expense Report | Materai usage and threshold tracking |
+| VAT Out Batch Register | VAT output batch grouping and status |
 
-1. Configure Expense Approval Settings per Cost Center with routes for each expense account/threshold.
-2. Create an Expense Request, then click **Refresh Route** before approving to capture the current configuration snapshot.
-3. Walk approvals level by level; approvers must match the user/role in the route, and submits are restricted to the owner.
-4. Edit Pending requests only as the owner/approver; changing amount/account/cost center resets the status to **Pending Review** with an audit log entry.
-5. Reopen only as System Manager (or with the override flag) and ensure linked PI/PE/Asset documents are in a safe state; closing validates the latest approval snapshot.
+#### Print Formats
 
-#### Budget Control & Internal Charge
+Five custom print formats included:
 
-1. Set Budget Control Settings to lock at **Approved** or **Linked** and decide whether branch/project affects reservations.
-2. Submit an Expense Request and observe the reservation status (`Locked/Overrun Allowed/Consumed/Released`) as PI/PE events occur.
-3. Assign `allow_budget_overrun_role` to testers who should be able to push a request through when reservations fail.
-4. Enable **Allocated via Internal Charge** to require an Approved Internal Charge Request; use `create_internal_charge_from_expense_request` to auto-create a draft.
-5. When using **Auto JE on PI Submit**, submit a PI and confirm the Journal Entry reclassifies amounts across Cost Centers.
+- **Expense Request** — formal expense request layout with approval route visualization
+- **Customer Receipt** — multi-design receipt with digital stamp and verification URL
+- **Transfer Application Bank Form** — bank transfer form for payment processing
+- **Branch Expense Request** — branch-level expense print layout
+- **Cash Bank Daily Report** — daily report with signer blocks
 
-#### Accounting & Downstream Documents
-
-1. From an Approved Expense Request, run the helper to **Create Purchase Invoice**; verify type alignment (Expense vs Asset) and duplicate link prevention.
-2. Link Assets and Payment Entries to a request and ensure status guards block duplicate or inconsistent links; closing should happen automatically after a successful Payment Entry.
-3. With multi-branch enforcement enabled, confirm branch derivation from Cost Center/Finance Control Settings and that PI/PE/Asset links respect branch rules.
-
-#### Customer Receipt & Payment Validation
-
-1. Configure Finance Control Settings to pick the default Receipt print layout and stamp policy (digital/physical, mandatory/threshold/fallback).
-2. Create a Customer Receipt referencing Sales Invoice/Sales Order; submission should lock items once Issued and compute the payment status.
-3. Use the **make_payment_entry** button to generate Payment Entry with automatic allocation to outstanding references.
-4. Submit/cancel Payment Entries to see automatic receipt updates and the guardrail that enforces Mandatory Strict mode when open receipts exist.
-
-#### Reconciliation & Bank Imports
-
-1. Import a BCA CSV using **Parse CSV BCA** and **Convert to Bank Transaction**; the system should skip balance/pending rows and prevent re-uploads via hashing.
-2. Review the success/failure report, then click **Open Bank Reconciliation Tool** with the same date range and bank account.
-3. Attempt to cancel an Unreconciled Bank Transaction to verify the backend guard and hidden Cancel button protection.
-
-#### Transfer Application & Payment Automation
-
-1. From a Transfer Application, use the helper button to create Payment Entry; confirm paid_from/paid_to defaults from settings/company accounts and optional auto-submit.
-2. On Bank Transaction submit/update, review the candidate matches (Strong/Medium/Weak) by amount tolerance, account number/hint, and payee name.
-3. Enable the automation to auto-create Payment Entry for Strong matches and ensure a TA cannot be linked to multiple payments.
-
-#### Advance Payments
-
-> **📖 See [Native Payment Ledger User Guide](docs/NATIVE_PAYMENT_LEDGER_USER_GUIDE.md) for complete workflows**
-
-1. **Native Workflow (Supplier/Customer)**: Create Payment Entry → system auto-creates Payment Ledger Entry → use "Get Advances" button on invoice → allocate advance.
-2. **Enhanced Dashboard**: Go to Accounting → Reports → Advance Payment Dashboard for status visualization with 🔴 Unallocated / 🟡 Partially Allocated / ✅ Fully Allocated indicators.
-3. **Employee Advances (IMOGI Extension)**: Create Payment Entry (party_type=Employee) → Expense Claim → click "Get Employee Advances" → select advances → submit (auto-allocates).
-4. **Verify Installation**: Run `bench --site [site] execute imogi_finance.test_native_payment_ledger.test_payment_ledger` to check Payment Ledger is working.
-
-#### Tax, OCR, & CoreTax Export
-
-1. Fill **Tax Profile** with mandatory accounts (PPN input/output, PB1 payable, PPh payable) and configure Tax Invoice OCR provider, size limit, and threshold.
-2. Test OCR on PI/ER/SI uploads to capture NPWP, tax number/date, and DPP/VAT; verify field swap detection catches swapped DPP/PPN values.
-3. Close a Tax Period and attempt to edit tax/tax-mapping fields on ER/PI/SI to ensure only System Manager/Tax Reviewer can bypass the block.
-4. Generate input/output VAT registers, withholding tax, and PB1 exports; verify CoreTax mappings (DPP, PPN, NPWP, faktur date) are required before exporting CSV/XLSX.
-5. Use provided utilities to create Payment Entry/Journal Entry for Tax Payment Batch and VAT netting (debit output/credit input/payable balances).
-
-#### Deferred Expense Amortization
-
-1. Create a Purchase Invoice with "Is Prepaid Expense" flag and submit it.
-2. Run the amortization processor: `bench --site [site] execute imogi_finance.expense_request.amortization_processor.create_all_missing_amortization`
-3. Verify that monthly Journal Entries are automatically created for the amortization period.
-4. Check the Purchase Invoice to confirm amortization status is updated to "Amortization Created".
-
-### Expense Request Workflow Controls & Risks
-
-See [Expense Request Workflow Guardrails](WORKFLOW_GUARDRAILS.md) to understand site flag impacts, route rebuild behavior, and audit recommendations for reopen/close actions.
+---
 
 ### Installation
 
@@ -170,9 +133,19 @@ You can install this app using the [bench](https://github.com/frappe/bench) CLI:
 
 ```bash
 cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
+bench get-app https://github.com/YOUR_ORG/imogi_finance --branch main
 bench install-app imogi_finance
 ```
+
+**Post-install configuration:**
+1. Set up **Tax Profile** per company (PPN input/output, PB1 payable, PPh payable accounts)
+2. Configure **Finance Control Settings** (branch enforcement, stamp policy, receipt layout defaults)
+3. Configure **Expense Approval Settings** per Cost Center with approval routes
+4. Optional: Configure **Tax Invoice OCR Settings** (Google Vision or Tesseract provider + credentials)
+
+See [DEPLOYMENT_GUIDE_V1.5.0.md](DEPLOYMENT_GUIDE_V1.5.0.md) for full deployment instructions and [DEPLOYMENT_CHECKLIST_QUICK.md](DEPLOYMENT_CHECKLIST_QUICK.md) for a quick checklist.
+
+---
 
 ### Contributing
 
@@ -190,6 +163,8 @@ Pre-commit is configured to use the following tools for checking and formatting 
 - prettier
 - pyupgrade
 
+---
+
 ### Bench console checks
 
 Use the following bench console snippet to verify the validations (e.g., status not yet Approved or already linked to other documents):
@@ -206,6 +181,8 @@ frappe.call("imogi_finance.accounting.create_purchase_invoice_from_request", exp
 request.db_set({"linked_purchase_invoice": None, "request_type": "Asset"})
 frappe.call("imogi_finance.accounting.create_purchase_invoice_from_request", expense_request_name=request.name)
 ```
+
+---
 
 ### Credits
 

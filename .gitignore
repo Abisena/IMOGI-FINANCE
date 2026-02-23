@@ -5,3 +5,12 @@
 tags
 node_modules
 __pycache__
+.venv/
+venv/
+.pytest_cache/
+*.backup
+*.old
+.vscode/
+dist/
+build/
+*.egg-info/
