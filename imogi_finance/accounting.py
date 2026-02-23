@@ -554,6 +554,12 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
 
     # Ensure withholding tax (PPh) rows are generated for net total calculation
     if apply_pph:
+        # CRITICAL: Re-set category AFTER insert (Frappe might have cleared it during validation)
+        pi.tax_withholding_category = request.pph_type
+        pi.apply_tds = 1
+        if hasattr(pi, "imogi_pph_type"):
+            pi.imogi_pph_type = request.pph_type
+
         set_tax_withholding = getattr(pi, "set_tax_withholding", None)
         if callable(set_tax_withholding):
             set_tax_withholding()
