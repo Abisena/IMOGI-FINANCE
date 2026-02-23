@@ -796,7 +796,7 @@
     },
     {
       "group": "Budget",
-      "link_doctype": "Budget Control Ledger Entry",
+      "link_doctype": "Budget Control Entry",
       "link_fieldname": "source_document"
     }
   ],
