@@ -151,8 +151,7 @@
       "fieldtype": "Check",
       "label": "Enforce Branch Consistency on Links"
     },
-    {
-      "fieldname": "section_reporting",
+    {      "fieldname": "section_reporting",
       "fieldtype": "Section Break",
       "label": "Reporting Signers",
       "description": "Prepared By is auto-filled from report creator. Configure approver and acknowledger here."

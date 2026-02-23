@@ -75,6 +75,7 @@ doctype_list_js = {
     "BCA Bank Statement Import": "imogi_finance/doctype/bca_bank_statement_import/bca_bank_statement_import_list.js",
     "Administrative Payment Voucher": "imogi_finance/doctype/administrative_payment_voucher/administrative_payment_voucher_list.js",
     "Expense Request": "imogi_finance/doctype/expense_request/expense_request_list.js",
+    "Expense Request Multi CC": "imogi_finance/doctype/expense_request_multi_cc/expense_request_multi_cc_list.js",
     "Payment Entry": "public/js/payment_entry_list.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -144,6 +145,7 @@ fixtures = [
                 "in",
                 [
                     "Expense Request",
+                    "Expense Request Multi CC",
                     "Internal Charge Request",
                     "Branch Expense Request",
                 ],
@@ -178,6 +180,7 @@ fixtures = [
     "fixtures/transfer_application_settings.json",
     "fixtures/property_setter.json",
     "fixtures/branch_expense_request_workflow.json",
+    "fixtures/expense_request_multi_cc_workflow.json",
 ]
 
 # Uninstallation

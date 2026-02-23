@@ -240,7 +240,9 @@ def _require_internal_charge_ready(expense_request, settings):
 
 def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     settings = settings or utils.get_settings()
-    company = utils.resolve_company_from_cost_center(getattr(expense_request, "cost_center", None))
+    # Support both Expense Request (header cost_center) and Expense Request Multi CC (approval_cost_center)
+    header_cc = getattr(expense_request, "cost_center", None) or getattr(expense_request, "approval_cost_center", None)
+    company = utils.resolve_company_from_cost_center(header_cc)
     # FIX: Expense Request doesn't have fiscal_year field, need to resolve it
     fiscal_year = utils.resolve_fiscal_year(getattr(expense_request, "fiscal_year", None), company=company)
 
@@ -276,16 +278,47 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     slices = []
 
     if getattr(expense_request, "allocation_mode", "Direct") != "Allocated via Internal Charge":
-        for account, amount in account_totals.items():
-            dims = service.resolve_dims(
-                company=company,
-                fiscal_year=fiscal_year,
-                cost_center=getattr(expense_request, "cost_center", None),
-                account=account,
-                project=getattr(expense_request, "project", None),
-                branch=getattr(expense_request, "branch", None),
-            )
-            slices.append((dims, float(amount)))
+        # Check if line items carry their own cost_center (e.g. Expense Request Multi CC)
+        items_have_per_item_cc = any(
+            getattr(item, "cost_center", None)
+            for item in items
+            if not getattr(item, "is_variance_item", 0)
+        )
+        if items_have_per_item_cc:
+            # Per-item cost center mode: aggregate by (cost_center, account) pair
+            from collections import defaultdict
+            cc_account_totals: dict = defaultdict(float)
+            for item in items:
+                if getattr(item, "is_variance_item", 0):
+                    continue
+                account = accounting._get_item_value(item, "expense_account")
+                amount = float(accounting._get_item_value(item, "amount") or 0)
+                item_cc = getattr(item, "cost_center", None)
+                if not account or not amount or not item_cc:
+                    continue
+                cc_account_totals[(item_cc, account)] += amount
+            for (item_cc, account), amount in cc_account_totals.items():
+                dims = service.resolve_dims(
+                    company=company,
+                    fiscal_year=fiscal_year,
+                    cost_center=item_cc,
+                    account=account,
+                    project=getattr(expense_request, "project", None),
+                    branch=getattr(expense_request, "branch", None),
+                )
+                slices.append((dims, amount))
+        else:
+            header_cc_for_slice = getattr(expense_request, "cost_center", None) or getattr(expense_request, "approval_cost_center", None)
+            for account, amount in account_totals.items():
+                dims = service.resolve_dims(
+                    company=company,
+                    fiscal_year=fiscal_year,
+                    cost_center=header_cc_for_slice,
+                    account=account,
+                    project=getattr(expense_request, "project", None),
+                    branch=getattr(expense_request, "branch", None),
+                )
+                slices.append((dims, float(amount)))
 
         frappe.logger().info(f"_build_allocation_slices: Created {len(slices)} slices for direct allocation")
         return slices
@@ -351,7 +384,8 @@ def _reverse_reservations(expense_request):
     Used when re-submitting an Expense Request that already has reservations.
     Uses RESERVATION IN to offset RESERVATION OUT (simplified flow, replaces RELEASE).
     """
-    reservations = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+    _er_ref_doctype = getattr(expense_request, "doctype", "Expense Request")
+    reservations = _get_entries_for_ref(_er_ref_doctype, getattr(expense_request, "name", None), "RESERVATION")
     # Only reverse OUT reservations (not IN releases)
     reservations_out = [r for r in reservations if r.get("direction") == "OUT"]
     if not reservations_out:
@@ -372,7 +406,7 @@ def _reverse_reservations(expense_request):
             dims,
             float(row.get("amount") or 0),
             "IN",
-            ref_doctype="Expense Request",
+            ref_doctype=_er_ref_doctype,
             ref_name=getattr(expense_request, "name", None),
             remarks=_("Releasing prior reservation before re-locking"),
         )
@@ -425,7 +459,8 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
     from_date, to_date = _get_budget_window(expense_request, settings)
 
     # Check if already reserved (avoid duplicate)
-    existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+    _er_ref_doctype = getattr(expense_request, "doctype", "Expense Request")
+    existing = _get_entries_for_ref(_er_ref_doctype, getattr(expense_request, "name", None), "RESERVATION")
     if existing:
         if trigger_action == "Submit":
             frappe.logger().info(
@@ -504,7 +539,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
         # Build detailed error message
         items = getattr(expense_request, "items", []) or []
         allocation_mode = getattr(expense_request, "allocation_mode", "Direct")
-        cost_center = getattr(expense_request, "cost_center", None)
+        cost_center = getattr(expense_request, "cost_center", None) or getattr(expense_request, "approval_cost_center", None)
 
         missing_info = []
         if not cost_center:
@@ -601,7 +636,7 @@ def reserve_budget_for_request(expense_request, *, trigger_action: str | None = 
                 dims,
                 float(amount or 0),
                 "OUT",
-                ref_doctype="Expense Request",
+                ref_doctype=_er_ref_doctype,
                 ref_name=getattr(expense_request, "name", None),
                 remarks=_("Budget reservation for Expense Request"),
             )
@@ -658,7 +693,8 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
         return
 
     # Get existing RESERVATION OUT entries (only count OUT, ignore any existing IN)
-    reservations = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+    _er_ref_doctype = getattr(expense_request, "doctype", "Expense Request")
+    reservations = _get_entries_for_ref(_er_ref_doctype, getattr(expense_request, "name", None), "RESERVATION")
     # Filter to only OUT direction entries
     reservations_out = [r for r in reservations if r.get("direction") == "OUT"]
 
@@ -684,7 +720,7 @@ def release_budget_for_request(expense_request, *, reason: str | None = None):
             dims,
             float(row.get("amount") or 0),
             "IN",  # IN direction to release/offset the OUT reservation
-            ref_doctype="Expense Request",
+            ref_doctype=_er_ref_doctype,
             ref_name=getattr(expense_request, "name", None),
             remarks=_("Release reservation on {0}").format(reason or "rejection/cancel"),
         )
@@ -782,7 +818,7 @@ def handle_expense_request_workflow(expense_request, action: str | None, next_st
                 )
 
         # Check if already reserved
-        existing = _get_entries_for_ref("Expense Request", getattr(expense_request, "name", None), "RESERVATION")
+        existing = _get_entries_for_ref(getattr(expense_request, "doctype", "Expense Request"), getattr(expense_request, "name", None), "RESERVATION")
         if existing:
             # Already reserved, just update status
             frappe.logger().info(f"handle_expense_request_workflow: Budget already reserved for {getattr(expense_request, 'name', None)}, updating to Approved")
@@ -822,7 +858,8 @@ def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
             return
 
         try:
-            request = frappe.get_doc("Expense Request", er_name)
+            er_doctype = "Expense Request Multi CC" if str(er_name).startswith("ERMC-") else "Expense Request"
+            request = frappe.get_doc(er_doctype, er_name)
         except Exception as e:
             frappe.logger().error(f"consume_budget_for_purchase_invoice: Failed to load ER {er_name}: {str(e)}")
             request = None

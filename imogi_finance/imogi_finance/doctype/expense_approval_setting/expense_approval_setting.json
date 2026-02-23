@@ -12,6 +12,7 @@
     "cost_center",
     "column_break_basic",
     "is_active",
+    "is_default_for_multi_cc",
     "section_break_info",
     "info_html",
     "approval_lines_section",
@@ -46,6 +47,14 @@
       "in_list_view": 1,
       "bold": 1,
       "description": "Only one active setting per cost center"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_default_for_multi_cc",
+      "fieldtype": "Check",
+      "label": "Default for Expense Request Multi CC",
+      "in_list_view": 1,
+      "description": "When checked, this setting's cost center is used as the Approval Cost Center for all Expense Request Multi CC documents. Only one record should have this enabled."
     },
     {
       "fieldname": "section_break_info",
