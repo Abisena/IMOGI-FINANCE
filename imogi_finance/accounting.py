@@ -588,32 +588,57 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                             if getattr(item, "apply_tds", 0)
                         )
 
-                        # Get rate
-                        rate = flt(wht_category.rate)
+                        # Get rate from rates child table (by fiscal year/date range)
+                        rate = 0
+                        posting_date = pi.posting_date
+
+                        for rate_row in (wht_category.rates or []):
+                            from_date = getattr(rate_row, "from_date", None)
+                            to_date = getattr(rate_row, "to_date", None)
+
+                            if from_date and to_date:
+                                if from_date <= posting_date <= to_date:
+                                    rate = flt(rate_row.tax_withholding_rate)
+                                    break
+                            elif hasattr(rate_row, "tax_withholding_rate"):
+                                # Fallback: use first rate if no date filter
+                                rate = flt(rate_row.tax_withholding_rate)
+                                break
 
                         # Calculate PPh amount
-                        pph_amount = pph_base * rate / 100
+                        if rate > 0:
+                            pph_amount = pph_base * rate / 100
+                        else:
+                            frappe.logger().warning(
+                                f"[PPh FALLBACK] PI {pi.name}: No rate found in Tax Withholding Category. Using 0."
+                            )
+                            pph_amount = 0
 
-                        # Add PPh tax row manually
-                        pi.append("taxes", {
-                            "charge_type": "Actual",
-                            "account_head": wht_account,
-                            "description": f"Tax Withheld - {pi.tax_withholding_category}",
-                            "tax_amount": -pph_amount,
-                            "base_tax_amount": -pph_amount,
-                            "add_deduct_tax": "Deduct",
-                            "category": "Total",
-                            "cost_center": pi.get("cost_center") or frappe.get_cached_value("Company", pi.company, "cost_center")
-                        })
+                        # Add PPh tax row manually (only if amount > 0)
+                        if pph_amount > 0:
+                            pi.append("taxes", {
+                                "charge_type": "Actual",
+                                "account_head": wht_account,
+                                "description": f"Tax Withheld - {pi.tax_withholding_category}",
+                                "tax_amount": -pph_amount,
+                                "base_tax_amount": -pph_amount,
+                                "add_deduct_tax": "Deduct",
+                                "category": "Total",
+                                "cost_center": pi.get("cost_center") or frappe.get_cached_value("Company", pi.company, "cost_center")
+                            })
 
-                        frappe.logger().info(
-                            f"[PPh FALLBACK] PI {pi.name}: Added PPh tax row manually. "
-                            f"Account: {wht_account}, Base: {pph_base}, Rate: {rate}%, Amount: {pph_amount}"
-                        )
+                            frappe.logger().info(
+                                f"[PPh FALLBACK] PI {pi.name}: Added PPh tax row manually. "
+                                f"Account: {wht_account}, Base: {pph_base}, Rate: {rate}%, Amount: {pph_amount}"
+                            )
 
-                        # Recalculate totals
-                        pi.run_method("calculate_taxes_and_totals")
-                        pi.save(ignore_permissions=True)
+                            # Recalculate totals
+                            pi.run_method("calculate_taxes_and_totals")
+                            pi.save(ignore_permissions=True)
+                        else:
+                            frappe.logger().warning(
+                                f"[PPh FALLBACK] PI {pi.name}: PPh amount is 0, skipping tax row addition"
+                            )
                     else:
                         frappe.logger().error(
                             f"[PPh FALLBACK] PI {pi.name}: No account configured for company '{pi.company}' "

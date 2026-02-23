@@ -87,10 +87,33 @@ def add_pph_row_to_pi(pi_name):
                 "pi_name": pi_name
             }
 
-        # Calculate PPh
-        pph_base = flt(pi.total)
-        rate = flt(category.rate)
-        pph_amount = pph_base * rate / 100
+        # Get rate from child table (rates by fiscal year/date range)
+        rate = 0
+        posting_date = pi.posting_date
+
+        # Try to find rate for posting date
+        for rate_row in (category.rates or []):
+            from_date = getattr(rate_row, "from_date", None)
+            to_date = getattr(rate_row, "to_date", None)
+
+            if from_date and to_date:
+                if from_date <= posting_date <= to_date:
+                    rate = flt(rate_row.tax_withholding_rate)
+                    break
+            elif hasattr(rate_row, "tax_withholding_rate"):
+                # Fallback: use first rate if no date filter
+                rate = flt(rate_row.tax_withholding_rate)
+                break
+
+        # Ultimate fallback: use ER's calculated PPh amount directly
+        if rate == 0 or not rate:
+            # Use ER's pre-calculated PPh amount (most accurate)
+            pph_amount = total_pph_er
+            pph_base = flt(pi.total)
+        else:
+            # Calculate PPh
+            pph_base = flt(pi.total)
+            pph_amount = pph_base * rate / 100
 
         # Get cost center
         cost_center = pi.get("cost_center") or frappe.get_cached_value("Company", pi.company, "cost_center")
