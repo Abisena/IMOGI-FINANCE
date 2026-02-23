@@ -89,13 +89,15 @@
 
 | Document | Pages | Purpose | Audience |
 |----------|-------|---------|----------|
+| **[PAYMENT_LETTER_TESTING_RULES.md](PAYMENT_LETTER_TESTING_RULES.md)** | 15 | Payment Letter testing guide | Developers, QA |
+| **test_payment_letter.py** | Code | Payment Letter tests (30+ tests) | Developers, QA |
 | **test_priority1_improvements.py** | Code | Priority 1 feature tests (7 tests) | Developers, QA |
 | **test_extract_summary_values.py** | Code | Field extraction tests (5 tests) | Developers, QA |
 | **test_tax_rate_detector.py** | Code | Tax rate detection tests (10 tests) | Developers, QA |
 | **test_tax_validation.py** | Code | Validation tests (10 tests) | Developers, QA |
 | **test_integration_complete.py** | Code | Integration tests (6 tests) | Developers, QA |
 
-**Total Tests:** 41 tests (100% pass rate)
+**Total Tests:** 68+ tests (100% pass rate)
 
 **Use Cases:**
 - Running tests → Execute test files
