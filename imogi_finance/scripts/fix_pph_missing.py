@@ -7,19 +7,163 @@ that was created from Expense Request but PPh was not calculated.
 
 Usage:
 ------
-bench --site [site-name] console
+1. Via Browser Console (Frappe Cloud):
+   frappe.call({
+       method: 'imogi_finance.scripts.fix_pph_missing.diagnose_pph',
+       args: {pi_name: 'ACC-PINV-2026-00025'},
+       callback: function(r) { console.log(r.message); }
+   });
 
-Then run:
-from imogi_finance.scripts.fix_pph_missing import fix_pph_for_pi
-fix_pph_for_pi("ACC-PINV-2026-00024")
+2. Via Server Console:
+   bench --site [site-name] console
 
-Or for batch fix:
-fix_multiple_pis(["ACC-PINV-2026-00024", "ACC-PINV-2026-00025"])
+   Then run:
+   from imogi_finance.scripts.fix_pph_missing import fix_pph_for_pi
+   fix_pph_for_pi("ACC-PINV-2026-00024")
+
+   Or for batch fix:
+   fix_multiple_pis(["ACC-PINV-2026-00024", "ACC-PINV-2026-00025"])
 """
 
 import frappe
 from frappe import _
 from frappe.utils import flt
+
+
+@frappe.whitelist()
+def diagnose_pph(pi_name):
+    """
+    Diagnose why PPh is not calculated for a Purchase Invoice.
+    Can be called from browser console.
+
+    Args:
+        pi_name: Purchase Invoice name
+
+    Returns:
+        dict with diagnosis information
+    """
+    try:
+        # Get PI document
+        pi = frappe.get_doc("Purchase Invoice", pi_name)
+
+        result = {
+            "pi_name": pi_name,
+            "pi_data": {
+                "supplier": pi.supplier,
+                "total": pi.total,
+                "grand_total": pi.grand_total,
+                "apply_tds": getattr(pi, "apply_tds", 0),
+                "tax_withholding_category": getattr(pi, "tax_withholding_category", None),
+                "imogi_pph_type": getattr(pi, "imogi_pph_type", None),
+                "taxes_deducted": getattr(pi, "taxes_and_charges_deducted", 0),
+            }
+        }
+
+        # Check if from ER
+        er_name = getattr(pi, "imogi_expense_request", None)
+        result["er_name"] = er_name
+
+        if not er_name:
+            result["status"] = "not_from_er"
+            result["message"] = "PI was not created from Expense Request"
+            return result
+
+        # Get ER
+        er = frappe.get_doc("Expense Request", er_name)
+
+        result["er_data"] = {
+            "total": er.total,
+            "is_pph_applicable": getattr(er, "is_pph_applicable", 0),
+            "pph_type": getattr(er, "pph_type", None),
+            "total_pph": getattr(er, "total_pph", 0),
+        }
+
+        # Check ER items
+        er_items_with_pph = []
+        for item in (er.items or []):
+            if getattr(item, "is_pph_applicable", 0):
+                er_items_with_pph.append({
+                    "expense_account": item.expense_account,
+                    "amount": item.amount,
+                    "pph_base_amount": getattr(item, "pph_base_amount", 0),
+                    "pph_amount": getattr(item, "pph_amount", 0),
+                })
+
+        result["er_items_with_pph"] = er_items_with_pph
+
+        # Check PI items
+        pi_items_with_tds = []
+        for item in (pi.items or []):
+            if getattr(item, "apply_tds", 0):
+                pi_items_with_tds.append({
+                    "expense_account": item.expense_account,
+                    "amount": item.amount,
+                })
+
+        result["pi_items_with_tds"] = pi_items_with_tds
+
+        # Diagnosis
+        issues = []
+
+        if not getattr(er, "is_pph_applicable", 0):
+            issues.append("ER Header 'Apply WHT' is NOT checked")
+
+        if not getattr(er, "pph_type", None):
+            issues.append("ER 'PPh Type' is NOT set")
+
+        if not er_items_with_pph:
+            issues.append("NO items in ER have 'Apply WHT' checked")
+
+        if not getattr(pi, "apply_tds", 0):
+            issues.append("PI 'Apply TDS' is NOT set")
+
+        if not getattr(pi, "tax_withholding_category", None):
+            issues.append("PI 'Tax Withholding Category' is NOT set")
+
+        if not pi_items_with_tds:
+            issues.append("NO items in PI have 'Apply TDS' set")
+
+        result["issues"] = issues
+        result["status"] = "has_issues" if issues else "ok"
+
+        # Recommendation
+        if issues:
+            if not getattr(er, "is_pph_applicable", 0) or not getattr(er, "pph_type", None) or not er_items_with_pph:
+                result["recommendation"] = f"Fix ER {er_name}: Check 'Apply WHT', select PPh Type, and check 'Apply WHT' on items. Then recreate PI."
+            else:
+                result["recommendation"] = f"Run fix script or manually set PPh configuration on PI {pi_name}"
+        else:
+            result["recommendation"] = "Configuration looks correct. Issue may be in Tax Withholding Category or Supplier setup."
+
+        return result
+
+    except Exception as e:
+        frappe.log_error(
+            title=f"PPh Diagnosis Error - {pi_name}",
+            message=frappe.get_traceback()
+        )
+        return {
+            "status": "error",
+            "pi_name": pi_name,
+            "error": str(e)
+        }
+
+
+@frappe.whitelist()
+def apply_pph_fix(pi_name):
+    """
+    Apply PPh fix to Purchase Invoice.
+    Can be called from browser console.
+
+    Args:
+        pi_name: Purchase Invoice name
+
+    Returns:
+        dict with fix result
+    """
+    result = fix_pph_for_pi(pi_name, dry_run=False)
+    frappe.db.commit()
+    return result
 
 
 def fix_pph_for_pi(pi_name, dry_run=False):
