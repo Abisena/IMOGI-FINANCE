@@ -38,5 +38,25 @@
     "property_type": "Check",
     "value": "1",
     "doctype_or_field": "DocField"
+  },
+  {
+    "doctype": "Property Setter",
+    "name": "Payment Entry-paid_amount-in_list_view",
+    "doc_type": "Payment Entry",
+    "field_name": "paid_amount",
+    "property": "in_list_view",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
+  },
+  {
+    "doctype": "Property Setter",
+    "name": "Payment Entry-received_amount-in_list_view",
+    "doc_type": "Payment Entry",
+    "field_name": "received_amount",
+    "property": "in_list_view",
+    "property_type": "Check",
+    "value": "1",
+    "doctype_or_field": "DocField"
   }
 ]

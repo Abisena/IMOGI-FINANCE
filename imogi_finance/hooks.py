@@ -129,9 +129,9 @@ fixtures = [
     {
         "doctype": "Property Setter",
         "filters": {
-            "doc_type": ["in", ["Purchase Invoice", "Sales Invoice", "Expense Claim", "Transfer Application"]],
-            "property": "allow_on_submit",
-            "field_name": ["in", ["advances", "workflow_state"]]
+            "doc_type": ["in", ["Purchase Invoice", "Sales Invoice", "Expense Claim", "Transfer Application", "Payment Entry"]],
+            "property": ["in", ["allow_on_submit", "in_list_view"]],
+            "field_name": ["in", ["advances", "workflow_state", "paid_amount", "received_amount"]]
         }
     },
     {"doctype": "Role", "filters": {"name": ["in", ["Expense Approver", "Branch Approver"]]}},
