@@ -626,6 +626,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                                 "charge_type": "Actual",
                                 "account_head": wht_account,
                                 "description": f"Tax Withheld - {pi.tax_withholding_category}",
+                                "rate": rate,  # Show tax rate in UI
                                 "tax_amount": -pph_amount,
                                 "base_tax_amount": -pph_amount,
                                 "add_deduct_tax": "Deduct",

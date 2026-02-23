@@ -123,6 +123,7 @@ def add_pph_row_to_pi(pi_name):
             "charge_type": "Actual",
             "account_head": account,
             "description": f"Tax Withheld - {pph_type}",
+            "rate": rate,  # Show tax rate in UI
             "tax_amount": -pph_amount,
             "base_tax_amount": -pph_amount,
             "add_deduct_tax": "Deduct",

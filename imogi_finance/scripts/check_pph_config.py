@@ -252,11 +252,30 @@ def quick_fix_pi(pi_name):
             for item in (pi.items or [])
         )
 
-        # Get rate
-        rate = flt(category.rate)
+        # Get rate from child table (rates by fiscal year/date range)
+        rate = 0
+        posting_date = pi.posting_date
+
+        # Try to find rate for posting date
+        for rate_row in (category.rates or []):
+            from_date = getattr(rate_row, "from_date", None)
+            to_date = getattr(rate_row, "to_date", None)
+
+            if from_date and to_date:
+                if from_date <= posting_date <= to_date:
+                    rate = flt(rate_row.tax_withholding_rate)
+                    break
+            elif hasattr(rate_row, "tax_withholding_rate"):
+                # Fallback: use first rate if no date filter
+                rate = flt(rate_row.tax_withholding_rate)
+                break
 
         # Calculate PPh amount
-        pph_amount = pph_base * rate / 100
+        if rate > 0:
+            pph_amount = pph_base * rate / 100
+        else:
+            # Fallback: use ER's pre-calculated amount
+            pph_amount = total_pph_er
 
         # Set PPh fields on PI
         pi.apply_tds = 1
@@ -283,6 +302,7 @@ def quick_fix_pi(pi_name):
                 "charge_type": "Actual",
                 "account_head": account,
                 "description": f"Tax Withheld - {pph_type}",
+                "rate": rate,  # Show tax rate in UI
                 "tax_amount": -pph_amount,
                 "total": pi.total - pph_amount,
                 "base_tax_amount": -pph_amount,

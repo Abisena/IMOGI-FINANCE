@@ -152,6 +152,24 @@ def force_add_pph_row(pi_name):
         if not account:
             return {"status": "error", "message": "No account found"}
 
+        # Get rate from child table (rates by fiscal year/date range)
+        rate = 0
+        posting_date = pi.posting_date
+
+        # Try to find rate for posting date
+        for rate_row in (category.rates or []):
+            from_date = getattr(rate_row, "from_date", None)
+            to_date = getattr(rate_row, "to_date", None)
+
+            if from_date and to_date:
+                if from_date <= posting_date <= to_date:
+                    rate = flt(rate_row.tax_withholding_rate)
+                    break
+            elif hasattr(rate_row, "tax_withholding_rate"):
+                # Fallback: use first rate if no date filter
+                rate = flt(rate_row.tax_withholding_rate)
+                break
+
         # Get cost center
         cost_center = pi.get("cost_center") or frappe.get_cached_value("Company", pi.company, "cost_center")
 
@@ -177,6 +195,7 @@ def force_add_pph_row(pi_name):
             "charge_type": "Actual",
             "account_head": account,
             "description": f"Tax Withheld - {pph_type}",
+            "rate": rate,  # Show tax rate in UI
             "tax_amount": -pph_amount,
             "base_tax_amount": -pph_amount,
             "add_deduct_tax": "Deduct",
