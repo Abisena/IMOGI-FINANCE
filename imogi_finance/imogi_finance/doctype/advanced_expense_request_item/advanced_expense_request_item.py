@@ -6,8 +6,8 @@ from __future__ import annotations
 from frappe.model.document import Document
 
 
-class ExpenseRequestMultiCcItem(Document):
-    """Child table for line items within an Expense Request Multi CC.
+class AdvancedExpenseRequestItem(Document):
+    """Child table for line items within an Advanced Expense Request.
 
     Each item carries its own cost_center for per-item budget allocation.
     """

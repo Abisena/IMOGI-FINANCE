@@ -1,5 +1,5 @@
 (() => {
-  frappe.listview_settings["Expense Request Multi CC"] = {
+  frappe.listview_settings["Advanced Expense Request"] = {
     add_fields: ["status", "docstatus", "supplier", "total_amount"],
 
     get_indicator(doc) {

@@ -8,13 +8,13 @@
   "doctype": "Print Format",
   "font": "Default",
   "format_data": "",
-  "html": "{% include \"imogi_finance/print_format/expense_request_multi_cc/expense_request_multi_cc.html\" %}",
+  "html": "{% include \"imogi_finance/print_format/advanced_expense_request/advanced_expense_request.html\" %}",
   "idx": 0,
   "line_breaks": 0,
   "modified": "2024-01-01 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Imogi Finance",
-  "name": "Expense Request Multi CC",
+  "name": "Advanced Expense Request",
   "owner": "Administrator",
   "page_number": "",
   "print_format_builder": 0,
@@ -23,5 +23,5 @@
   "raw_printing": 0,
   "show_section_headings": 0,
   "standard": "Yes",
-  "doc_type": "Expense Request Multi CC"
+  "doc_type": "Advanced Expense Request"
 }

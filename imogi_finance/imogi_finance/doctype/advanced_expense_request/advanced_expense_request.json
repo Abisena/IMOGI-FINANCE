@@ -218,7 +218,7 @@
       "label": "Approval Cost Center",
       "options": "Cost Center",
       "read_only": 1,
-      "description": "Auto-populated from Expense Approval Setting marked as Default for Expense Request Multi CC"
+      "description": "Auto-populated from Expense Approval Setting marked as Default for Advanced Expense Request"
     },
     {
       "fieldname": "project",
@@ -247,7 +247,7 @@
       "fieldname": "items",
       "fieldtype": "Table",
       "label": "Expense Items",
-      "options": "Expense Request Multi CC Item",
+      "options": "Advanced Expense Request Item",
       "reqd": 1,
       "description": "Line items with account, cost center, and amount details"
     },
@@ -774,7 +774,7 @@
     }
   ],
   "module": "Imogi Finance",
-  "name": "Expense Request Multi CC",
+  "name": "Advanced Expense Request",
   "naming_rule": "Expression",
   "permissions": [
     {

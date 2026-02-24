@@ -240,7 +240,7 @@ def _require_internal_charge_ready(expense_request, settings):
 
 def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     settings = settings or utils.get_settings()
-    # Support both Expense Request (header cost_center) and Expense Request Multi CC (approval_cost_center)
+    # Support both Expense Request (header cost_center) and Advanced Expense Request (approval_cost_center)
     header_cc = getattr(expense_request, "cost_center", None) or getattr(expense_request, "approval_cost_center", None)
     company = utils.resolve_company_from_cost_center(header_cc)
     # FIX: Expense Request doesn't have fiscal_year field, need to resolve it
@@ -278,7 +278,7 @@ def _build_allocation_slices(expense_request, *, settings=None, ic_doc=None):
     slices = []
 
     if getattr(expense_request, "allocation_mode", "Direct") != "Allocated via Internal Charge":
-        # Check if line items carry their own cost_center (e.g. Expense Request Multi CC)
+        # Check if line items carry their own cost_center (e.g. Advanced Expense Request)
         items_have_per_item_cc = any(
             getattr(item, "cost_center", None)
             for item in items
@@ -858,7 +858,7 @@ def consume_budget_for_purchase_invoice(purchase_invoice, expense_request=None):
             return
 
         try:
-            er_doctype = "Expense Request Multi CC" if str(er_name).startswith("ERMC-") else "Expense Request"
+            er_doctype = "Advanced Expense Request" if str(er_name).startswith("ERMC-") else "Expense Request"
             request = frappe.get_doc(er_doctype, er_name)
         except Exception as e:
             frappe.logger().error(f"consume_budget_for_purchase_invoice: Failed to load ER {er_name}: {str(e)}")

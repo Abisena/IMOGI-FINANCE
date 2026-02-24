@@ -20,8 +20,8 @@ def get_data():
                 },
                 {
                     "type": "doctype",
-                    "name": "Expense Request Multi CC",
-                    "label": "Expense Request Multi CC",
+                    "name": "Advanced Expense Request",
+                    "label": "Advanced Expense Request",
                     "description": "Multi-cost center expense request.",
                 },
                 {

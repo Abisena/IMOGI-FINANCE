@@ -47,9 +47,9 @@ const DEFAULT_UPLOAD_FIELDS = {
   tax_invoice_pdf: 'tax_invoice_pdf',
 };
 
-const ER_TAX_INVOICE_FIELDS = (TAX_INVOICE_MODULE.getFieldMap && TAX_INVOICE_MODULE.getFieldMap('Expense Request Multi CC')) || DEFAULT_ER_FIELDS;
+const ER_TAX_INVOICE_FIELDS = (TAX_INVOICE_MODULE.getFieldMap && TAX_INVOICE_MODULE.getFieldMap('Advanced Expense Request')) || DEFAULT_ER_FIELDS;
 const UPLOAD_TAX_INVOICE_FIELDS = (TAX_INVOICE_MODULE.getFieldMap && TAX_INVOICE_MODULE.getFieldMap('Tax Invoice OCR Upload')) || DEFAULT_UPLOAD_FIELDS;
-const COPY_KEYS = (TAX_INVOICE_MODULE.getSharedCopyKeys && TAX_INVOICE_MODULE.getSharedCopyKeys('Tax Invoice OCR Upload', 'Expense Request Multi CC'))
+const COPY_KEYS = (TAX_INVOICE_MODULE.getSharedCopyKeys && TAX_INVOICE_MODULE.getSharedCopyKeys('Tax Invoice OCR Upload', 'Advanced Expense Request'))
   || DEFAULT_COPY_KEYS;
 
 async function syncErUpload(frm) {
@@ -135,7 +135,7 @@ async function setPphRate(frm) {
 
   try {
     const { message } = await frappe.call({
-      method: 'imogi_finance.imogi_finance.doctype.expense_request_multi_cc.expense_request_multi_cc.get_pph_rate',
+      method: 'imogi_finance.imogi_finance.doctype.advanced_expense_request.advanced_expense_request.get_pph_rate',
       args: { pph_type: frm.doc.pph_type },
     });
     frm._pph_rate = message?.rate || 0;
@@ -352,7 +352,7 @@ async function setErUploadQuery(frm) {
   try {
     const { message } = await frappe.call({
       method: 'imogi_finance.api.tax_invoice.get_tax_invoice_upload_context_api',
-      args: { target_doctype: 'Expense Request Multi CC', target_name: frm.doc.name },
+      args: { target_doctype: 'Advanced Expense Request', target_name: frm.doc.name },
     });
     usedUploads = message?.used_uploads || [];
     verifiedUploads = message?.verified_uploads || [];
@@ -558,7 +558,7 @@ function lockVarianceItemRows(frm) {
   });
 }
 
-frappe.ui.form.on('Expense Request Multi CC', {
+frappe.ui.form.on('Advanced Expense Request', {
   async refresh(frm) {
     hideErOcrStatus(frm);
     lockErTaxInvoiceFields(frm);
@@ -701,7 +701,7 @@ frappe.ui.form.on('Expense Request Multi CC', {
     if (frm.doc.status === 'Approved') {
       frm.dashboard.set_headline(
         '<span class="indicator orange">' +
-        __('Expense Request Multi CC is Approved. Ready to create Purchase Invoice.') +
+        __('Advanced Expense Request is Approved. Ready to create Purchase Invoice.') +
         '</span>'
       );
     } else if (frm.doc.status === 'PI Created') {
@@ -713,7 +713,7 @@ frappe.ui.form.on('Expense Request Multi CC', {
     } else if (frm.doc.status === 'Paid') {
       frm.dashboard.set_headline(
         '<span class="indicator green">' +
-        __('Expense Request Multi CC completed and paid.') +
+        __('Advanced Expense Request completed and paid.') +
         '</span>'
       );
     }
@@ -782,7 +782,7 @@ frappe.ui.form.on('Expense Request Multi CC', {
   },
 });
 
-frappe.ui.form.on('Expense Request Multi CC Item', {
+frappe.ui.form.on('Advanced Expense Request Item', {
   async prepaid_account(frm, cdt, cdn) {
     await loadDeferrableAccounts(frm);
     const row = frappe.get_doc(cdt, cdn);
@@ -909,9 +909,9 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
         frappe.confirm(
           __('<b>WHT Category Conflict Detected</b><br><br>' +
              'Supplier <b>{0}</b> has WHT Category: <b>{1}</b><br>' +
-             'Expense Request Multi CC has PPh Type: <b>{2}</b><br><br>' +
+             'Advanced Expense Request has PPh Type: <b>{2}</b><br><br>' +
              '<b>Which category do you want to use?</b><br>' +
-             '• Click <b>Yes</b> to use <b>{2}</b> (from Expense Request Multi CC)<br>' +
+             '• Click <b>Yes</b> to use <b>{2}</b> (from Advanced Expense Request)<br>' +
              '• Click <b>No</b> to update to use <b>{1}</b> (from Supplier)',
             [frm.doc.supplier, supplierCategory, erPphType]
           ),
@@ -926,7 +926,7 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
                   await frappe.call({
                     method: 'frappe.client.set_value',
                     args: {
-                      doctype: 'Expense Request Multi CC',
+                      doctype: 'Advanced Expense Request',
                       name: frm.doc.name,
                       fieldname: 'pph_type',
                       value: supplierCategory
@@ -958,7 +958,7 @@ async function maybeRenderPurchaseInvoiceButton(frm) {
 
 async function proceedCreatePI(frm) {
   frappe.confirm(
-    __('Are you sure you want to create a Purchase Invoice from this Expense Request Multi CC?'),
+    __('Are you sure you want to create a Purchase Invoice from this Advanced Expense Request?'),
     async () => {
       try {
         frappe.show_progress(__('Creating...'), 0, 100);

@@ -1,5 +1,5 @@
-// Expense Request Multi CC Item client-side script
-frappe.ui.form.on('Expense Request Multi CC Item', {
+// Advanced Expense Request Item client-side script
+frappe.ui.form.on('Advanced Expense Request Item', {
     deferred_start_date: function(frm, cdt, cdn) {
         calculate_deferred_end_date_multi_cc(frm, cdt, cdn);
     },

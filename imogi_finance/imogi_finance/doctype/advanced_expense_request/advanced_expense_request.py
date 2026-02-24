@@ -1,4 +1,4 @@
-"""Expense Request Multi CC - copy of Expense Request with cost_center per line item.
+"""Advanced Expense Request - copy of Expense Request with cost_center per line item.
 
 Approval route is resolved from `approval_cost_center` (header field, same logic as
 Expense Request uses `cost_center`).  Budget control operates per line item: each row
@@ -102,8 +102,8 @@ def get_approval_route(cost_center: str, accounts, amount: float, *, setting_met
     return ApprovalRouteService.get_route(cost_center, accounts, amount, setting_meta=setting_meta)
 
 
-class ExpenseRequestMultiCc(Document):
-    """Expense Request Multi CC.
+class AdvancedExpenseRequest(Document):
+    """Advanced Expense Request.
 
     Identical flow to Expense Request, with the single change that each line
     item carries its own `cost_center` for per-item budget allocation.
@@ -123,7 +123,6 @@ class ExpenseRequestMultiCc(Document):
 
     def validate(self):
         """All business rule validation."""
-        self._apply_default_approval_cost_center()
         self._set_requester_to_creator()
         self._initialize_status()
         self.validate_amounts()
@@ -132,7 +131,7 @@ class ExpenseRequestMultiCc(Document):
         self._sync_tax_invoice_upload()
         self.validate_tax_fields()
         self.validate_deferred_expense()
-        validate_tax_invoice_upload_link(self, "Expense Request Multi CC")
+        validate_tax_invoice_upload_link(self, "Advanced Expense Request")
         self._ensure_final_state_immutability()
 
     def before_submit(self):
@@ -223,7 +222,7 @@ class ExpenseRequestMultiCc(Document):
                 docs.append(f"Purchase Invoice {linked_pi}")
 
             frappe.throw(
-                _("Cannot cancel Expense Request Multi CC - linked documents exist: {0}.<br><br>"
+                _("Cannot cancel Advanced Expense Request - linked documents exist: {0}.<br><br>"
                   "Please either:<br>"
                   "1. Cancel linked documents first in reverse order (PE → PI → ER), or<br>"
                   "2. Use 'Cancel All Linked Documents' from the menu to cancel everything at once."
@@ -247,7 +246,7 @@ class ExpenseRequestMultiCc(Document):
 
     def on_trash(self):
         """Clean up OCR links and monitoring records before deletion."""
-        upload_field = get_upload_link_field("Expense Request Multi CC")
+        upload_field = get_upload_link_field("Advanced Expense Request")
         if upload_field and getattr(self, upload_field, None):
             frappe.db.set_value(self.doctype, self.name, upload_field, None)
 
@@ -261,22 +260,6 @@ class ExpenseRequestMultiCc(Document):
                 frappe.delete_doc("Tax Invoice OCR Monitoring", record, ignore_permissions=True, force=True)
 
     # ===================== Business Logic =====================
-
-    def _apply_default_approval_cost_center(self):
-        """Auto-populate approval_cost_center from the Expense Approval Setting marked as default for Multi CC."""
-        if self.approval_cost_center:
-            return
-        default_cc = frappe.db.get_value(
-            "Expense Approval Setting",
-            {"is_default_for_multi_cc": 1, "is_active": 1},
-            "cost_center",
-        )
-        if not default_cc:
-            frappe.throw(
-                _("No default Approval Cost Center found. Please open an Expense Approval Setting, check 'Default for Expense Request Multi CC', and ensure it is Active."),
-                title=_("Approval Cost Center Required"),
-            )
-        self.approval_cost_center = default_cc
 
     def validate_items_have_cost_center(self):
         """Ensure every non-variance line item has a cost_center set."""
@@ -525,7 +508,7 @@ class ExpenseRequestMultiCc(Document):
     def _sync_tax_invoice_upload(self):
         """Sync tax invoice OCR data if configured."""
         if getattr(self, "ti_tax_invoice_upload", None):
-            sync_tax_invoice_upload(self, "Expense Request Multi CC", save=False)
+            sync_tax_invoice_upload(self, "Advanced Expense Request", save=False)
 
     def _ensure_final_state_immutability(self):
         """Prevent key field edits after approval."""

@@ -52,9 +52,9 @@
       "default": "0",
       "fieldname": "is_default_for_multi_cc",
       "fieldtype": "Check",
-      "label": "Default for Expense Request Multi CC",
+      "label": "Default for Advanced Expense Request",
       "in_list_view": 1,
-      "description": "When checked, this setting's cost center is used as the Approval Cost Center for all Expense Request Multi CC documents. Only one record should have this enabled."
+      "description": "When checked, this setting's cost center is used as the Approval Cost Center for all Advanced Expense Request documents. Only one record should have this enabled."
     },
     {
       "fieldname": "section_break_info",
