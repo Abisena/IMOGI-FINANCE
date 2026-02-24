@@ -738,7 +738,8 @@ def apply_expense_action(docname: str, action: str) -> dict:
     current_user = frappe.session.user
     approvers = [doc.level_1_user, doc.level_2_user, doc.level_3_user]
     approvers = [u for u in approvers if u]
-    has_role = frappe.user.has_role("System Manager") or frappe.user.has_role("Expense Approver")
+    current_roles = set(frappe.get_roles())
+    has_role = bool(current_roles & {"System Manager", "Expense Approver"})
 
     if not has_role and approvers and current_user not in approvers:
         frappe.throw(_("You are not authorized to {0} this request.").format(action), title=_("Not Authorized"))
