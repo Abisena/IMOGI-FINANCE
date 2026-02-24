@@ -487,8 +487,7 @@ class TaxInvoiceOCRUpload(Document):
     def on_trash(self):
         """Clean up all links pointing to this OCR Upload before deletion.
 
-        Clears link fields in Expense Request, Branch Expense Request,
-        Purchase Invoice, and Sales Invoice that reference this document.
+        Clears link fields in Expense Request, Purchase Invoice, and Sales Invoice that reference this document.
         Also deletes any Tax Invoice OCR Monitoring records.
         """
         from imogi_finance.tax_invoice_fields import UPLOAD_LINK_FIELDS

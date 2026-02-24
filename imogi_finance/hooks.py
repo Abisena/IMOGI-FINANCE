@@ -147,7 +147,6 @@ fixtures = [
                     "Expense Request",
                     "Advanced Expense Request",
                     "Internal Charge Request",
-                    "Branch Expense Request",
                 ],
             ]
         },
@@ -179,7 +178,6 @@ fixtures = [
     "fixtures/finance_control_settings.json",
     "fixtures/transfer_application_settings.json",
     "fixtures/property_setter.json",
-    "fixtures/branch_expense_request_workflow.json",
     "fixtures/advanced_expense_request_workflow.json",
 ]
 
@@ -310,20 +308,6 @@ doc_events = {
         ],
         "on_update_after_submit": [
             "imogi_finance.events.internal_charge_request.sync_status_with_workflow",
-        ],
-        "on_submit": [
-            "imogi_finance.events.metadata_fields.set_submit_on",
-        ],
-    },
-    "Branch Expense Request": {
-        "validate": [
-            "imogi_finance.events.metadata_fields.set_created_by",
-        ],
-        "on_update": [
-            "imogi_finance.events.branch_expense_request.sync_status_with_workflow",
-        ],
-        "on_update_after_submit": [
-            "imogi_finance.events.branch_expense_request.sync_status_with_workflow",
         ],
         "on_submit": [
             "imogi_finance.events.metadata_fields.set_submit_on",

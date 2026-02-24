@@ -14,10 +14,6 @@
       {
         "reference_doctype": "Purchase Invoice",
         "enabled": 1
-      },
-      {
-        "reference_doctype": "Branch Expense Request",
-        "enabled": 1
       }
     ]
   }

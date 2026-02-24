@@ -35,17 +35,16 @@ def _is_bank_payment(doc) -> bool:
     return account_type == "Bank"
 
 
-def _resolve_expense_request(doc) -> tuple[str | None, str | None]:
-    """Resolve expense request and branch expense request.
+def _resolve_expense_request(doc) -> str | None:
+    """Resolve expense request from document or linked Purchase Invoice references.
 
     Returns:
-        tuple: (expense_request_name, branch_request_name)
+        str | None: expense_request name or None
     """
     expense_request = doc.get("imogi_expense_request") or doc.get("expense_request")
-    branch_request = doc.get("branch_expense_request")
 
-    if expense_request or branch_request:
-        return expense_request, branch_request
+    if expense_request:
+        return expense_request
 
     references = doc.get("references") or []
     for ref in references:
@@ -58,22 +57,19 @@ def _resolve_expense_request(doc) -> tuple[str | None, str | None]:
             values = frappe.db.get_value(
                 "Purchase Invoice",
                 reference_name,
-                ["imogi_expense_request", "expense_request", "branch_expense_request"],
+                ["imogi_expense_request", "expense_request"],
                 as_dict=True,
             )
         except Exception:
             values = None
         if values:
-            return (
-                values.get("imogi_expense_request") or values.get("expense_request"),
-                values.get("branch_expense_request")
-            )
+            return values.get("imogi_expense_request") or values.get("expense_request")
 
-    return None, None
+    return None
 
 
-def _ensure_expense_request_reference(doc, expense_request: str | None, branch_request: str | None) -> None:
-    """Ensure expense request or branch request reference is set on Payment Entry."""
+def _ensure_expense_request_reference(doc, expense_request: str | None) -> None:
+    """Ensure expense request reference is set on Payment Entry."""
     if expense_request and not doc.get("imogi_expense_request"):
         if hasattr(doc, "db_set"):
             try:
@@ -82,15 +78,6 @@ def _ensure_expense_request_reference(doc, expense_request: str | None, branch_r
                 setattr(doc, "imogi_expense_request", expense_request)
         else:
             setattr(doc, "imogi_expense_request", expense_request)
-
-    if branch_request and not doc.get("branch_expense_request"):
-        if hasattr(doc, "db_set"):
-            try:
-                doc.db_set("branch_expense_request", branch_request, update_modified=False)
-            except Exception:
-                setattr(doc, "branch_expense_request", branch_request)
-        else:
-            setattr(doc, "branch_expense_request", branch_request)
 
 
 def _validate_expense_request_link(doc, request, request_name: str) -> None:
@@ -106,75 +93,50 @@ def _validate_expense_request_link(doc, request, request_name: str) -> None:
 
 
 def _sync_expense_request_link(
-    doc, expense_request: str | None, branch_request: str | None, *, allowed_statuses: frozenset[str] | set[str] | None = None
+    doc, expense_request: str | None, *, allowed_statuses: frozenset[str] | set[str] | None = None
 ):
-    """Sync Payment Entry link to Expense Request or Branch Expense Request."""
-    if not expense_request and not branch_request:
+    """Sync Payment Entry link to Expense Request."""
+    if not expense_request:
         frappe.logger().info(f"[_sync_expense_request_link] No request for PE: {doc.name}")
         return None
 
-    frappe.logger().info(f"[_sync_expense_request_link] Syncing PE {doc.name} to ER {expense_request} / BER {branch_request}")
+    frappe.logger().info(f"[_sync_expense_request_link] Syncing PE {doc.name} to ER {expense_request}")
 
-    _ensure_expense_request_reference(doc, expense_request, branch_request)
+    _ensure_expense_request_reference(doc, expense_request)
 
-    if expense_request:
-        request = get_approved_expense_request(
-            expense_request, _("Payment Entry"), allowed_statuses=allowed_statuses
-        )
-        # ✅ Multiple PE per ER is allowed - no validation needed
-        # Link established via doc.imogi_expense_request field
-        # Status akan auto-update via query saat PE di-submit
-        frappe.logger().info(f"[_sync_expense_request_link] Successfully synced PE {doc.name} to ER {expense_request}")
-        return request
-
-    if branch_request:
-        request = frappe.get_doc("Branch Expense Request", branch_request)
-        if request.docstatus != 1:
-            frappe.throw(
-                _("Branch Expense Request {0} must be submitted before creating Payment Entry").format(branch_request),
-                title=_("Invalid Status")
-            )
-        # Link PE to Branch Expense Request
-        if hasattr(request, "linked_payment_entry"):
-            frappe.db.set_value(
-                "Branch Expense Request",
-                request.name,
-                {"linked_payment_entry": doc.name},
-            )
-        frappe.logger().info(f"[_sync_expense_request_link] Successfully linked PE {doc.name} to BER {branch_request}")
-        return request
-
-    return None
+    request = get_approved_expense_request(
+        expense_request, _("Payment Entry"), allowed_statuses=allowed_statuses
+    )
+    # ✅ Multiple PE per ER is allowed - no validation needed
+    # Link established via doc.imogi_expense_request field
+    # Status akan auto-update via query saat PE di-submit
+    frappe.logger().info(f"[_sync_expense_request_link] Successfully synced PE {doc.name} to ER {expense_request}")
+    return request
 
 
 def sync_expense_request_reference(doc, method=None):
-    """Persist Expense Request or Branch Expense Request reference from Payment Entry references.
+    """Persist Expense Request reference from Payment Entry references.
 
     This runs in validate hook to auto-populate the field before save.
     """
     # Skip if already set manually
-    if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
+    if doc.get("imogi_expense_request"):
         return
 
-    expense_request, branch_request = _resolve_expense_request(doc)
+    expense_request = _resolve_expense_request(doc)
 
     # Debug logging
-    frappe.logger().info(f"[Payment Entry validate] PE: {getattr(doc, 'name', 'NEW')}, Resolved ER: {expense_request}, BER: {branch_request}")
+    frappe.logger().info(f"[Payment Entry validate] PE: {getattr(doc, 'name', 'NEW')}, Resolved ER: {expense_request}")
     frappe.logger().info(f"[Payment Entry validate] References count: {len(doc.get('references') or [])}")
 
     if expense_request:
         doc.imogi_expense_request = expense_request
         frappe.logger().info(f"[Payment Entry validate] Set imogi_expense_request to {expense_request}")
 
-    if branch_request:
-        doc.branch_expense_request = branch_request
-        frappe.logger().info(f"[Payment Entry validate] Set branch_expense_request to {branch_request}")
-
 
 def on_change_expense_request(doc, method=None):
-    """Auto-populate amount and description from selected Expense Request or Branch Expense Request."""
+    """Auto-populate amount and description from selected Expense Request."""
     expense_request = doc.get("imogi_expense_request")
-    branch_request = doc.get("branch_expense_request")
 
     request = None
     request_type = None
@@ -187,17 +149,6 @@ def on_change_expense_request(doc, method=None):
         except frappe.DoesNotExistError:
             frappe.msgprint(
                 _("Expense Request {0} not found").format(expense_request),
-                alert=True,
-                indicator="orange"
-            )
-            return
-    elif branch_request:
-        try:
-            request = frappe.get_doc("Branch Expense Request", branch_request)
-            request_type = "Branch Expense Request"
-        except frappe.DoesNotExistError:
-            frappe.msgprint(
-                _("Branch Expense Request {0} not found").format(branch_request),
                 alert=True,
                 indicator="orange"
             )
@@ -235,42 +186,37 @@ def after_insert(doc, method=None):
 
 
 def on_update(doc, method=None):
-    """Ensure Expense Request or Branch Expense Request link syncs when set after insert."""
+    """Ensure Expense Request link syncs when set after insert."""
     if doc.get("docstatus") == 2:
         return
 
     # Skip if already linked
-    if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
+    if doc.get("imogi_expense_request"):
         return
 
-    expense_request, branch_request = _resolve_expense_request(doc)
+    expense_request = _resolve_expense_request(doc)
 
     # Debug logging
-    frappe.logger().info(f"[Payment Entry on_update] PE: {doc.name}, Resolved ER: {expense_request}, BER: {branch_request}")
+    frappe.logger().info(f"[Payment Entry on_update] PE: {doc.name}, Resolved ER: {expense_request}")
 
-    if not expense_request and not branch_request:
+    if not expense_request:
         return
 
     # Sync link to request (draft only)
-    _sync_expense_request_link(doc, expense_request, branch_request)
+    _sync_expense_request_link(doc, expense_request)
 
 
 
 
 
 def on_submit(doc, method=None):
-    expense_request, branch_request = _resolve_expense_request(doc)
+    expense_request = _resolve_expense_request(doc)
 
-    if not expense_request and not branch_request:
+    if not expense_request:
         return
 
     # Handle Expense Request
-    if expense_request:
-        _handle_expense_request_submit(doc, expense_request)
-
-    # Handle Branch Expense Request
-    if branch_request:
-        _handle_branch_expense_request_submit(doc, branch_request)
+    _handle_expense_request_submit(doc, expense_request)
 
     # Revert PI status to Unpaid if this is a Bank payment
     # This runs AFTER ERPNext native code updated PI to Paid
@@ -283,7 +229,7 @@ def _handle_expense_request_submit(doc, expense_request):
     # Sync link with validation for submit
     # Allow "Paid" status for re-submitting PE after previous PE was cancelled
     request = _sync_expense_request_link(
-        doc, expense_request, None, allowed_statuses=frozenset({"PI Created", "Paid"})
+        doc, expense_request, allowed_statuses=frozenset({"PI Created", "Paid"})
     )
     if not request:
         return
@@ -327,55 +273,6 @@ def _handle_expense_request_submit(doc, expense_request):
         )
 
 
-def _handle_branch_expense_request_submit(doc, branch_request):
-    """Handle Payment Entry submit for Branch Expense Request."""
-    # Sync link with validation
-    request = _sync_expense_request_link(doc, None, branch_request)
-    if not request:
-        return
-
-    # Check if has linked PI
-    has_purchase_invoice = getattr(request, "linked_purchase_invoice", None)
-    if has_purchase_invoice:
-        pi_docstatus = frappe.db.get_value("Purchase Invoice", has_purchase_invoice, "docstatus")
-        if pi_docstatus != 1:
-            frappe.throw(
-                _("Linked Purchase Invoice {0} must be submitted before creating Payment Entry.").format(
-                    has_purchase_invoice
-                )
-            )
-
-    branch_settings = get_branch_settings()
-    if branch_settings.enable_multi_branch and branch_settings.enforce_branch_on_links:
-        validate_branch_alignment(
-            getattr(doc, "branch", None),
-            getattr(request, "branch", None),
-            label=_("Payment Entry"),
-        )
-
-    # Check if payment is via Bank account
-    is_bank_payment = _is_bank_payment(doc)
-
-    if is_bank_payment:
-        # Bank payment - status tetap sampai bank transaction di-reconcile
-        frappe.logger().info(
-            f"[PE on_submit] PE {doc.name} submitted for BER {request.name} via Bank account. "
-            f"Status will remain unchanged until bank transaction is reconciled."
-        )
-        # Set custom field to mark this PE is waiting for bank reconciliation
-        doc.awaiting_bank_reconciliation = 1
-    else:
-        # Cash payment - update status to Paid immediately
-        if hasattr(request, "status"):
-            frappe.db.set_value(
-                "Branch Expense Request",
-                request.name,
-                {"status": "Paid"},
-            )
-        frappe.logger().info(
-            f"[PE on_submit] PE {doc.name} submitted for BER {request.name} via Cash. "
-            f"Status updated to Paid immediately."
-        )
 
 
 def _revert_pi_status_for_bank_payment(doc):
@@ -478,8 +375,8 @@ def before_delete(doc, method=None):
     This prevents LinkExistsError when deleting draft PE that is linked to ER.
     The actual link cleanup happens in on_trash.
     """
-    expense_request, branch_request = _resolve_expense_request(doc)
-    if expense_request or branch_request:
+    expense_request = _resolve_expense_request(doc)
+    if expense_request:
         doc.flags.ignore_links = True
 
 
@@ -510,7 +407,6 @@ def on_cancel(doc, method=None):
        - Hook on PI on_update_after_submit will sync ER status
     """
     expense_request_name = doc.get("imogi_expense_request")
-    branch_request_name = doc.get("branch_expense_request")
 
     # Update Expense Request workflow state and status based on PI status
     if expense_request_name:
@@ -530,28 +426,6 @@ def on_cancel(doc, method=None):
             f"[PE on_cancel] PE {doc.name} cancelled. "
             f"ER {expense_request_name} status updated to: {next_status} (based on PI status)"
         )
-
-    # Update Branch Expense Request
-    if branch_request_name:
-        if frappe.db.exists("Branch Expense Request", branch_request_name):
-            # Check if other PEs exist
-            other_pes = frappe.db.get_all(
-                "Payment Entry",
-                filters={
-                    "branch_expense_request": branch_request_name,
-                    "docstatus": 1,
-                    "name": ["!=", doc.name]
-                },
-                pluck="name"
-            )
-
-            # Update status based on remaining PEs
-            if not other_pes:
-                frappe.db.set_value(
-                    "Branch Expense Request",
-                    branch_request_name,
-                    {"linked_payment_entry": None}
-                )
 
 
 def _check_linked_to_printed_report(payment_entry) -> bool:
@@ -692,7 +566,7 @@ def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = N
 
     # Update Expense Request workflow state
     # Check if other submitted PEs still exist
-    expense_request, branch_request = _resolve_expense_request(original_pe)
+    expense_request = _resolve_expense_request(original_pe)
 
     if expense_request:
         # Get current status based on PI (will reflect updated outstanding after reversal)
@@ -711,7 +585,6 @@ def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = N
             f"[PE reversal] PE {payment_entry_name} reversed. "
             f"ER {expense_request} status updated to: {next_status} (based on PI status)"
         )
-        frappe.db.set_value("Branch Expense Request", branch_request, "linked_payment_entry", None)
 
     return reversal_pe.as_dict()
 
@@ -744,10 +617,4 @@ def on_trash(doc, method=None):
                 f"[PE trash] PE {doc.name} deleted. Updated ER {expense_request} status to {next_status}"
             )
 
-    # Handle Branch Expense Request
-    if branch_request:
-        if frappe.db.exists("Branch Expense Request", branch_request):
-            linked_pe = frappe.db.get_value("Branch Expense Request", branch_request, "linked_payment_entry")
-            if linked_pe == doc.name:
-                frappe.db.set_value("Branch Expense Request", branch_request, "linked_payment_entry", None)
-                frappe.db.commit()  # Commit immediately
+

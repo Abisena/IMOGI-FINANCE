@@ -1,7 +1,7 @@
 # Tax Invoice OCR Validation Before Submit
 
 ## Problem
-Ketika user submit Expense Request atau Branch Expense Request dengan Tax Invoice OCR Upload, tidak ada validasi untuk memastikan:
+Ketika user submit Expense Request dengan Tax Invoice OCR Upload, tidak ada validasi untuk memastikan:
 1. NPWP dari OCR sesuai dengan NPWP Supplier (Tax ID)
 2. DPP, PPN, dan PPnBM dari OCR sesuai dengan nilai yang dihitung dari expense request (dalam toleransi)
 
@@ -47,32 +47,6 @@ Saat ini belum ada validasi khusus untuk PPnBM karena jarang digunakan. Akan dit
 
 ### Expense Request
 **File:** `/imogi_finance/imogi_finance/doctype/expense_request/expense_request.py`
-
-```python
-def before_submit(self):
-    """Prepare for submission - resolve approval route and initialize state."""
-    self.validate_submit_permission()
-    
-    # Validate tax invoice OCR data if OCR is enabled and applicable
-    self.validate_tax_invoice_ocr_before_submit()
-    
-    # ... existing code ...
-```
-
-**New Method:**
-```python
-def validate_tax_invoice_ocr_before_submit(self):
-    """Validate tax invoice OCR data before submit: NPWP, DPP, PPN, PPnBM."""
-```
-
-### Branch Expense Request
-**File:** `/imogi_finance/imogi_finance/doctype/branch_expense_request/branch_expense_request.py`
-
-```python
-def before_submit(self):
-    # ... existing validations ...
-    
-    # Validate tax invoice OCR data if OCR is enabled and applicable
     self.validate_tax_invoice_ocr_before_submit()
     
     # ... existing code ...
@@ -197,7 +171,6 @@ Validasi akan di-skip jika:
 
 ## Files Modified
 1. `/imogi_finance/imogi_finance/doctype/expense_request/expense_request.py`
-2. `/imogi_finance/imogi_finance/doctype/branch_expense_request/branch_expense_request.py`
 
 ## Date
 January 16, 2026

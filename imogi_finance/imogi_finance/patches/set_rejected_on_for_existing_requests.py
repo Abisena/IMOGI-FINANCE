@@ -2,7 +2,7 @@ import frappe
 
 
 def execute():
-    """Backfill rejected_on for existing Expense Request and Branch Expense Request.
+    """Backfill rejected_on for existing Expense Request.
 
     For historical documents that already have status Rejected but no rejected_on
     value yet, we approximate the rejection time using the last modified
@@ -10,7 +10,7 @@ def execute():
     state for audit purposes.
     """
 
-    for doctype in ("Expense Request", "Branch Expense Request"):
+    for doctype in ("Expense Request",):
         if not frappe.db.table_exists(doctype):
             continue
 

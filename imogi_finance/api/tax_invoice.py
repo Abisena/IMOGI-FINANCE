@@ -33,13 +33,6 @@ def verify_expense_request_tax_invoice(er_name: str, force: bool = False):
 
 
 @frappe.whitelist()
-def verify_branch_expense_request_tax_invoice(ber_name: str, force: bool = False):
-    doc = frappe.get_doc("Branch Expense Request", ber_name)
-    frappe.only_for((roles.ACCOUNTS_MANAGER, roles.SYSTEM_MANAGER))
-    return verify_tax_invoice(doc, doctype="Branch Expense Request", force=bool(force))
-
-
-@frappe.whitelist()
 def verify_sales_invoice_tax_invoice(si_name: str, force: bool = False):
     doc = frappe.get_doc("Sales Invoice", si_name)
     frappe.only_for((roles.ACCOUNTS_MANAGER, roles.ACCOUNTS_USER, roles.SYSTEM_MANAGER))

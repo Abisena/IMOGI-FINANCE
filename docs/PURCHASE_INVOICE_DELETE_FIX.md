@@ -50,7 +50,7 @@ def before_delete(doc, method=None):
     This prevents LinkExistsError when deleting draft PI that is linked to ER.
     The actual link cleanup happens in on_trash.
     """
-    if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
+    if doc.get("imogi_expense_request"):
         doc.flags.ignore_links = True
 ```
 
@@ -235,4 +235,3 @@ Add `ignore_links` flag and clear link on deletion.
 - This fix only affects **draft** documents (docstatus = 0)
 - Submitted documents still require proper cancellation workflow
 - The bidirectional link between PI/PE and ER is maintained for submitted docs
-- Similar pattern already applied to both Branch Expense Request workflows
