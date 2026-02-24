@@ -125,6 +125,7 @@ class AdvancedExpenseRequest(Document):
         """All business rule validation."""
         self._set_requester_to_creator()
         self._initialize_status()
+        self._auto_set_approval_cost_center()
         self.validate_amounts()
         self.validate_items_have_cost_center()
         self.apply_branch_defaults()
@@ -576,6 +577,9 @@ class AdvancedExpenseRequest(Document):
     def _resolve_approval_route(self) -> tuple[dict, dict | None, bool]:
         """Get approval route using approval_cost_center."""
         try:
+            # Ensure approval_cost_center is populated before resolving
+            if not self.approval_cost_center:
+                self._auto_set_approval_cost_center()
             setting = get_active_setting_meta(self.approval_cost_center)
             route = get_approval_route(
                 self.approval_cost_center,
@@ -586,6 +590,22 @@ class AdvancedExpenseRequest(Document):
             return route or {}, setting, False
         except Exception:
             return {}, None, True
+
+    def _auto_set_approval_cost_center(self) -> None:
+        """Auto-populate approval_cost_center from the default Expense Approval Setting.
+
+        Looks for an active EAS with is_default_for_multi_cc=1. If found, sets
+        self.approval_cost_center to its cost_center value.
+        """
+        if self.approval_cost_center:
+            return
+        result = frappe.db.get_value(
+            "Expense Approval Setting",
+            {"is_default_for_multi_cc": 1, "is_active": 1},
+            "cost_center",
+        )
+        if result:
+            self.approval_cost_center = result
 
     def _ensure_route_ready(self, route: dict, failed: bool = False) -> None:
         """Validate route is ready; require at least one configured approver."""
