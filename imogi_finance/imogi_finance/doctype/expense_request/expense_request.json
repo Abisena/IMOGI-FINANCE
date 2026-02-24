@@ -20,16 +20,9 @@
     "supplier",
     "supplier_tax_id",
     "column_break_supplier",
-    "supplier_invoice_no",
-    "supplier_invoice_date",
     "currency",
     "allocation_section",
     "cost_center",
-    "project",
-    "column_break_allocation",
-    "branch",
-    "allocation_mode",
-    "internal_charge_request",
     "tab_items",
     "items",
     "totals_section",
@@ -103,7 +96,18 @@
     "submit_on",
     "level_1_rejected_on",
     "level_2_rejected_on",
-    "level_3_rejected_on"
+    "level_3_rejected_on",
+    "tab_other",
+    "other_invoice_section",
+    "supplier_invoice_no",
+    "column_break_other_inv",
+    "supplier_invoice_date",
+    "other_allocation_section",
+    "project",
+    "allocation_mode",
+    "column_break_allocation",
+    "branch",
+    "internal_charge_request"
   ],
   "fields": [
     {
@@ -160,8 +164,8 @@
     {
       "fieldname": "supplier_section",
       "fieldtype": "Section Break",
-      "label": "Supplier Information",
-      "description": "Vendor details and invoice reference"
+      "label": "Supplier",
+      "description": "Informasi vendor/pemasok"
     },
     {
       "fieldname": "supplier",
@@ -210,8 +214,8 @@
     {
       "fieldname": "allocation_section",
       "fieldtype": "Section Break",
-      "label": "Cost Allocation",
-      "description": "Define how costs will be allocated to cost centers and projects"
+      "label": "Cost Center",
+      "description": "Cost center utama untuk alokasi biaya ini"
     },
     {
       "fieldname": "cost_center",
@@ -773,6 +777,27 @@
       "hidden": 1,
       "label": "L3 Rejected On",
       "read_only": 1
+    },
+    {
+      "fieldname": "tab_other",
+      "fieldtype": "Tab Break",
+      "label": "Other"
+    },
+    {
+      "fieldname": "other_invoice_section",
+      "fieldtype": "Section Break",
+      "label": "Referensi Invoice",
+      "description": "Nomor dan tanggal invoice dari supplier (opsional)"
+    },
+    {
+      "fieldname": "column_break_other_inv",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "other_allocation_section",
+      "fieldtype": "Section Break",
+      "label": "Project & Alokasi",
+      "description": "Proyek, cabang, dan mode alokasi biaya (opsional)"
     }
   ],
   "index_web_pages_for_search": 1,
