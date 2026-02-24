@@ -292,12 +292,6 @@ class AdvancedExpenseRequest(Document):
             ppn_template = getattr(self, "ppn_template", None)
             if not ppn_template:
                 frappe.throw("PPN Template wajib dipilih (Tab Tax) karena Apply PPN aktif.")
-            try:
-                from imogi_finance.settings.utils import get_vat_input_accounts
-                company = self._get_company()
-                vat_accounts = get_vat_input_accounts(company)
-            except frappe.ValidationError as e:
-                frappe.throw(str(e))
             ppn_rate = self._get_ppn_rate()
             total_ppn = total_expense * ppn_rate / 100
 
@@ -308,15 +302,16 @@ class AdvancedExpenseRequest(Document):
 
         variance_account = None
         if variance != 0:
-            try:
-                from imogi_finance.settings.utils import get_gl_account
-                from imogi_finance.settings.gl_purposes import PPN_VARIANCE
-                company = self._get_company()
-                variance_account = get_gl_account(PPN_VARIANCE, company=company, required=True)
-            except frappe.DoesNotExistError:
-                frappe.throw("GL Account Mapping untuk purpose 'PPN_VARIANCE' belum ada. Tambahkan di GL Purposes/Mapping.")
-            except Exception as e:
-                frappe.throw(str(e))
+            company = self._get_company()
+            if company:
+                try:
+                    from imogi_finance.settings.utils import get_gl_account
+                    from imogi_finance.settings.gl_purposes import PPN_VARIANCE
+                    variance_account = get_gl_account(PPN_VARIANCE, company=company, required=True)
+                except frappe.DoesNotExistError:
+                    frappe.throw("GL Account Mapping untuk purpose 'PPN_VARIANCE' belum ada. Tambahkan di GL Purposes/Mapping.")
+                except Exception as e:
+                    frappe.throw(str(e))
 
         ppn_var_rows = [
             r for r in items
@@ -682,7 +677,12 @@ class AdvancedExpenseRequest(Document):
     # ===================== Utility =====================
 
     def _get_company(self) -> str | None:
-        """Derive company from approval_cost_center."""
+        """Derive company from the doc's company field or approval_cost_center."""
+        # First try direct company field on the doc
+        company = getattr(self, "company", None)
+        if company:
+            return company
+        # Fallback: derive from approval_cost_center
         approval_cc = getattr(self, "approval_cost_center", None)
         if approval_cc:
             return frappe.db.get_value("Cost Center", approval_cc, "company")
