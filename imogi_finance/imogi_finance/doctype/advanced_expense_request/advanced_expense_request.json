@@ -770,7 +770,7 @@
     {
       "group": "Budget",
       "link_doctype": "Budget Control Entry",
-      "link_fieldname": "source_document"
+      "link_fieldname": "ref_name"
     }
   ],
   "module": "Imogi Finance",
