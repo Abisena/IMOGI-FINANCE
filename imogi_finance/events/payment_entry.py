@@ -5,6 +5,7 @@ from imogi_finance.branching import get_branch_settings, validate_branch_alignme
 from imogi_finance.events.utils import (
     get_approved_expense_request,
     get_cancel_updates,
+    get_er_doctype,
     get_expense_request_links,
     get_expense_request_status,
 )
@@ -180,8 +181,9 @@ def on_change_expense_request(doc, method=None):
 
     if expense_request:
         try:
-            request = frappe.get_doc("Expense Request", expense_request)
-            request_type = "Expense Request"
+            _er_doctype = get_er_doctype(expense_request) or "Expense Request"
+            request = frappe.get_doc(_er_doctype, expense_request)
+            request_type = _er_doctype
         except frappe.DoesNotExistError:
             frappe.msgprint(
                 _("Expense Request {0} not found").format(expense_request),
@@ -412,8 +414,9 @@ def _revert_pi_status_for_bank_payment(doc):
             # Also update Expense Request status back to PI Created
             expense_request = frappe.db.get_value("Purchase Invoice", pi_name, "imogi_expense_request")
             if expense_request:
+                _er_doctype = get_er_doctype(expense_request) or "Expense Request"
                 frappe.db.set_value(
-                    "Expense Request",
+                    _er_doctype,
                     expense_request,
                     {"workflow_state": "PI Created", "status": "PI Created"},
                     update_modified=False
@@ -512,11 +515,12 @@ def on_cancel(doc, method=None):
     # Update Expense Request workflow state and status based on PI status
     if expense_request_name:
         # Get current status based on PI (will reflect updated outstanding after cancel)
+        _er_doctype = get_er_doctype(expense_request_name) or "Expense Request"
         request_links = get_expense_request_links(expense_request_name)
         next_status = get_expense_request_status(request_links)
 
         frappe.db.set_value(
-            "Expense Request",
+            _er_doctype,
             expense_request_name,
             {"workflow_state": next_status, "status": next_status},
             update_modified=False
@@ -692,11 +696,12 @@ def reverse_payment_entry(payment_entry_name: str, reversal_date: str | None = N
 
     if expense_request:
         # Get current status based on PI (will reflect updated outstanding after reversal)
+        _er_doctype = get_er_doctype(expense_request) or "Expense Request"
         request_links = get_expense_request_links(expense_request)
         next_status = get_expense_request_status(request_links)
 
         frappe.db.set_value(
-            "Expense Request",
+            _er_doctype,
             expense_request,
             {"workflow_state": next_status, "status": next_status},
             update_modified=False
@@ -717,12 +722,13 @@ def on_trash(doc, method=None):
 
     # Handle Expense Request - clear link and update workflow state and status
     if expense_request:
-        if frappe.db.exists("Expense Request", expense_request):
+        _er_doctype = get_er_doctype(expense_request)
+        if _er_doctype:
             updates = {}
 
             # Clear linked_payment_entry if it matches (THIS IS THE KEY FIX)
             # This field is what causes LinkExistsError
-            current_linked = frappe.db.get_value("Expense Request", expense_request, "linked_payment_entry")
+            current_linked = frappe.db.get_value(_er_doctype, expense_request, "linked_payment_entry")
             if current_linked == doc.name:
                 updates["linked_payment_entry"] = None
 
@@ -732,7 +738,7 @@ def on_trash(doc, method=None):
             updates["workflow_state"] = next_status
             updates["status"] = next_status  # Update status field juga
 
-            frappe.db.set_value("Expense Request", expense_request, updates)
+            frappe.db.set_value(_er_doctype, expense_request, updates)
             frappe.db.commit()  # Commit immediately to ensure link is cleared
             frappe.logger().info(
                 f"[PE trash] PE {doc.name} deleted. Updated ER {expense_request} status to {next_status}"

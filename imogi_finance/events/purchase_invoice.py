@@ -7,6 +7,7 @@ from imogi_finance.accounting import PURCHASE_INVOICE_ALLOWED_STATUSES, PURCHASE
 from imogi_finance.events.utils import (
     get_approved_expense_request,
     get_cancel_updates,
+    get_er_doctype,
     get_expense_request_links,
     get_expense_request_status,
 )
@@ -35,26 +36,28 @@ def sync_expense_request_status_from_pi(doc, method=None):
     branch_request = doc.get("branch_expense_request")
 
     # Handle Expense Request
-    if expense_request and frappe.db.exists("Expense Request", expense_request):
-        # Get current ER status based on PI status
-        request_links = get_expense_request_links(expense_request)
-        new_status = get_expense_request_status(request_links)
+    if expense_request:
+        _er_doctype = get_er_doctype(expense_request)
+        if _er_doctype:
+            # Get current ER status based on PI status
+            request_links = get_expense_request_links(expense_request)
+            new_status = get_expense_request_status(request_links)
 
-        # Get current status
-        current_status = frappe.db.get_value("Expense Request", expense_request, "status")
+            # Get current status
+            current_status = frappe.db.get_value(_er_doctype, expense_request, "status")
 
-        # Update ER status if changed
-        if current_status != new_status:
-            frappe.db.set_value(
-                "Expense Request",
-                expense_request,
-                {"workflow_state": new_status, "status": new_status},
-                update_modified=False
-            )
-            frappe.logger().info(
-                f"[PI status sync] PI {doc.name} status changed to {doc.status}. "
-                f"Updated ER {expense_request} status: {current_status} → {new_status}"
-            )
+            # Update ER status if changed
+            if current_status != new_status:
+                frappe.db.set_value(
+                    _er_doctype,
+                    expense_request,
+                    {"workflow_state": new_status, "status": new_status},
+                    update_modified=False
+                )
+                frappe.logger().info(
+                    f"[PI status sync] PI {doc.name} status changed to {doc.status}. "
+                    f"Updated ER {expense_request} status: {current_status} → {new_status}"
+                )
 
     # Handle Branch Expense Request (if needed in future)
     if branch_request and frappe.db.exists("Branch Expense Request", branch_request):
@@ -778,7 +781,7 @@ def _handle_expense_request_submit(doc, request_name):
     # Update workflow state to PI Created
     # Status akan auto-update via query karena PI.imogi_expense_request sudah set
     frappe.db.set_value(
-        "Expense Request",
+        request.doctype,
         request.name,
         {"workflow_state": "PI Created", "status": "PI Created", "pending_purchase_invoice": None},
     )
@@ -899,10 +902,11 @@ def on_cancel(doc, method=None):
     # Update Expense Request workflow state and status
     # After PI cancel, status should revert to Approved (no PI submitted anymore)
     if expense_request_name:
+        _er_doctype = get_er_doctype(expense_request_name) or "Expense Request"
         request_links = get_expense_request_links(expense_request_name)
         next_status = get_expense_request_status(request_links)
         frappe.db.set_value(
-            "Expense Request",
+            _er_doctype,
             expense_request_name,
             {"workflow_state": next_status, "status": next_status, "pending_purchase_invoice": None},
             update_modified=False
@@ -925,7 +929,8 @@ def on_trash(doc, method=None):
 
     # Handle Expense Request
     if expense_request:
-        if frappe.db.exists("Expense Request", expense_request):
+        _er_doctype = get_er_doctype(expense_request)
+        if _er_doctype:
             # Clear BOTH linked and pending fields to break the link
             request_links = get_expense_request_links(expense_request, include_pending=True)
             updates = {}
@@ -936,7 +941,7 @@ def on_trash(doc, method=None):
 
             # Clear linked_purchase_invoice if it matches (THIS IS THE FIX)
             # This field is what causes LinkExistsError
-            current_linked = frappe.db.get_value("Expense Request", expense_request, "linked_purchase_invoice")
+            current_linked = frappe.db.get_value(_er_doctype, expense_request, "linked_purchase_invoice")
             if current_linked == doc.name:
                 updates["linked_purchase_invoice"] = None
 
@@ -947,7 +952,7 @@ def on_trash(doc, method=None):
                 updates["workflow_state"] = next_status
                 updates["status"] = next_status  # Update status field juga
 
-                frappe.db.set_value("Expense Request", expense_request, updates)
+                frappe.db.set_value(_er_doctype, expense_request, updates)
                 frappe.db.commit()  # Commit immediately to ensure link is cleared
                 frappe.logger().info(
                     f"[PI trash] PI {doc.name} deleted. Updated ER {expense_request} status to {next_status}"

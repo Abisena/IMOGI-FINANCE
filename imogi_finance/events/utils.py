@@ -10,11 +10,29 @@ EXPENSE_REQUEST_LINK_FIELDS = (
 )
 EXPENSE_REQUEST_PENDING_FIELDS = ("pending_purchase_invoice",)
 
+# All expense-request-style doctypes, in lookup priority order
+_ER_DOCTYPES = ("Advanced Expense Request", "Expense Request")
+
+
+def get_er_doctype(request_name: str) -> str | None:
+    """Auto-detect doctype for an expense request name (supports ERMC and legacy ER).
+
+    Checks "Advanced Expense Request" first, then "Expense Request".
+    Returns the matching doctype string, or None if not found in either.
+    """
+    for doctype in _ER_DOCTYPES:
+        if frappe.db.exists(doctype, request_name):
+            return doctype
+    return None
+
 
 def get_approved_expense_request(
     request_name: str, target_label: str, allowed_statuses: frozenset[str] | set[str] | None = None
 ):
-    request = frappe.get_doc("Expense Request", request_name)
+    source_doctype = get_er_doctype(request_name)
+    if not source_doctype:
+        frappe.throw(_("Expense Request {0} not found").format(request_name))
+    request = frappe.get_doc(source_doctype, request_name)
     allowed_statuses = allowed_statuses or {"Approved", "PI Created"}
     if request.docstatus != 1 or request.status not in allowed_statuses:
         frappe.throw(
