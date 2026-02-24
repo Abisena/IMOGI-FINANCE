@@ -41,7 +41,6 @@
       "in_list_view": 1,
       "label": "Cost Center",
       "options": "Cost Center",
-      "reqd": 1,
       "columns": 2,
       "description": "Cost center for this line item (used for budget allocation)"
     },
