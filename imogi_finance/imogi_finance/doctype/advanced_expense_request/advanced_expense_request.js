@@ -718,6 +718,10 @@ frappe.ui.form.on('Advanced Expense Request', {
       );
     }
 
+    if (isSubmitted && frm.doc.status === 'Pending Review') {
+      await maybeRenderApprovalButtons(frm);
+    }
+
     if (isSubmitted && frm.doc.status === 'Approved' && !frm.doc.linked_purchase_invoice) {
       await maybeRenderPurchaseInvoiceButton(frm);
     }
@@ -845,6 +849,68 @@ frappe.ui.form.on('Advanced Expense Request Item', {
     updateTotalsSummary(frm);
   },
 });
+
+async function maybeRenderApprovalButtons(frm) {
+  // Show Approve/Reject buttons only to the designated approver(s)
+  const currentUser = frappe.session.user;
+  const approvers = [frm.doc.level_1_user, frm.doc.level_2_user, frm.doc.level_3_user].filter(Boolean);
+
+  // System Manager or Expense Approver role can always approve
+  // Also show if user is explicitly named as an approver in the route
+  const isPrivileged = frappe.user.has_role('System Manager') || frappe.user.has_role('Expense Approver');
+  if (!isPrivileged && approvers.length > 0 && !approvers.includes(currentUser)) {
+    return;
+  }
+  // If no approvers set (old doc before fix) show only to privileged roles
+  if (!isPrivileged && approvers.length === 0) {
+    return;
+  }
+
+  const approveBtn = frm.add_custom_button(__('Approve'), async () => {
+    frappe.confirm(
+      __('Are you sure you want to approve this expense request?'),
+      async () => {
+        try {
+          await frappe.xcall('frappe.model.workflow.apply_workflow', {
+            doc: frm.doc,
+            action: 'Approve',
+          });
+          frm.reload_doc();
+        } catch (error) {
+          frappe.msgprint({
+            title: __('Error'),
+            message: error?.message || __('Failed to approve'),
+            indicator: 'red',
+          });
+        }
+      }
+    );
+  });
+  approveBtn.addClass('btn-success');
+
+  frm.add_custom_button(__('Reject'), async () => {
+    frappe.prompt(
+      { fieldtype: 'Small Text', fieldname: 'reason', label: __('Reason for Rejection'), reqd: 1 },
+      async (values) => {
+        try {
+          await frappe.xcall('frappe.model.workflow.apply_workflow', {
+            doc: frm.doc,
+            action: 'Reject',
+          });
+          frm.reload_doc();
+        } catch (error) {
+          frappe.msgprint({
+            title: __('Error'),
+            message: error?.message || __('Failed to reject'),
+            indicator: 'red',
+          });
+        }
+      },
+      __('Reject Expense Request'),
+      __('Reject')
+    );
+  });
+}
 
 async function maybeRenderPurchaseInvoiceButton(frm) {
   if (frm.doc.linked_purchase_invoice) {
