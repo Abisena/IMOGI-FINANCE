@@ -872,14 +872,11 @@ async function maybeRenderApprovalButtons(frm) {
       async () => {
         try {
           const r = await frappe.call({
-            method: 'frappe.model.workflow.apply_workflow',
-            args: { doc: frm.doc, action: 'Approve' },
+            method: 'imogi_finance.imogi_finance.doctype.advanced_expense_request.advanced_expense_request.apply_expense_action',
+            args: { docname: frm.doc.name, action: 'Approve' },
             freeze: true,
             freeze_message: __('Approving...'),
           });
-          if (r && r.message) {
-            frappe.model.sync(r.message);
-          }
           frm.reload_doc();
         } catch (error) {
           frappe.msgprint({
@@ -899,14 +896,11 @@ async function maybeRenderApprovalButtons(frm) {
       async (values) => {
         try {
           const r = await frappe.call({
-            method: 'frappe.model.workflow.apply_workflow',
-            args: { doc: frm.doc, action: 'Reject' },
+            method: 'imogi_finance.imogi_finance.doctype.advanced_expense_request.advanced_expense_request.apply_expense_action',
+            args: { docname: frm.doc.name, action: 'Reject' },
             freeze: true,
             freeze_message: __('Rejecting...'),
           });
-          if (r && r.message) {
-            frappe.model.sync(r.message);
-          }
           frm.reload_doc();
         } catch (error) {
           frappe.msgprint({

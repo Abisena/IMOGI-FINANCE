@@ -711,3 +711,63 @@ class AdvancedExpenseRequest(Document):
             except Exception:
                 pass
         return previous
+
+@frappe.whitelist()
+def apply_expense_action(docname: str, action: str) -> dict:
+    """Apply Approve or Reject directly without depending on Frappe workflow engine.
+
+    This bypasses frappe.model.workflow.apply_workflow which requires the Workflow
+    document to be configured in the database (only synced on bench migrate).
+    """
+    if action not in ("Approve", "Reject"):
+        frappe.throw(_("Invalid action: {0}").format(action), title=_("Invalid Action"))
+
+    doc = frappe.get_doc("Advanced Expense Request", docname)
+
+    if doc.docstatus != 1:
+        frappe.throw(_("Only submitted documents can be approved or rejected."))
+
+    if doc.workflow_state != "Pending Review" and doc.status != "Pending Review":
+        frappe.throw(
+            _("This document is not in Pending Review state. Current state: {0}").format(
+                doc.workflow_state or doc.status
+            )
+        )
+
+    # Permission check: must be a designated approver, System Manager, or Expense Approver
+    current_user = frappe.session.user
+    approvers = [doc.level_1_user, doc.level_2_user, doc.level_3_user]
+    approvers = [u for u in approvers if u]
+    has_role = frappe.user.has_role("System Manager") or frappe.user.has_role("Expense Approver")
+
+    if not has_role and approvers and current_user not in approvers:
+        frappe.throw(_("You are not authorized to {0} this request.").format(action), title=_("Not Authorized"))
+
+    next_state = "Approved" if action == "Approve" else "Rejected"
+
+    # Run before_workflow_action hook (validates approver, level, etc.)
+    try:
+        doc.before_workflow_action(action, next_state=next_state)
+    except frappe.ValidationError:
+        raise
+    except Exception as e:
+        frappe.throw(str(e))
+
+    # Update state fields
+    doc.db_set("workflow_state", next_state, update_modified=True)
+    doc.db_set("status", next_state, update_modified=True)
+    doc.workflow_state = next_state
+    doc.status = next_state
+
+    # Run on_workflow_action hook (records timestamps, budget ops, etc.)
+    try:
+        doc.on_workflow_action(action, next_state=next_state)
+    except frappe.ValidationError:
+        raise
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), f"on_workflow_action error: {docname}")
+        frappe.throw(str(e))
+
+    frappe.db.commit()
+
+    return {"status": next_state, "action": action, "docname": docname}
