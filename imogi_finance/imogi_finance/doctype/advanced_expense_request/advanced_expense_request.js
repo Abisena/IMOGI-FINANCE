@@ -718,11 +718,11 @@ frappe.ui.form.on('Advanced Expense Request', {
       );
     }
 
-    if (isSubmitted && frm.doc.status === 'Pending Review') {
+    if (isSubmitted && (frm.doc.workflow_state === 'Pending Review' || frm.doc.status === 'Pending Review')) {
       await maybeRenderApprovalButtons(frm);
     }
 
-    if (isSubmitted && frm.doc.status === 'Approved' && !frm.doc.linked_purchase_invoice) {
+    if (isSubmitted && (frm.doc.workflow_state === 'Approved' || frm.doc.status === 'Approved') && !frm.doc.linked_purchase_invoice) {
       await maybeRenderPurchaseInvoiceButton(frm);
     }
   },
@@ -871,10 +871,15 @@ async function maybeRenderApprovalButtons(frm) {
       __('Are you sure you want to approve this expense request?'),
       async () => {
         try {
-          await frappe.xcall('frappe.model.workflow.apply_workflow', {
-            doc: frm.doc,
-            action: 'Approve',
+          const r = await frappe.call({
+            method: 'frappe.model.workflow.apply_workflow',
+            args: { doc: frm.doc, action: 'Approve' },
+            freeze: true,
+            freeze_message: __('Approving...'),
           });
+          if (r && r.message) {
+            frappe.model.sync(r.message);
+          }
           frm.reload_doc();
         } catch (error) {
           frappe.msgprint({
@@ -893,10 +898,15 @@ async function maybeRenderApprovalButtons(frm) {
       { fieldtype: 'Small Text', fieldname: 'reason', label: __('Reason for Rejection'), reqd: 1 },
       async (values) => {
         try {
-          await frappe.xcall('frappe.model.workflow.apply_workflow', {
-            doc: frm.doc,
-            action: 'Reject',
+          const r = await frappe.call({
+            method: 'frappe.model.workflow.apply_workflow',
+            args: { doc: frm.doc, action: 'Reject' },
+            freeze: true,
+            freeze_message: __('Rejecting...'),
           });
+          if (r && r.message) {
+            frappe.model.sync(r.message);
+          }
           frm.reload_doc();
         } catch (error) {
           frappe.msgprint({
