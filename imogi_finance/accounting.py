@@ -174,18 +174,38 @@ def _update_request_purchase_invoice_links(
 
 @frappe.whitelist()
 def create_purchase_invoice_from_request(expense_request_name: str) -> str:
-    """Create a Purchase Invoice from an Expense Request and return its name."""
-    request = frappe.get_doc("Expense Request", expense_request_name)
+    """Create a Purchase Invoice from an Expense Request or Advanced Expense Request."""
+    # Auto-detect which doctype holds this document
+    source_doctype = None
+    for _dt in ("Expense Request", "Advanced Expense Request"):
+        if frappe.db.exists(_dt, expense_request_name):
+            source_doctype = _dt
+            break
+    if not source_doctype:
+        frappe.throw(_("Expense Request {0} not found.").format(expense_request_name))
+
+    request = frappe.get_doc(source_doctype, expense_request_name)
     _validate_request_ready_for_link(request)
     _validate_request_type(request, PURCHASE_INVOICE_REQUEST_TYPES, _("Purchase Invoice"))
     _validate_no_existing_purchase_invoice(request)
 
-    company = frappe.db.get_value("Cost Center", request.cost_center, "company")
+    # Resolve a single cost center for company/branch lookup.
+    # Advanced Expense Request has per-item cost_centers; use approval_cost_center or first item.
+    request_cost_center = (
+        getattr(request, "cost_center", None)
+        or getattr(request, "approval_cost_center", None)
+        or next(
+            (getattr(it, "cost_center", None) for it in (getattr(request, "items", []) or [])),
+            None,
+        )
+    )
+
+    company = frappe.db.get_value("Cost Center", request_cost_center, "company")
     if not company:
         frappe.throw(_("Unable to resolve company from the selected Cost Center."))
 
     branch = resolve_branch(
-        company=company, cost_center=request.cost_center, explicit_branch=getattr(request, "branch", None)
+        company=company, cost_center=request_cost_center, explicit_branch=getattr(request, "branch", None)
     )
 
     request_items = getattr(request, "items", []) or []
@@ -197,7 +217,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     _sync_request_amounts(request, total_amount, expense_accounts)
 
     settings = get_settings()
-    sync_tax_invoice_upload(request, "Expense Request", save=False)
+    sync_tax_invoice_upload(request, source_doctype, save=False)
 
     enforce_mode = (settings.get("enforce_mode") or "").lower()
     if settings.get("enable_budget_lock") and enforce_mode in {"approval only", "both"}:
@@ -415,8 +435,8 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             "description": getattr(item, "asset_description", None)
             or getattr(item, "description", None),
             "expense_account": pi_expense_account,
-            "cost_center": request.cost_center,
-            "project": request.project,
+            "cost_center": getattr(item, "cost_center", None) or request_cost_center,
+            "project": getattr(item, "project", None) or request.project,
             "qty": qty,
             "uom": "Nos",  # Default UOM for expense items
             "rate": item_net_amount / qty if qty > 0 else item_net_amount,
