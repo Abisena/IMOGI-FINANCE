@@ -247,13 +247,19 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     has_mixed_pph = 0 < items_with_pph < total_items  # Some but not all items have Apply WHT
 
     is_ppn_applicable = bool(getattr(request, "is_ppn_applicable", 0))
-    # CRITICAL: apply_pph is determined by item-level flags (whether any item has Apply WHT)
-    # Header Apply WHT checkbox is only for determining which category to use
+    # apply_pph is first determined by item-level flags; header-level fallback below
     apply_ppn = is_ppn_applicable
     apply_pph = items_with_pph > 0  # Apply PPh if ANY item has Apply WHT checked
 
-    # Header checkbox indicates whether to use ER's category or supplier's category
+    # Header checkbox - also used as fallback when no items have item-level WHT
     header_apply_wht = bool(getattr(request, "is_pph_applicable", 0))
+
+    # FALLBACK: If header PPh enabled but no items have item-level WHT checked,
+    # treat all non-variance items as subject to WHT (header-level PPh mode).
+    # This matches how the ER/Advanced ER controller calculates total_pph.
+    is_header_level_pph = header_apply_wht and not has_item_level_pph
+    if is_header_level_pph:
+        apply_pph = True
 
     # Log tax configuration for debugging
     frappe.logger().info(
@@ -494,6 +500,13 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 frappe.logger().info(
                     f"[PPh ITEM] PI item {idx} ({expense_account}): Set apply_tds=1 (is_pph_applicable=1)"
                 )
+            elif is_header_level_pph and not getattr(item, "is_variance_item", 0):
+                # Header-level PPh mode: all non-variance items are subject to WHT.
+                # Mirrors how ER controller computes total_pph when no item has Apply WHT.
+                pi_item_doc.apply_tds = 1
+                frappe.logger().info(
+                    f"[PPh ITEM] PI item {idx} ({expense_account}): Set apply_tds=1 (header-level PPh)"
+                )
             else:
                 # EXPLICITLY set to 0 for items WITHOUT Apply WHT
                 # Without this, Frappe defaults to PI-level apply_tds (which is 1)
@@ -542,12 +555,17 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
             # If per-item PPh, sum from item_wise_pph_detail
             pi.withholding_tax_base_amount = sum(float(v) for v in item_wise_pph_detail.values())
         else:
-            # If header-level PPh, use total of expense items only (exclude variance)
-            # Variance item is always last if it exists
-            items_count = len(request_items)  # Original items without variance
-            pi.withholding_tax_base_amount = sum(
-                flt(pi.items[i].get("amount", 0)) for i in range(items_count)
-            )
+            # Header-level PPh: prefer explicit pph_base_amount from the request header,
+            # fall back to sum of all non-variance item amounts.
+            header_pph_base = flt(getattr(request, "pph_base_amount", 0) or 0)
+            if is_header_level_pph and header_pph_base:
+                pi.withholding_tax_base_amount = header_pph_base
+            else:
+                # Variance item is always last if it exists
+                items_count = len(request_items)  # Original items without variance
+                pi.withholding_tax_base_amount = sum(
+                    flt(pi.items[i].get("amount", 0)) for i in range(items_count)
+                )
 
     # Set PPh details after all items are added
     if item_wise_pph_detail:
