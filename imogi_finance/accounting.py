@@ -645,7 +645,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     pi.append("taxes", {
                         "charge_type": "Actual",
                         "account_head": wht_account,
-                        "description": f"Tax Withheld - {request.pph_type}",
+                        "description": f"Tax Withheld - {request.pph_type} ({_rate}% x {_pph_base:,.0f})",
                         "rate": _rate,
                         "tax_amount": _pph_amount,
                         "base_tax_amount": _pph_amount,
