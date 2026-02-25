@@ -638,13 +638,20 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                         or frappe.get_cached_value("Company", pi.company, "cost_center")
                     )
 
-                    # Use "On Net Total" when pph_base covers the whole document (header-level PPh).
-                    # Frappe will compute tax_amount = rate% × net_total, which preserves the
-                    # Tax Rate column in the UI (ERPNext resets rate=0 for "Actual" charge type).
-                    # Fall back to "Actual" only when item-wise partial base is used so the
-                    # amount stays exact; in that case describe the rate in the description.
-                    if not item_wise_pph_detail:
-                        # Header-level PPh: pph_base ≈ net_total → "On Net Total" is correct
+                    # Determine whether pph_base covers the entire net total of the PI.
+                    # Sum item amounts directly from pi.items (pi.net_total not yet computed
+                    # at this point since insert() hasn't run).
+                    _pi_net_total = sum(flt(getattr(_i, "amount", 0)) for _i in (pi.items or []))
+
+                    # Use "On Net Total" when PPh applies to the whole invoice.
+                    # ERPNext resets rate=0 for "Actual" charge type during validate(),
+                    # so "On Net Total" is the only way to show the rate in the Tax Rate column.
+                    # Use "Actual" only when PPh base is a subset of net total (partial items),
+                    # and embed the rate in the description as a fallback.
+                    _partial_base = _pi_net_total > 0 and abs(_pi_net_total - _pph_base) > 1
+
+                    if not _partial_base:
+                        # All items taxable → "On Net Total"; Frappe computes rate% × net_total
                         pi.append("taxes", {
                             "charge_type": "On Net Total",
                             "account_head": wht_account,
@@ -655,7 +662,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                             "cost_center": _cost_center,
                         })
                     else:
-                        # Item-wise partial PPh: use Actual so the amount is exact
+                        # Partial base (only some items taxable) → "Actual" with fixed amount
                         _raw = _pph_base * _rate / 100
                         _pph_amount = round(_raw) if getattr(wht_category, "round_off_tax_amount", 0) else _raw
                         pi.append("taxes", {
@@ -672,7 +679,7 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                     _pph_row_added = True
                     frappe.logger().info(
                         f"[PPh] Row added before insert: account={wht_account}, "
-                        f"base={_pph_base}, rate={_rate}%"
+                        f"base={_pph_base}, rate={_rate}%, partial={_partial_base}"
                     )
                 else:
                     frappe.logger().warning(
