@@ -13,7 +13,7 @@
 
 Only active prepaid accounts in this whitelist can be used on deferred items.
 
-## 2) Create Expense Request / Branch Expense Request with Deferred Items
+## 2) Create Expense Request with Deferred Items
 
 1. Add items to the request.
 2. For each deferred item, check **Deferred Expense** on the item row.

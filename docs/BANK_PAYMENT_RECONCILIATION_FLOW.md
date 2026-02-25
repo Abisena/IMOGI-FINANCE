@@ -114,7 +114,7 @@ Match Payment Entry dengan Bank Transaction berdasarkan:
 - Docstatus = 1 (submitted)
 
 ##### `_update_invoice_status_after_bank_reconciliation(pe_name, bt_name)` (New)
-- Get Expense Request/Branch Expense Request from PE
+- Get Expense Request from PE
 - Clear `awaiting_bank_reconciliation` flag
 - Update PI status to "Paid"
 - Update ER status to "Paid"
@@ -200,7 +200,6 @@ This will create the custom field `awaiting_bank_reconciliation` in Payment Entr
 - [ ] Test Bank payment - PI should remain Unpaid
 - [ ] Test Bank Transaction reconciliation - PI should become Paid
 - [ ] Test with Expense Request workflow
-- [ ] Test with Branch Expense Request workflow
 - [ ] Verify custom field is created properly
 - [ ] Check logs for proper tracking
 

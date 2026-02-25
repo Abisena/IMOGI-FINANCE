@@ -38,4 +38,3 @@ def _copy_deferred_to_items(parent_doctype: str, item_doctype: str):
 
 def execute():
     _copy_deferred_to_items("Expense Request", "Expense Request Item")
-    _copy_deferred_to_items("Branch Expense Request", "Branch Expense Request Item")

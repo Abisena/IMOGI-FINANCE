@@ -20,7 +20,6 @@ frappe.query_reports["Outstanding Approvals Dashboard"] = {
 			"get_data": function(txt) {
 				return [
 					{ value: "Expense Request", description: "Expense Request" },
-					{ value: "Branch Expense Request", description: "Branch Expense Request" },
 					{ value: "Additional Budget Request", description: "Additional Budget Request" },
 					{ value: "Budget Reclass Request", description: "Budget Reclass Request" },
 					{ value: "Internal Charge Request", description: "Internal Charge Request" },

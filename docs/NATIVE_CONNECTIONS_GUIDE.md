@@ -52,22 +52,6 @@ Native ERPNext connections menggunakan property `links` di DocType JSON untuk ot
 ]
 ```
 
-### 3. Branch Expense Request
-```json
-"links": [
-  {
-    "group": "Invoice",
-    "link_doctype": "Purchase Invoice",
-    "link_fieldname": "branch_expense_request"
-  },
-  {
-    "group": "Payment",
-    "link_doctype": "Payment Entry",
-    "link_fieldname": "branch_expense_request"
-  }
-]
-```
-
 ### 4. Internal Charge Request
 ```json
 "links": [
@@ -198,7 +182,6 @@ When you open a Customer Receipt, the Connections tab shows:
 ```bash
 bench --site [site] reload-doc imogi_finance "DocType" "Customer Receipt"
 bench --site [site] reload-doc imogi_finance "DocType" "Expense Request"
-bench --site [site] reload-doc imogi_finance "DocType" "Branch Expense Request"
 bench --site [site] reload-doc imogi_finance "DocType" "Internal Charge Request"
 ```
 

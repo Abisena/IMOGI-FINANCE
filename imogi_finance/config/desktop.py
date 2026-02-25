@@ -206,12 +206,6 @@ def get_data():
                     "label": "Internal Charge Request",
                     "description": "Allocate expense requests across cost centers.",
                 },
-                {
-                    "type": "doctype",
-                    "name": "Branch Expense Request",
-                    "label": "Branch Expense Request",
-                    "description": "Request and track branch level expenses.",
-                },
             ],
         }
     ]

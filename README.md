@@ -85,7 +85,7 @@ App for managing expenses at IMOGI with comprehensive expense request workflows,
 
 **Tax Invoice Features**:
 - **Tax Invoice OCR**: OCR configuration (provider/size limit/threshold) for Purchase Invoice, Expense Request, and Sales Invoice; parses tax invoice text (NPWP, number/date, DPP/VAT) with NPWP normalization and duplicate flag.
-- **Tax Invoice Upload**: Verified uploads required whenever manual Faktur Pajak fields are filled on Purchase/Expense/Branch Expense Requests. Validation enforces unique 16-digit numbers, valid NPWP, and stored PDF; Sales Invoice sync copies verified upload to out_fp* fields with NPWP safeguards and status tracking.
+- **Tax Invoice Upload**: Verified uploads required whenever manual Faktur Pajak fields are filled on Purchase/Expense Requests. Validation enforces unique 16-digit numbers, valid NPWP, and stored PDF; Sales Invoice sync copies verified upload to out_fp* fields with NPWP safeguards and status tracking.
 - **Tax profile controls**: Each company's Tax Profile requires PPN input/output, PB1 payable, and PPh payable accounts for tax registers, closings, and payment posting.
 - **Tax period closure**: Tax Period Closing blocks changes to tax/tax-mapping fields on ER/PI/SI when period is Closed, except for System Manager/Tax Reviewer roles.
 - **Reporting & exports**: Utilities compute snapshots for input/output VAT registers, withholding tax, and PB1; CoreTax mappings required for DPP, PPN, NPWP, faktur date; Payment Entry/Journal Entry creation for Tax Payment Batch and VAT netting (debit output/credit input/payable).
@@ -122,7 +122,6 @@ Five custom print formats included:
 - **Expense Request** — formal expense request layout with approval route visualization
 - **Customer Receipt** — multi-design receipt with digital stamp and verification URL
 - **Transfer Application Bank Form** — bank transfer form for payment processing
-- **Branch Expense Request** — branch-level expense print layout
 - **Cash Bank Daily Report** — daily report with signer blocks
 
 ---

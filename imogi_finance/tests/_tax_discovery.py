@@ -87,7 +87,6 @@ METHODS = {
     "create_purchase_invoice_from_request": "imogi_finance.accounting.create_purchase_invoice_from_request",
     "verify_purchase_invoice_tax_invoice": "imogi_finance.api.tax_invoice.verify_purchase_invoice_tax_invoice",
     "verify_expense_request_tax_invoice": "imogi_finance.api.tax_invoice.verify_expense_request_tax_invoice",
-    "verify_branch_expense_request_tax_invoice": "imogi_finance.api.tax_invoice.verify_branch_expense_request_tax_invoice",
     "verify_sales_invoice_tax_invoice": "imogi_finance.api.tax_invoice.verify_sales_invoice_tax_invoice",
     "generate_coretax_export": "imogi_finance.tax_operations.generate_coretax_export",
     "create_tax_payment_entry": "imogi_finance.imogi_finance.doctype.tax_payment_batch.tax_payment_batch.create_tax_payment_entry",

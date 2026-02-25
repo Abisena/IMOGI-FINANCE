@@ -400,7 +400,7 @@ function maybeRenderCancelDeleteActions(frm) {
 
   // Note: Native Cancel and Delete actions are available in Menu/Actions dropdown
   // No need to add custom buttons to avoid duplication and maintain consistency
-  // with standard Frappe UX and other doctypes like Branch Expense Request
+  // with standard Frappe UX
 }
 
 async function loadDeferrableAccounts(frm) {

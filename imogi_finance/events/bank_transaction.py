@@ -83,21 +83,19 @@ def _update_invoice_status_after_bank_reconciliation(payment_entry_name: str, ba
     # Get Payment Entry details
     pe = frappe.get_doc("Payment Entry", payment_entry_name)
 
-    # Get linked Expense Request or Branch Expense Request
+    # Get linked Expense Request
     expense_request = pe.get("imogi_expense_request")
-    branch_request = pe.get("branch_expense_request")
 
-    if not expense_request and not branch_request:
+    if not expense_request:
         # Try to find from references
         for ref in pe.get("references") or []:
             if ref.reference_doctype == "Purchase Invoice":
                 pi_doc = frappe.get_doc("Purchase Invoice", ref.reference_name)
                 expense_request = pi_doc.get("imogi_expense_request")
-                branch_request = pi_doc.get("branch_expense_request")
-                if expense_request or branch_request:
+                if expense_request:
                     break
 
-    if not expense_request and not branch_request:
+    if not expense_request:
         frappe.logger().info(
             f"[Bank Reconciliation] PE {payment_entry_name} reconciled via Bank Transaction {bank_transaction_name}, "
             f"but no Expense Request found."
@@ -124,18 +122,6 @@ def _update_invoice_status_after_bank_reconciliation(payment_entry_name: str, ba
         frappe.logger().info(
             f"[Bank Reconciliation] Bank Transaction {bank_transaction_name} reconciled. "
             f"Expense Request {expense_request} status updated to Paid (via PE {payment_entry_name})."
-        )
-
-    if branch_request:
-        frappe.db.set_value(
-            "Branch Expense Request",
-            branch_request,
-            {"status": "Paid"},
-            update_modified=False
-        )
-        frappe.logger().info(
-            f"[Bank Reconciliation] Bank Transaction {bank_transaction_name} reconciled. "
-            f"Branch Expense Request {branch_request} status updated to Paid (via PE {payment_entry_name})."
         )
 
     # Add comment to Payment Entry

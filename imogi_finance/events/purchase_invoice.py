@@ -33,7 +33,6 @@ def sync_expense_request_status_from_pi(doc, method=None):
     changes from Unpaid to Paid (after Payment Entry is applied).
     """
     expense_request = doc.get("imogi_expense_request")
-    branch_request = doc.get("branch_expense_request")
 
     # Handle Expense Request
     if expense_request:
@@ -59,10 +58,6 @@ def sync_expense_request_status_from_pi(doc, method=None):
                     f"Updated ER {expense_request} status: {current_status} → {new_status}"
                 )
 
-    # Handle Branch Expense Request (if needed in future)
-    if branch_request and frappe.db.exists("Branch Expense Request", branch_request):
-        # Similar logic can be added for Branch Expense Request if needed
-        pass
 
 
 def prevent_double_wht_validate(doc, method=None):
@@ -401,7 +396,6 @@ def _validate_one_pi_per_request(doc):
     Cancelled PI are ignored - allow creating new PI if old one is cancelled.
     """
     expense_request = getattr(doc, "imogi_expense_request", None)
-    branch_request = getattr(doc, "branch_expense_request", None)
 
     if expense_request:
         existing_pi = frappe.db.get_value(
@@ -422,34 +416,15 @@ def _validate_one_pi_per_request(doc):
                 title=_("Duplicate Purchase Invoice")
             )
 
-    if branch_request:
-        existing_pi = frappe.db.get_value(
-            "Purchase Invoice",
-            {
-                "branch_expense_request": branch_request,
-                "docstatus": 1,  # Only submitted
-                "name": ["!=", doc.name]
-            },
-            "name"
-        )
-
-        if existing_pi:
-            frappe.throw(
-                _("Branch Expense Request {0} is already linked to submitted Purchase Invoice {1}. Please cancel that PI first.").format(
-                    branch_request, existing_pi
-                ),
-                title=_("Duplicate Purchase Invoice")
-            )
-
 
 def _validate_npwp_match(doc):
     """Validate NPWP from OCR matches supplier's NPWP.
 
-    Skip validation if Purchase Invoice is created from Expense Request or Branch Expense Request
+    Skip validation if Purchase Invoice is created from Expense Request
     because validation has already been done at the request level.
     """
-    # Skip if linked to Expense Request or Branch Expense Request
-    if getattr(doc, "imogi_expense_request", None) or getattr(doc, "branch_expense_request", None):
+    # Skip if linked to Expense Request
+    if getattr(doc, "imogi_expense_request", None):
         return
 
     has_tax_invoice_upload = bool(getattr(doc, "ti_tax_invoice_upload", None))
@@ -485,10 +460,9 @@ def _validate_budget_for_direct_pi(doc):
     Note: PI from ER already has budget reserved via RESERVATION entries,
     so this check only applies to direct PI creation.
     """
-    # Skip if linked to Expense Request or Branch Expense Request
+    # Skip if linked to Expense Request
     expense_request = getattr(doc, "imogi_expense_request", None)
-    branch_request = getattr(doc, "branch_expense_request", None)
-    if expense_request or branch_request:
+    if expense_request:
         return
 
     # Get budget control settings
@@ -729,14 +703,11 @@ def on_submit(doc, method=None):
     # CRITICAL: Generate deferred expense schedule for items with deferred expense enabled
     _generate_deferred_expense_schedule(doc)
 
-    # Check for Expense Request or Branch Expense Request
+    # Check for Expense Request
     expense_request = doc.get("imogi_expense_request")
-    branch_request = doc.get("branch_expense_request")
 
     if expense_request:
         _handle_expense_request_submit(doc, expense_request)
-    elif branch_request:
-        _handle_branch_expense_request_submit(doc, branch_request)
 
 
 def _handle_expense_request_submit(doc, request_name):
@@ -804,45 +775,8 @@ def _handle_expense_request_submit(doc, request_name):
     maybe_post_internal_charge_je(doc, expense_request=request)
 
 
-def _handle_branch_expense_request_submit(doc, request_name):
-    """Handle Purchase Invoice submit for Branch Expense Request."""
-    # Get the Branch Expense Request
-    request = frappe.get_doc("Branch Expense Request", request_name)
-
-    # Validate request is approved/submitted
-    if request.docstatus != 1:
-        frappe.throw(
-            _("Branch Expense Request {0} must be submitted before creating Purchase Invoice").format(request_name),
-            title=_("Invalid Status")
-        )
-
-    # Validate linked_purchase_invoice matches this PI
-    if hasattr(request, "linked_purchase_invoice") and request.linked_purchase_invoice and request.linked_purchase_invoice != doc.name:
-        frappe.throw(
-            _("Branch Expense Request is already linked to a different Purchase Invoice {0}.").format(
-                request.linked_purchase_invoice
-            )
-        )
-
-    branch_settings = get_branch_settings()
-    if branch_settings.enable_multi_branch and branch_settings.enforce_branch_on_links:
-        validate_branch_alignment(
-            getattr(doc, "branch", None),
-            getattr(request, "branch", None),
-            label=_("Purchase Invoice"),
-        )
-
-    # Update status - link PI to request
-    if hasattr(request, "linked_purchase_invoice"):
-        frappe.db.set_value(
-            "Branch Expense Request",
-            request.name,
-            {"linked_purchase_invoice": doc.name},
-        )
-
-
 def before_cancel(doc, method=None):
-    if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
+    if doc.get("imogi_expense_request"):
         doc.flags.ignore_links = True
 
     # Mark that we're cancelling this PI - BCE should allow its cancellation
@@ -858,7 +792,7 @@ def before_delete(doc, method=None):
     This prevents LinkExistsError when deleting draft PI that is linked to ER.
     The actual link cleanup happens in on_trash.
     """
-    if doc.get("imogi_expense_request") or doc.get("branch_expense_request"):
+    if doc.get("imogi_expense_request"):
         doc.flags.ignore_links = True
 
 
@@ -871,7 +805,6 @@ def on_cancel(doc, method=None):
     3. Update workflow state (status auto-updated via query)
     """
     expense_request_name = doc.get("imogi_expense_request")
-    branch_request_name = doc.get("branch_expense_request")
 
     # Check for active Payment Entry via query
     if expense_request_name:
@@ -900,6 +833,7 @@ def on_cancel(doc, method=None):
         )
 
     # Update Expense Request workflow state and status
+    # Update Expense Request workflow state and status
     # After PI cancel, status should revert to Approved (no PI submitted anymore)
     if expense_request_name:
         _er_doctype = get_er_doctype(expense_request_name) or "Expense Request"
@@ -915,17 +849,10 @@ def on_cancel(doc, method=None):
             f"[PI cancel] PI {doc.name} cancelled. Updated ER {expense_request_name} status to {next_status}"
         )
 
-    # Update Branch Expense Request
-    if branch_request_name:
-        if frappe.db.exists("Branch Expense Request", branch_request_name):
-            frappe.db.set_value("Branch Expense Request", branch_request_name, "linked_purchase_invoice", None)
-
-
 
 def on_trash(doc, method=None):
     """Clear links from Expense Request before deleting PI to avoid LinkExistsError."""
     expense_request = doc.get("imogi_expense_request")
-    branch_request = doc.get("branch_expense_request")
 
     # Handle Expense Request
     if expense_request:
@@ -957,11 +884,3 @@ def on_trash(doc, method=None):
                 frappe.logger().info(
                     f"[PI trash] PI {doc.name} deleted. Updated ER {expense_request} status to {next_status}"
                 )
-
-    # Handle Branch Expense Request
-    if branch_request:
-        if frappe.db.exists("Branch Expense Request", branch_request):
-            linked_pi = frappe.db.get_value("Branch Expense Request", branch_request, "linked_purchase_invoice")
-            if linked_pi == doc.name:
-                frappe.db.set_value("Branch Expense Request", branch_request, "linked_purchase_invoice", None)
-                frappe.db.commit()  # Commit immediately

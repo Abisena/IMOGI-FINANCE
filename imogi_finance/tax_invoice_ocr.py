@@ -596,7 +596,7 @@ def _get_upload_link_field(doctype: str) -> str | None:
 def get_linked_tax_invoice_uploads(
     *, exclude_doctype: str | None = None, exclude_name: str | None = None
 ) -> set[str]:
-    targets = ("Purchase Invoice", "Expense Request", "Branch Expense Request")
+    targets = ("Purchase Invoice", "Expense Request")
     uploads: set[str] = set()
 
     for target in targets:
@@ -622,7 +622,7 @@ def get_linked_tax_invoice_uploads(
 def _find_existing_upload_link(
     upload_name: str, current_doctype: str, current_name: str | None = None
 ) -> tuple[str | None, str | None]:
-    targets = ("Purchase Invoice", "Expense Request", "Branch Expense Request")
+    targets = ("Purchase Invoice", "Expense Request")
 
     for target in targets:
         fieldname = _get_upload_link_field(target)
@@ -1482,7 +1482,6 @@ def parse_faktur_pajak_text(text: str) -> tuple[dict[str, Any], float]:
         - _run_ocr_job() → Sets header fields on:
           * Purchase Invoice
           * Expense Request
-          * Branch Expense Request
           * Sales Invoice
           * Tax Invoice OCR Upload
 
@@ -3562,7 +3561,6 @@ def _check_duplicate_fp_no(current_name: str, fp_no: str, company: str | None, d
     targets = [
         "Purchase Invoice",
         "Expense Request",
-        "Branch Expense Request",
         "Sales Invoice",
         "Tax Invoice OCR Upload",
     ]
@@ -3608,7 +3606,7 @@ def sync_tax_invoice_upload(doc: Any, doctype: str, upload_name: str | None = No
     # Auto-copy recommended PPN template to ER / BER if ppn_template is not yet set.
     # This feeds accounting.create_purchase_invoice_from_request() which requires
     # request.ppn_template when is_ppn_applicable=1.
-    if doctype in ("Expense Request", "Branch Expense Request"):
+    if doctype in ("Expense Request",):
         recommended = getattr(upload_doc, "recommended_ppn_template", None)
         if recommended and not getattr(target_doc, "ppn_template", None):
             target_doc.ppn_template = recommended

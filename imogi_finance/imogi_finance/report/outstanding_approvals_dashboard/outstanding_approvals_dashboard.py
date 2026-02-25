@@ -133,13 +133,6 @@ def get_data(filters):
 			"pending_states": ["Pending Review"]
 		},
 		{
-			"doctype": "Branch Expense Request",
-			"amount_field": "amount",
-			"cost_center_field": None,
-			"branch_field": "branch",
-			"pending_states": ["Pending Review"]
-		},
-		{
 			"doctype": "Additional Budget Request",
 			"amount_field": "amount",
 			"cost_center_field": "cost_center",

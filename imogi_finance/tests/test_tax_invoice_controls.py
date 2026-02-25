@@ -80,7 +80,7 @@ def test_purchase_invoice_submit_requires_verified(monkeypatch):
         ti_tax_invoice_upload="TI-0001",
         ti_fp_no=None, ti_fp_date=None, ti_fp_npwp=None,
         ti_fp_harga_jual=None, ti_fp_dpp=None, ti_fp_ppn=None, ti_fp_ppnbm=None,
-        imogi_expense_request=None, branch_expense_request=None,
+        imogi_expense_request=None,
         apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
     )
 
@@ -97,7 +97,6 @@ def test_purchase_invoice_submit_allows_when_ocr_disabled(monkeypatch):
     doc = types.SimpleNamespace(
         ti_verification_status=None,
         imogi_expense_request=None,
-        branch_expense_request=None,
         apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
     )
 
@@ -113,7 +112,6 @@ def test_purchase_invoice_submit_ignores_string_zero(monkeypatch):
     doc = types.SimpleNamespace(
         ti_verification_status=None,
         imogi_expense_request=None,
-        branch_expense_request=None,
         apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
     )
 
@@ -130,7 +128,6 @@ def test_purchase_invoice_submit_allows_without_upload(monkeypatch):
         ti_verification_status="Needs Review",
         ti_tax_invoice_upload=None,
         imogi_expense_request=None,
-        branch_expense_request=None,
         apply_tds=0, imogi_pph_type=None, tax_withholding_category=None,
     )
 
@@ -640,15 +637,13 @@ def test_get_linked_tax_invoice_uploads_includes_branch(monkeypatch):
             return ["PI-UPLOAD"]
         if doctype == "Expense Request":
             return ["ER-UPLOAD"]
-        if doctype == "Branch Expense Request":
-            return ["BER-UPLOAD"]
         return []
 
     monkeypatch.setattr(frappe, "get_all", fake_get_all)
 
     linked = get_linked_tax_invoice_uploads()
 
-    assert linked == {"PI-UPLOAD", "ER-UPLOAD", "BER-UPLOAD"}
+    assert linked == {"PI-UPLOAD", "ER-UPLOAD"}
 
 
 def test_validate_tax_invoice_upload_link_blocks_reuse(monkeypatch):

@@ -26,8 +26,6 @@ class TaxInvoiceOCRMonitoring(Document):
             self._populate_from_purchase_invoice()
         elif self.target_doctype == "Expense Request":
             self._populate_from_expense_request()
-        elif self.target_doctype == "Branch Expense Request":
-            self._populate_from_branch_expense_request()
 
     def _populate_from_purchase_invoice(self):
         """Fetch data from Purchase Invoice and linked OCR Upload"""
@@ -79,32 +77,6 @@ class TaxInvoiceOCRMonitoring(Document):
         # Try to find linked Purchase Invoice or OCR Upload
         pi_name = er.get("purchase_invoice")
         ocr_name = er.get("tax_invoice_ocr_upload")
-
-        if pi_name:
-            temp_target = self.target_name
-            temp_doctype = self.target_doctype
-            self.target_name = pi_name
-            self._populate_from_purchase_invoice()
-            self.target_name = temp_target
-            self.target_doctype = temp_doctype
-        elif ocr_name:
-            temp_target = self.target_name
-            temp_doctype = self.target_doctype
-            self.target_name = ocr_name
-            self._populate_from_ocr_upload()
-            self.target_name = temp_target
-            self.target_doctype = temp_doctype
-
-    def _populate_from_branch_expense_request(self):
-        """Fetch data from Branch Expense Request"""
-        if not frappe.db.exists("Branch Expense Request", self.target_name):
-            return
-
-        ber = frappe.get_doc("Branch Expense Request", self.target_name)
-
-        # Similar logic as Expense Request
-        pi_name = ber.get("purchase_invoice")
-        ocr_name = ber.get("tax_invoice_ocr_upload")
 
         if pi_name:
             temp_target = self.target_name

@@ -20,7 +20,7 @@ class ApprovalService:
         service.before_workflow_action(doc, action="Approve", next_state="Pending Review")
         service.on_workflow_action(doc, action="Approve", next_state="Approved")
     
-    Reusable for: Expense Request, Internal Charge Request, Branch Expense Request, etc.
+    Reusable for: Expense Request, Internal Charge Request, etc.
     """
 
     def __init__(self, doctype: str = "Expense Request", state_field: str = "workflow_state"):

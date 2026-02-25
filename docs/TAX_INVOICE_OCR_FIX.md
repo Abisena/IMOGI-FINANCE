@@ -18,14 +18,7 @@ Menambahkan kondisi `depends_on` pada field manual tax invoice untuk menyembunyi
 - Memanggil `checkOcrEnabled()` pada `refresh()` dan `is_ppn_applicable()` events
 - Function ini mengset `frm.doc.__ocr_enabled` yang digunakan oleh `depends_on` condition
 
-### 2. Branch Expense Request  
-Branch Expense Request tidak memiliki field manual tax invoice (sudah dari awal dirancang hanya untuk OCR), tetapi ditambahkan function `checkOcrEnabledBer()` untuk konsistensi dan kemungkinan penggunaan di masa depan.
-
-**File Modified:** `branch_expense_request.js`
-- Menambahkan function `checkOcrEnabledBer()`
-- Memanggil function pada `refresh()` event
-
-### 3. Purchase Invoice
+### 2. Purchase Invoice
 Purchase Invoice sudah tidak memiliki field manual tax invoice dan sudah sepenuhnya menggunakan OCR, sehingga tidak perlu perubahan.
 
 ## Behavior
@@ -53,7 +46,6 @@ Purchase Invoice sudah tidak memiliki field manual tax invoice dan sudah sepenuh
 ## Files Changed
 1. `/imogi_finance/imogi_finance/doctype/expense_request/expense_request.json`
 2. `/imogi_finance/imogi_finance/doctype/expense_request/expense_request.js`
-3. `/imogi_finance/imogi_finance/doctype/branch_expense_request/branch_expense_request.js`
 
 ## Related Documentation
 See [TAX_INVOICE_OCR_VALIDATION_BEFORE_SUBMIT.md](TAX_INVOICE_OCR_VALIDATION_BEFORE_SUBMIT.md) for validation logic before submit.

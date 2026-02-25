@@ -16,35 +16,19 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Purchase Invoice-branch_expense_request",
-    "dt": "Purchase Invoice",
-    "fieldname": "branch_expense_request",
-    "fieldtype": "Link",
-    "insert_after": "imogi_expense_request",
-    "label": "Branch Expense Request",
-    "options": "Branch Expense Request",
-    "allow_on_submit": 1,
-    "in_standard_filter": 1,
-    "read_only": 1,
-    "bold": 1,
-    "depends_on": "eval:doc.branch_expense_request",
-    "description": "Auto-filled when created from Branch Expense Request"
-  },
-  {
-    "doctype": "Custom Field",
     "name": "Purchase Invoice-imogi_request_type",
     "dt": "Purchase Invoice",
     "fieldname": "imogi_request_type",
     "fieldtype": "Select",
-    "insert_after": "branch_expense_request",
+    "insert_after": "advanced_expense_request",
     "label": "Request Type",
     "options": "Expense",
     "allow_on_submit": 1,
     "read_only": 1,
     "fetch_from": "imogi_expense_request.request_type",
     "fetch_if_empty": 1,
-    "depends_on": "eval:doc.imogi_expense_request || doc.branch_expense_request",
-    "description": "Auto-filled from linked Expense Request or Branch Expense Request"
+    "depends_on": "eval:doc.imogi_expense_request",
+    "description": "Auto-filled from linked Expense Request"
   },
   {
     "doctype": "Custom Field",
@@ -70,20 +54,6 @@
     "allow_on_submit": 1,
     "read_only": 1,
     "depends_on": "eval:doc.payment_type=='Pay' && doc.party_type=='Supplier' && doc.imogi_expense_request",
-    "description": "Auto-filled from referenced Purchase Invoice"
-  },
-  {
-    "doctype": "Custom Field",
-    "name": "Payment Entry-branch_expense_request",
-    "dt": "Payment Entry",
-    "fieldname": "branch_expense_request",
-    "fieldtype": "Link",
-    "insert_after": "imogi_expense_request",
-    "label": "Branch Expense Request",
-    "options": "Branch Expense Request",
-    "allow_on_submit": 1,
-    "read_only": 1,
-    "depends_on": "eval:doc.payment_type=='Pay' && doc.party_type=='Supplier' && doc.branch_expense_request",
     "description": "Auto-filled from referenced Purchase Invoice"
   },
   {
@@ -663,7 +633,7 @@
     "dt": "Purchase Invoice",
     "fieldname": "internal_charge_request",
     "fieldtype": "Link",
-    "insert_after": "branch_expense_request",
+    "insert_after": "advanced_expense_request",
     "label": "Internal Charge Request",
     "options": "Internal Charge Request",
     "read_only": 1,

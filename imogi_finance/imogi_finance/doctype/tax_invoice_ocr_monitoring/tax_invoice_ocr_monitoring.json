@@ -47,7 +47,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Target DocType",
-      "options": "Purchase Invoice\nExpense Request\nBranch Expense Request\nSales Invoice\nTax Invoice OCR Upload",
+      "options": "Purchase Invoice\nExpense Request\nSales Invoice\nTax Invoice OCR Upload",
       "reqd": 1
     },
     {

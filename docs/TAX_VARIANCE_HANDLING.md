@@ -308,9 +308,6 @@ Line item variance bisa di-edit manual:
 3. Apakah faktpajak match dengan ER?
 4. Jika valid, proceed dan document reason di notes.
 
-### Q: Bagaimana dengan Branch Expense Request?
-**A**: Sama. BER juga punya field `ti_dpp_variance`, implementasi sama dengan ER.
-
 ### Q: Apakah PPN variance juga ditambahkan sebagai line item?
 **A**: Tidak perlu. PPN variance akan **otomatis ter-adjust** karena PPN dihitung dari total items (yang sudah termasuk DPP variance). Jadi PPN final akan otomatis match dengan OCR.
 
