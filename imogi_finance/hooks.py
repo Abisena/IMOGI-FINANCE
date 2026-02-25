@@ -179,6 +179,7 @@ fixtures = [
     "fixtures/finance_control_settings.json",
     "fixtures/transfer_application_settings.json",
     "fixtures/property_setter.json",
+    "fixtures/custom_field.json",
     "fixtures/branch_expense_request_workflow.json",
     "fixtures/advanced_expense_request_workflow.json",
 ]
