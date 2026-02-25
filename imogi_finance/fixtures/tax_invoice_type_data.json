@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Tax Invoice Type",
+    "name": "010",
     "fp_prefix": "010",
     "transaction_code": "01",
     "transaction_description": "Penyerahan BKP/JKP Normal",
@@ -13,6 +14,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "011",
     "fp_prefix": "011",
     "transaction_code": "01",
     "transaction_description": "Penyerahan BKP/JKP Normal",
@@ -25,6 +27,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "020",
     "fp_prefix": "020",
     "transaction_code": "02",
     "transaction_description": "Penyerahan ke Pemungut PPN",
@@ -37,6 +40,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "021",
     "fp_prefix": "021",
     "transaction_code": "02",
     "transaction_description": "Penyerahan ke Pemungut PPN",
@@ -49,6 +53,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "030",
     "fp_prefix": "030",
     "transaction_code": "03",
     "transaction_description": "Penyerahan dengan DPP Nilai Lain",
@@ -61,6 +66,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "031",
     "fp_prefix": "031",
     "transaction_code": "03",
     "transaction_description": "Penyerahan dengan DPP Nilai Lain",
@@ -73,6 +79,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "040",
     "fp_prefix": "040",
     "transaction_code": "04",
     "transaction_description": "PPN Tidak Dipungut (Fasilitas Tertentu)",
@@ -85,6 +92,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "041",
     "fp_prefix": "041",
     "transaction_code": "04",
     "transaction_description": "PPN Tidak Dipungut (Fasilitas Tertentu)",
@@ -97,6 +105,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "060",
     "fp_prefix": "060",
     "transaction_code": "06",
     "transaction_description": "Penyerahan BKP kepada Turis Asing",
@@ -109,6 +118,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "061",
     "fp_prefix": "061",
     "transaction_code": "06",
     "transaction_description": "Penyerahan BKP kepada Turis Asing",
@@ -121,6 +131,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "070",
     "fp_prefix": "070",
     "transaction_code": "07",
     "transaction_description": "Penyerahan Ekspor BKP/JKP",
@@ -133,6 +144,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "071",
     "fp_prefix": "071",
     "transaction_code": "07",
     "transaction_description": "Penyerahan Ekspor BKP/JKP",
@@ -145,6 +157,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "080",
     "fp_prefix": "080",
     "transaction_code": "08",
     "transaction_description": "PPN Dibebaskan (Fasilitas Strategis)",
@@ -157,6 +170,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "081",
     "fp_prefix": "081",
     "transaction_code": "08",
     "transaction_description": "PPN Dibebaskan (Fasilitas Strategis)",
@@ -169,6 +183,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "090",
     "fp_prefix": "090",
     "transaction_code": "09",
     "transaction_description": "Penyerahan Aktiva (Pasal 16D UU PPN)",
@@ -181,6 +196,7 @@
   },
   {
     "doctype": "Tax Invoice Type",
+    "name": "091",
     "fp_prefix": "091",
     "transaction_code": "09",
     "transaction_description": "Penyerahan Aktiva (Pasal 16D UU PPN)",
