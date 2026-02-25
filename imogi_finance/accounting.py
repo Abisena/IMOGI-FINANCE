@@ -639,13 +639,15 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                         request_cost_center
                         or frappe.get_cached_value("Company", pi.company, "cost_center")
                     )
+                    # NOTE: tax_amount MUST be positive when add_deduct_tax="Deduct".
+                    # Frappe subtracts it from the grand total automatically.
+                    # Passing a negative value with "Deduct" causes double-negation (adds instead of deducts).
                     pi.append("taxes", {
                         "charge_type": "Actual",
                         "account_head": wht_account,
                         "description": f"Tax Withheld - {request.pph_type}",
-                        "rate": _rate,
-                        "tax_amount": -_pph_amount,
-                        "base_tax_amount": -_pph_amount,
+                        "tax_amount": _pph_amount,
+                        "base_tax_amount": _pph_amount,
                         "add_deduct_tax": "Deduct",
                         "category": "Total",
                         "cost_center": _cost_center,
