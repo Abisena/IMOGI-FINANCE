@@ -915,14 +915,22 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
         )
 
     # CRITICAL: Don't warn if MIXED Apply WHT mode (taxes calculated per-item)
-    if apply_pph and not has_mixed_pph and flt(pi.taxes_and_charges_deducted) == 0:
-        frappe.msgprint(
-            _("Warning: PPH was not calculated. Please check Tax Withholding Category '{0}' configuration.").format(
-                getattr(request, "pph_type", "")
-            ),
-            indicator="orange",
-            alert=True
-        )
+    if apply_pph and not has_mixed_pph:
+        # Check actual tax rows — pi.taxes_and_charges_deducted may be stale in memory
+        # after set_tax_withholding() + save() without an explicit reload.
+        pph_deducted_rows = [
+            t for t in (pi.taxes or [])
+            if flt(t.get("tax_amount") if isinstance(t, dict) else getattr(t, "tax_amount", 0)) < 0
+            or getattr(t, "add_deduct_tax", "") == "Deduct"
+        ]
+        if not pph_deducted_rows and flt(frappe.db.get_value("Purchase Invoice", pi.name, "taxes_and_charges_deducted") or 0) == 0:
+            frappe.msgprint(
+                _("Warning: PPH was not calculated. Please check Tax Withholding Category '{0}' configuration.").format(
+                    getattr(request, "pph_type", "")
+                ),
+                indicator="orange",
+                alert=True
+            )
 
     _update_request_purchase_invoice_links(request, pi)
 
