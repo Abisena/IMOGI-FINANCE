@@ -633,30 +633,46 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                         break
 
                 if _rate > 0 and _pph_base > 0:
-                    _raw = _pph_base * _rate / 100
-                    _pph_amount = round(_raw) if getattr(wht_category, "round_off_tax_amount", 0) else _raw
                     _cost_center = (
                         request_cost_center
                         or frappe.get_cached_value("Company", pi.company, "cost_center")
                     )
-                    # NOTE: tax_amount MUST be positive when add_deduct_tax="Deduct".
-                    # Frappe subtracts it from the grand total automatically.
-                    # Passing a negative value with "Deduct" causes double-negation (adds instead of deducts).
-                    pi.append("taxes", {
-                        "charge_type": "Actual",
-                        "account_head": wht_account,
-                        "description": f"Tax Withheld - {request.pph_type} ({_rate}% x {_pph_base:,.0f})",
-                        "rate": _rate,
-                        "tax_amount": _pph_amount,
-                        "base_tax_amount": _pph_amount,
-                        "add_deduct_tax": "Deduct",
-                        "category": "Total",
-                        "cost_center": _cost_center,
-                    })
+
+                    # Use "On Net Total" when pph_base covers the whole document (header-level PPh).
+                    # Frappe will compute tax_amount = rate% × net_total, which preserves the
+                    # Tax Rate column in the UI (ERPNext resets rate=0 for "Actual" charge type).
+                    # Fall back to "Actual" only when item-wise partial base is used so the
+                    # amount stays exact; in that case describe the rate in the description.
+                    if not item_wise_pph_detail:
+                        # Header-level PPh: pph_base ≈ net_total → "On Net Total" is correct
+                        pi.append("taxes", {
+                            "charge_type": "On Net Total",
+                            "account_head": wht_account,
+                            "description": f"Tax Withheld - {request.pph_type}",
+                            "rate": _rate,
+                            "add_deduct_tax": "Deduct",
+                            "category": "Total",
+                            "cost_center": _cost_center,
+                        })
+                    else:
+                        # Item-wise partial PPh: use Actual so the amount is exact
+                        _raw = _pph_base * _rate / 100
+                        _pph_amount = round(_raw) if getattr(wht_category, "round_off_tax_amount", 0) else _raw
+                        pi.append("taxes", {
+                            "charge_type": "Actual",
+                            "account_head": wht_account,
+                            "description": f"Tax Withheld - {request.pph_type} ({_rate}% x {_pph_base:,.0f})",
+                            "rate": _rate,
+                            "tax_amount": _pph_amount,
+                            "base_tax_amount": _pph_amount,
+                            "add_deduct_tax": "Deduct",
+                            "category": "Total",
+                            "cost_center": _cost_center,
+                        })
                     _pph_row_added = True
                     frappe.logger().info(
                         f"[PPh] Row added before insert: account={wht_account}, "
-                        f"base={_pph_base}, rate={_rate}%, amount={_pph_amount}"
+                        f"base={_pph_base}, rate={_rate}%"
                     )
                 else:
                     frappe.logger().warning(
