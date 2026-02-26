@@ -23,7 +23,7 @@
       {
         "label": "Chart of Accounts",
         "link_to": "Chart of Accounts",
-        "type": "DocType"
+        "type": "Page"
       },
       {
         "label": "Journal Entry",
