@@ -3670,32 +3670,44 @@ def verify_tax_invoice(doc: Any, *, doctype: str, force: bool = False) -> dict[s
 
     # Verify PPN Type selection against actual amounts
     if ppn_type:
-        if ppn_type == "Standard":
+        if "Standard" in ppn_type:
             # Standard rate can be 11% or 12% depending on period
             if ppn_value == 0 and dpp > 0:
-                notes.append(_("PPN Type is 'Standard' but PPN amount is 0. Should this be Zero Rated?"))
+                notes.append(_("PPN Type is '{0}' but PPN amount is 0. Should this be Zero Rated?").format(ppn_type))
             elif dpp > 0:
                 actual_rate = ppn_value / dpp
                 # Accept both 11% and 12% as valid standard rates
                 if not (abs(actual_rate - 0.11) <= 0.02 or abs(actual_rate - 0.12) <= 0.02):
                     notes.append(_(
-                        "PPN Type is 'Standard' but actual rate is {0:.2%}. "
+                        "PPN Type is '{0}' but actual rate is {1:.2%}. "
                         "Expected 11% or 12%. Please verify if type selection is correct."
-                    ).format(actual_rate))
+                    ).format(ppn_type, actual_rate))
 
-        elif ppn_type == "Zero Rated":
+        elif "Zero Rated" in ppn_type or "Ekspor" in ppn_type:
             if ppn_value > 0:
                 notes.append(_(
-                    "PPN Type is 'Zero Rated' but PPN amount is Rp {0:,.2f}. "
+                    "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
                     "Zero Rated invoices should have PPN = 0."
-                ).format(ppn_value))
+                ).format(ppn_type, ppn_value))
 
-        elif ppn_type == "Exempt/Not PPN":
+        elif "Tidak Dipungut" in ppn_type:
+            # PPN Tidak Dipungut: tax owed but NOT collected by supplier (kode 040/070).
+            # The PPN amount CAN be non-zero on the faktur — do NOT warn.
+            pass
+
+        elif "Dibebaskan" in ppn_type or "Exempt" in ppn_type:
             if ppn_value > 0:
                 notes.append(_(
-                    "PPN Type is 'Exempt/Not PPN' but PPN amount is Rp {0:,.2f}. "
+                    "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
                     "Exempt transactions should have PPN = 0."
-                ).format(ppn_value))
+                ).format(ppn_type, ppn_value))
+
+        elif "Bukan Objek" in ppn_type:
+            if ppn_value > 0:
+                notes.append(_(
+                    "PPN Type is '{0}' but PPN amount is Rp {1:,.2f}. "
+                    "Non-PPN objects should have PPN = 0."
+                ).format(ppn_type, ppn_value))
     else:
         notes.append(_("PPN Type is required. Please select the appropriate PPN type."))
 

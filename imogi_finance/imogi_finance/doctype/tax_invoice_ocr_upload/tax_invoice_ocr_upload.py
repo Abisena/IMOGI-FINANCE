@@ -405,13 +405,27 @@ class TaxInvoiceOCRUpload(Document):
                             f"⚠️ Zero Rated should have PPN=0, but got Rp {ppn_value:,.0f}"
                         )
 
-                elif "Tidak Dipungut" in self.ppn_type or "Dibebaskan" in self.ppn_type:
+                elif "Tidak Dipungut" in self.ppn_type:
+                    # PPN Tidak Dipungut: tax is owed/computed but NOT collected by the supplier.
+                    # The PPN amount CAN be non-zero on the faktur — it is "terutang tapi tidak dipungut".
+                    ppn_amount_match = True
+                    if ppn_value == 0:
+                        verification_notes_parts.append(f"✅ PPN amount is 0 ({self.ppn_type})")
+                    else:
+                        verification_notes_parts.append(
+                            f"ℹ️ {self.ppn_type}: PPN Rp {ppn_value:,.0f} tertera di faktur "
+                            f"(terutang tapi tidak dipungut oleh penjual — ini normal untuk kode 040/070)."
+                        )
+
+                elif "Dibebaskan" in self.ppn_type:
+                    # PPN Dibebaskan: tax is fully exempted — must be 0.
                     if ppn_value == 0:
                         ppn_amount_match = True
                         verification_notes_parts.append(f"✅ PPN amount is 0 ({self.ppn_type})")
                     else:
                         verification_notes_parts.append(
-                            f"⚠️ {self.ppn_type} should have PPN=0, but got Rp {ppn_value:,.0f}"
+                            f"⚠️ {self.ppn_type} (PPN Dibebaskan) seharusnya PPN = 0, "
+                            f"tapi tercatat Rp {ppn_value:,.0f}. Periksa kembali faktur."
                         )
 
                 elif "Bukan Objek PPN" in self.ppn_type:
