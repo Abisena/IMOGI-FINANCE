@@ -93,9 +93,12 @@ def manage_ppn_variance_validate(doc, method=None):
         return
 
     # Find PPN tax row(s) - look for "On Net Total" charge type
+    # CRITICAL: Exclude PPh/WHT rows (add_deduct_tax="Deduct") — PPh is also "On Net Total"
+    # Without this filter, PPh row (rate=2%) is mistakenly used instead of PPN (rate=11%)
     ppn_tax_rows = [
         tax for tax in doc.taxes
         if getattr(tax, "charge_type", None) == "On Net Total"
+        and getattr(tax, "add_deduct_tax", "Add") == "Add"
     ]
 
     if not ppn_tax_rows:
@@ -244,7 +247,13 @@ def manage_direct_pi_ppn_variance(doc, method=None):
     if not hasattr(doc, "taxes") or not doc.taxes:
         frappe.throw("Purchase Taxes and Charges Template wajib dipilih untuk PI dengan OCR. Pilih template VAT yang sesuai.")
 
-    ppn_tax_rows = [tax for tax in doc.taxes if getattr(tax, "charge_type", None) == "On Net Total"]
+    # CRITICAL: Exclude PPh/WHT rows (add_deduct_tax="Deduct") — PPh is also "On Net Total"
+    # Without this filter, PPh row (rate=2%) is mistakenly used instead of PPN (rate=11%)
+    ppn_tax_rows = [
+        tax for tax in doc.taxes
+        if getattr(tax, "charge_type", None) == "On Net Total"
+        and getattr(tax, "add_deduct_tax", "Add") == "Add"
+    ]
     if not ppn_tax_rows:
         frappe.throw("Template tidak memiliki baris VAT (On Net Total). Periksa template & Tax Profile.")
 
