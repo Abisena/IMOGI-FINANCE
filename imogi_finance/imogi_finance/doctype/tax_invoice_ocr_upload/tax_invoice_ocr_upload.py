@@ -641,39 +641,43 @@ class TaxInvoiceOCRUpload(Document):
 
     def _normalize_ppn_type_value(self, ppn_type: str) -> str:
         """
-        Normalize PPN Type from detailed format to simplified format.
+        Normalize PPN Type from old simplified format to current detailed format.
 
-        Legacy formats (being phased out):
-        - "Standard 11% (PPN 2022-2024)" -> "Standard"
-        - "Standard 12% (PPN 2025+)" -> "Standard"
-        - "Zero Rated (Ekspor)" -> "Zero Rated"
-        - "PPN Tidak Dipungut (Fasilitas)" -> "Exempt/Not PPN"
-        - "PPN Dibebaskan (Fasilitas)" -> "Exempt/Not PPN"
-        - "Bukan Objek PPN" -> "Exempt/Not PPN"
-        - "Digital 1.1% (PMSE)" -> "Standard"
-        - "Custom/Other (Tarif Khusus)" -> "Standard"
+        Old simplified values (legacy, from before options were expanded):
+        - "Standard"         -> "Standard 11% (PPN 2022-2024)"
+        - "Zero Rated"       -> "Zero Rated (Ekspor)"
+        - "Exempt/Not PPN"   -> "PPN Tidak Dipungut (Fasilitas)"
+
+        Current detailed values are passed through unchanged:
+        - "Standard 11% (PPN 2022-2024)"
+        - "Standard 12% (PPN 2025+)"
+        - "Zero Rated (Ekspor)"
+        - "PPN Tidak Dipungut (Fasilitas)"
+        - "PPN Dibebaskan (Fasilitas)"
+        - "Bukan Objek PPN"
+        - "Digital 1.1% (PMSE)"
+        - "Custom/Other (Tarif Khusus)"
 
         Args:
             ppn_type: Original PPN Type value
 
         Returns:
-            Normalized PPN Type ("Standard", "Zero Rated", "Exempt/Not PPN")
+            Normalized PPN Type matching the current Select field options
         """
         if not ppn_type:
             return ppn_type
 
-        ppn_type_lower = ppn_type.lower()
+        # Map old simplified values to valid detailed options
+        LEGACY_MAP = {
+            "Standard": "Standard 11% (PPN 2022-2024)",
+            "Zero Rated": "Zero Rated (Ekspor)",
+            "Exempt/Not PPN": "PPN Tidak Dipungut (Fasilitas)",
+        }
+        if ppn_type in LEGACY_MAP:
+            return LEGACY_MAP[ppn_type]
 
-        # Check for Zero Rated
-        if "zero rated" in ppn_type_lower or "ekspor" in ppn_type_lower:
-            return "Zero Rated"
-
-        # Check for Exempt/Not PPN
-        if any(x in ppn_type_lower for x in ["tidak dipungut", "dibebaskan", "bukan objek", "exempt"]):
-            return "Exempt/Not PPN"
-
-        # Everything else (Standard 11%, Standard 12%, Digital, Custom) -> Standard
-        return "Standard"
+        # Already a valid detailed value — return unchanged
+        return ppn_type
 
     @frappe.whitelist()
     def refresh_status(self):
