@@ -581,6 +581,10 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
     # calculate_taxes_and_totals() during insert().
     # We then set apply_tds=0 so Frappe's controller does NOT overwrite our row.
     # =========================================================================
+    # Track for post-save rate restore (ERPNext resets rate=0 on "Actual" rows)
+    _pph_actual_rate_to_display = 0.0
+    _pph_actual_account_head = None
+
     if apply_pph:
         _pph_row_added = False
         try:
@@ -676,6 +680,9 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                             "category": "Total",
                             "cost_center": _cost_center,
                         })
+                        # Track so we can restore rate after ERPNext resets it during save()
+                        _pph_actual_rate_to_display = _rate
+                        _pph_actual_account_head = wht_account
                     _pph_row_added = True
                     frappe.logger().info(
                         f"[PPh] Row added before insert: account={wht_account}, "
@@ -947,6 +954,34 @@ def create_purchase_invoice_from_request(expense_request_name: str) -> str:
                 indicator="orange",
                 alert=True
             )
+
+    # =========================================================================
+    # RESTORE PPh RATE — ERPNext resets rate=0 for "Actual" charge_type on every
+    # validate() / calculate_taxes_and_totals() call.  Force-write it back now
+    # that all saves are complete so the Tax Rate column is readable on the form.
+    # =========================================================================
+    if apply_pph and _pph_actual_rate_to_display and _pph_actual_account_head:
+        try:
+            pi.reload()
+            for _tax_row in (pi.taxes or []):
+                if (
+                    getattr(_tax_row, "account_head", "") == _pph_actual_account_head
+                    and getattr(_tax_row, "charge_type", "") == "Actual"
+                ):
+                    frappe.db.set_value(
+                        "Purchase Taxes and Charges",
+                        _tax_row.name,
+                        "rate",
+                        _pph_actual_rate_to_display,
+                        update_modified=False,
+                    )
+                    frappe.logger().info(
+                        f"[PPh] Restored rate={_pph_actual_rate_to_display}% on Actual PPh row "
+                        f"{_tax_row.name} (bypasses ERPNext reset)"
+                    )
+                    break
+        except Exception as _re:
+            frappe.logger().warning(f"[PPh] Could not restore Actual PPh rate: {_re}")
 
     _update_request_purchase_invoice_links(request, pi)
 
