@@ -77,22 +77,6 @@
     "state": "Draft"
    },
    {
-    "action": "Approve",
-    "allow_self_approval": 1,
-    "allowed": "All",
-    "condition": "",
-    "next_state": "Approved",
-    "state": "Pending Review"
-   },
-   {
-    "action": "Reject",
-    "allow_self_approval": 1,
-    "allowed": "All",
-    "condition": "",
-    "next_state": "Rejected",
-    "state": "Pending Review"
-   },
-   {
     "action": "Reopen",
     "allow_self_approval": 1,
     "allowed": "System Manager",
