@@ -17,24 +17,18 @@ def get_count(doctype, filters=None, distinct=False, fields=None):
     """
     Override frappe.desk.reportview.get_count.
 
-    Jika DocType-nya belum ter-migrate (tabel belum ada di DB),
-    kembalikan 0 secara diam-diam dan catat ke Error Log.
+    Delegasi ke fungsi asli Frappe. Jika DocType-nya belum ter-migrate
+    (tabel belum ada di DB), kembalikan 0 secara diam-diam dan catat ke Error Log.
     """
     try:
-        from frappe.desk.reportview import execute
+        from frappe.desk.reportview import get_count as _original_get_count
 
-        args = frappe._dict(
+        return _original_get_count(
             doctype=doctype,
-            filters=filters or [],
-            fields=fields or [],
+            filters=filters,
             distinct=distinct,
+            fields=fields,
         )
-        partial_query = execute(**args, run=0)
-        result = frappe.db.sql(
-            f"select count(*) from ({partial_query}) c",
-            as_list=True,
-        )
-        return result[0][0] if result else 0
 
     except Exception as e:
         if _is_table_missing_error(e):
@@ -49,7 +43,7 @@ def get_count(doctype, filters=None, distinct=False, fields=None):
 def _is_table_missing_error(exc: Exception) -> bool:
     """Return True jika exception adalah TableMissingError (belum migrate)."""
     # Frappe raises database.TableMissingError yang inherit dari
-    # pymysql.err.ProgrammingError dengan args == ('DocType', doctype_name)
+    # pymysql.err.ProgrammingError dengan args[0] == 'DocType'
     try:
         import pymysql.err
 
@@ -60,8 +54,7 @@ def _is_table_missing_error(exc: Exception) -> bool:
         pass
 
     # Fallback: cek nama class
-    exc_class_name = type(exc).__name__
-    if "TableMissing" in exc_class_name:
+    if "TableMissing" in type(exc).__name__:
         return True
 
     return False
