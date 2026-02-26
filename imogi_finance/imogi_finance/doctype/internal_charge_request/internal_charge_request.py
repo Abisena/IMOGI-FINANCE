@@ -291,18 +291,26 @@ class InternalChargeRequest(Document):
             line.level_3_role = route.get("level_3", {}).get("role")
             line.level_3_approver = route.get("level_3", {}).get("user")
 
-            if route.get("level_1", {}).get("role") or route.get("level_1", {}).get("user"):
-                line.line_status = "Pending L1"
-                line.current_approval_level = 1
-            elif route.get("level_2", {}).get("role") or route.get("level_2", {}).get("user"):
-                line.line_status = "Pending L2"
-                line.current_approval_level = 2
-            elif route.get("level_3", {}).get("role") or route.get("level_3", {}).get("user"):
-                line.line_status = "Pending L3"
-                line.current_approval_level = 3
-            else:
-                line.line_status = "Approved"
-                line.current_approval_level = 0
+            # Only initialise line_status when it hasn't been set yet.
+            # Never overwrite an in-progress or completed approval status —
+            # this function is also called during validate() on every save
+            # (including the save triggered by the workflow Approve action),
+            # and overwriting here would reset approved lines back to Pending L1.
+            existing_status = getattr(line, "line_status", None)
+            INITIAL_STATUSES = {None, "", "Draft"}
+            if existing_status in INITIAL_STATUSES:
+                if route.get("level_1", {}).get("role") or route.get("level_1", {}).get("user"):
+                    line.line_status = "Pending L1"
+                    line.current_approval_level = 1
+                elif route.get("level_2", {}).get("role") or route.get("level_2", {}).get("user"):
+                    line.line_status = "Pending L2"
+                    line.current_approval_level = 2
+                elif route.get("level_3", {}).get("role") or route.get("level_3", {}).get("user"):
+                    line.line_status = "Pending L3"
+                    line.current_approval_level = 3
+                else:
+                    line.line_status = "Approved"
+                    line.current_approval_level = 0
 
     def _sync_status(self):
         lines = getattr(self, "internal_charge_lines", []) or []
