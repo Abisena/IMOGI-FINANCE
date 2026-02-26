@@ -11,11 +11,15 @@ def execute(filters: dict | None = None):
     columns = get_columns(filters)
     data = get_data(filters)
 
+    # Calculate summary from original rows BEFORE expanding to monthly breakdown.
+    # add_monthly_breakdown() copies total_amount to every period row, so summing
+    # after expansion would multiply each item's amount by its period count.
+    summary = get_summary(data)
+
     # If show_breakdown is enabled, expand rows with monthly breakdown
     if filters.get("show_breakdown"):
         data = add_monthly_breakdown(data)
 
-    summary = get_summary(data)
     return columns, data, None, None, summary
 
 
