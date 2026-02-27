@@ -99,9 +99,37 @@ class TaxPeriodClosing(Document):
         """Clean up on cancellation."""
         self.status = "Draft"
 
-        # Warn if VAT netting entry exists
+        # Auto-cancel VAT netting journal entry if it exists and is submitted
         if self.vat_netting_journal_entry:
-            self._validate_netting_entry_before_cancel()
+            self._cancel_netting_journal_entry()
+
+    def _cancel_netting_journal_entry(self):
+        """Cancel the linked VAT Netting Journal Entry automatically."""
+        je_name = self.vat_netting_journal_entry
+        if not je_name:
+            return
+
+        try:
+            je_doc = frappe.get_doc("Journal Entry", je_name)
+        except frappe.DoesNotExistError:
+            # JE already deleted, clear the reference
+            self.db_set("vat_netting_journal_entry", None)
+            return
+
+        if je_doc.docstatus == 1:  # Submitted
+            je_doc.cancel()
+            frappe.msgprint(
+                _("VAT Netting Journal Entry {0} has been cancelled.").format(
+                    frappe.utils.get_link_to_form("Journal Entry", je_name)
+                ),
+                indicator="orange",
+                alert=True
+            )
+        elif je_doc.docstatus == 2:  # Already cancelled
+            pass  # Nothing to do
+
+        # Clear the reference on this document
+        self.db_set("vat_netting_journal_entry", None)
 
     def _ensure_status_default(self):
         """Set default status to Draft if empty."""
@@ -205,21 +233,6 @@ class TaxPeriodClosing(Document):
                   "It is recommended to verify all invoices before closing.").format(unverified_count),
                 title=_("Unverified Invoices"),
                 indicator="orange"
-            )
-
-    def _validate_netting_entry_before_cancel(self):
-        """Validate VAT netting entry status before allowing cancellation."""
-        je_status = frappe.db.get_value(
-            "Journal Entry",
-            self.vat_netting_journal_entry,
-            "docstatus"
-        )
-
-        if je_status == 1:
-            frappe.throw(
-                _("Cannot cancel this closing because VAT Netting Journal Entry {0} is submitted. "
-                  "Please cancel the Journal Entry first.").format(self.vat_netting_journal_entry),
-                title=_("Linked Journal Entry")
             )
 
     def _count_unverified_invoices(self) -> int:
