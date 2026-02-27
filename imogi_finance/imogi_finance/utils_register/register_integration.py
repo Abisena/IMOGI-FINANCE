@@ -23,7 +23,7 @@ def get_vat_input_from_register(
 	company: str,
 	from_date: date | str,
 	to_date: date | str,
-	verification_status: str = "Verified"
+	verification_status: Optional[str] = None
 ) -> Dict[str, Any]:
 	"""
 	Get VAT Input totals from VAT Input Register Verified report.
@@ -88,7 +88,7 @@ def get_vat_output_from_register(
 	company: str,
 	from_date: date | str,
 	to_date: date | str,
-	verification_status: str = "Verified"
+	verification_status: Optional[str] = None
 ) -> Dict[str, Any]:
 	"""
 	Get VAT Output totals from VAT Output Register Verified report.
@@ -218,7 +218,7 @@ def get_all_register_data(
 	company: str,
 	from_date: date | str,
 	to_date: date | str,
-	verification_status: str = "Verified",
+	verification_status: Optional[str] = None,
 	withholding_accounts: Optional[List[str]] = None
 ) -> Dict[str, Any]:
 	"""

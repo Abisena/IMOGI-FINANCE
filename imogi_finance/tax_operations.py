@@ -123,13 +123,15 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 	# Get PPh accounts for withholding register
 	pph_accounts = [row.payable_account for row in getattr(profile, "pph_accounts", []) or [] if row.payable_account]
 
-	# Get comprehensive register data with verification filtering
+	# Get comprehensive register data - no verification filter so ALL submitted
+	# invoices with VAT are captured. out_fp_status is for coreTax compliance
+	# tracking only, not an accounting gate.
 	try:
 		register_data = get_all_register_data(
 			company=company,
 			from_date=date_from,
 			to_date=date_to,
-			verification_status="Verified",
+			verification_status=None,
 			withholding_accounts=pph_accounts if pph_accounts else None
 		)
 	except RegisterIntegrationError as e:
