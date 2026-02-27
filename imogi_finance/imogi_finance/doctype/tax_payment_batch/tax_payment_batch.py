@@ -29,14 +29,31 @@ class TaxPaymentBatch(Document):
         self._refresh_amount_if_needed()
 
     def on_submit(self):
-        """Auto-create and submit Payment Entry when Tax Payment Batch is submitted"""
+        """Auto-create and submit Journal Entry when Tax Payment Batch is submitted.
+
+        Tax payments to DJP are direct liability clearances (Dr Tax Payable, Cr Cash/Bank).
+        Journal Entry is used instead of Payment Entry to avoid the unallocated supplier
+        advance payment issue that occurs when a Payment Entry is not reconciled to an invoice.
+        """
         if self.amount and self.amount > 0:
             try:
-                payment_entry_name = self._create_and_submit_payment_entry()
-                frappe.msgprint(_("Payment Entry {0} created and submitted successfully").format(payment_entry_name), indicator="green")
+                if not self.posting_date:
+                    self.db_set("posting_date", nowdate())
+                je_name = build_tax_payment_journal_entry(self)
+                # Auto-submit the JE
+                je_doc = frappe.get_doc("Journal Entry", je_name)
+                je_doc.submit()
+                # Update status to Paid after JE is submitted
+                self.db_set("status", "Paid", update_modified=False)
+                frappe.msgprint(
+                    _("Journal Entry {0} created and submitted successfully").format(
+                        frappe.utils.get_link_to_form("Journal Entry", je_name)
+                    ),
+                    indicator="green"
+                )
             except Exception as e:
-                frappe.log_error(message=str(e), title="Tax Payment Batch: Failed to create Payment Entry")
-                frappe.throw(_("Failed to create Payment Entry: {0}").format(str(e)))
+                frappe.log_error(message=str(e), title="Tax Payment Batch: Failed to create Journal Entry")
+                frappe.throw(_("Failed to create Journal Entry: {0}").format(str(e)))
 
     def _create_and_submit_payment_entry(self):
         """Create and submit Payment Entry without requiring Party Type/Party"""
@@ -117,6 +134,26 @@ class TaxPaymentBatch(Document):
         supplier.insert(ignore_permissions=True)
 
         return supplier.name
+
+    def on_cancel(self):
+        """Auto-cancel linked Journal Entry when Tax Payment Batch is cancelled."""
+        je_name = self.get("journal_entry")
+        if not je_name:
+            return
+        try:
+            je_doc = frappe.get_doc("Journal Entry", je_name)
+            if je_doc.docstatus == 1:
+                je_doc.cancel()
+                frappe.msgprint(
+                    _("Journal Entry {0} has been cancelled.").format(
+                        frappe.utils.get_link_to_form("Journal Entry", je_name)
+                    ),
+                    indicator="orange",
+                    alert=True
+                )
+        except frappe.DoesNotExistError:
+            pass
+        self.db_set("status", "Draft", update_modified=False)
 
     def _set_period_dates(self):
         if not self.period_month or not self.period_year:

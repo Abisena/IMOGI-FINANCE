@@ -16,6 +16,7 @@ DEFAULT_PAID_FROM = "default_paid_from"
 DEFAULT_PREPAID = "default_prepaid"
 
 # Tax Variance Accounts
+DPP_VARIANCE = "dpp_variance"
 PPN_VARIANCE = "ppn_variance"
 
 # All purposes (for validation/audit)
@@ -24,5 +25,6 @@ ALL_PURPOSES = {
     DIGITAL_STAMP_PAYMENT,
     DEFAULT_PAID_FROM,
     DEFAULT_PREPAID,
+    DPP_VARIANCE,
     PPN_VARIANCE,
 }

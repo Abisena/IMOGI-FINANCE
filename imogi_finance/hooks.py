@@ -156,7 +156,7 @@ fixtures = [
     {"doctype": "Tax Invoice Type", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Workspace", "filters": {"module": "Imogi Finance"}},
     {"doctype": "Report", "filters": {"module": "Imogi Finance"}},
-    {"doctype": "Client Script", "filters": {"dt": ["in", ["Purchase Invoice", "Payment Entry"]]}},
+    {"doctype": "Client Script", "filters": {"dt": ["in", ["Purchase Invoice", "Payment Entry", "Finance Control Settings"]]}},
     # DocTypes for deferred expense and tax export functionality
     {"doctype": "Expense Deferred Settings"},
     {"doctype": "CoreTax Export Settings"},

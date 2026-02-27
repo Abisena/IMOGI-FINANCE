@@ -20,6 +20,8 @@
     "gl_account_mappings": [
       {
         "purpose": "digital_stamp_expense",
+        "account_type": "Expense Account",
+        "account_parent": "",
         "is_required": 1,
         "description": "Default GL account for posting digital stamp/materai costs",
         "account": "Biaya Materai Digital",
@@ -27,6 +29,8 @@
       },
       {
         "purpose": "digital_stamp_payment",
+        "account_type": "Cash",
+        "account_parent": "",
         "is_required": 1,
         "description": "Default GL account for digital stamp payment source (cash)",
         "account": "Kas",
@@ -34,6 +38,8 @@
       },
       {
         "purpose": "default_paid_from",
+        "account_type": "Cash",
+        "account_parent": "",
         "is_required": 1,
         "description": "Default GL account for transfer application source (paid from)",
         "account": "Kas",
@@ -41,6 +47,8 @@
       },
       {
         "purpose": "default_prepaid",
+        "account_type": "Expense Account",
+        "account_parent": "",
         "is_required": 1,
         "description": "Default GL account for deferred expense prepaid/advance",
         "account": "Beban Dibayar Dimuka",
@@ -48,6 +56,8 @@
       },
       {
         "purpose": "dpp_variance",
+        "account_type": "Expense Account",
+        "account_parent": "",
         "is_required": 1,
         "description": "GL account for posting discrepancies between OCR-extracted and manually-entered taxable amount (DPP)",
         "account": "Selisih DPP",
@@ -55,6 +65,8 @@
       },
       {
         "purpose": "ppn_variance",
+        "account_type": "Tax",
+        "account_parent": "",
         "is_required": 1,
         "description": "GL account for posting discrepancies between OCR-extracted and manually-entered tax amount (PPN)",
         "account": "Selisih PPN",
