@@ -727,6 +727,32 @@ def build_vat_netting_lines(
     return lines
 
 
+def _get_vat_in_gl_balance(company: str, input_account: str, as_of_date: str) -> float:
+    """
+    Get the actual debit balance of the VAT Input account from GL up to (and including)
+    as_of_date. This captures both the current period invoices AND any carry-forward
+    balance from previous periods that were not fully offset by prior netting entries.
+
+    Returns positive float = accumulated input VAT credit available.
+    """
+    aggregates = frappe.get_all(
+        "GL Entry",
+        filters=[
+            ["company", "=", company],
+            ["account", "=", input_account],
+            ["is_cancelled", "=", 0],
+            ["posting_date", "<=", as_of_date],
+        ],
+        fields=["sum(debit) as debit_total", "sum(credit) as credit_total"],
+    )
+    if not aggregates:
+        return 0.0
+    debit_total = flt(aggregates[0].get("debit_total"))
+    credit_total = flt(aggregates[0].get("credit_total"))
+    # Debit balance = net input VAT still available (unnetted)
+    return max(debit_total - credit_total, 0.0)
+
+
 def create_vat_netting_entry(
     *,
     company: str,
@@ -740,11 +766,23 @@ def create_vat_netting_entry(
     posting_date: str | None = None,
     reference: str | None = None,
 ) -> str:
+    effective_posting_date = posting_date or nowdate()
+
+    # Read the ACTUAL GL balance of VAT-IN account up to netting date.
+    # This automatically includes any carry-forward from previous periods
+    # that were not fully offset by prior netting journal entries.
+    gl_input_balance = _get_vat_in_gl_balance(company, input_account, effective_posting_date)
+
+    # Use the higher of register total vs GL balance.
+    # GL balance is authoritative (includes carry-forward from prior months);
+    # register total covers the case where GL hasn't been posted yet.
+    effective_input = max(flt(input_vat_total), gl_input_balance)
+
     # Get or create tax authority supplier for payable account
     tax_supplier = _get_or_create_tax_authority_supplier()
 
     lines = build_vat_netting_lines(
-        input_vat_total=input_vat_total,
+        input_vat_total=effective_input,
         output_vat_total=output_vat_total,
         input_account=input_account,
         output_account=output_account,
@@ -757,7 +795,7 @@ def create_vat_netting_entry(
 
     je = frappe.new_doc("Journal Entry")
     je.company = company
-    je.posting_date = posting_date or nowdate()
+    je.posting_date = effective_posting_date
 
     # Include reference in user remark if provided
     if reference:
