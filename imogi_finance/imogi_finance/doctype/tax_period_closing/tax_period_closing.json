@@ -22,6 +22,8 @@
     "tax_profile",
     "section_totals",
     "input_vat_total",
+    "input_vat_carry_forward",
+    "effective_input_vat",
     "column_break_totals",
     "output_vat_total",
     "column_break_vat_net",
@@ -144,7 +146,23 @@
       "fieldtype": "Currency",
       "label": "Input VAT Total",
       "read_only": 1,
-      "bold": 1
+      "bold": 1,
+      "description": "Invoice total for current period only"
+    },
+    {
+      "fieldname": "input_vat_carry_forward",
+      "fieldtype": "Currency",
+      "label": "Input VAT Carry Forward",
+      "read_only": 1,
+      "description": "Unused input VAT credit carried over from previous periods (GL balance)"
+    },
+    {
+      "fieldname": "effective_input_vat",
+      "fieldtype": "Currency",
+      "label": "Effective Input VAT",
+      "read_only": 1,
+      "bold": 1,
+      "description": "Total input VAT available for netting = Current Period + Carry Forward"
     },
     {
       "fieldname": "column_break_totals",

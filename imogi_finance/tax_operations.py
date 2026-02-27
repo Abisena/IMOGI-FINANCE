@@ -11,7 +11,7 @@ from typing import Iterable
 import frappe
 from frappe import _, bold
 from frappe.model.document import Document
-from frappe.utils import flt, get_first_day, get_last_day, getdate, nowdate
+from frappe.utils import add_days, flt, get_first_day, get_last_day, getdate, nowdate
 from frappe.utils.xlsxutils import make_xlsx
 
 from imogi_finance import roles, tax_invoice_fields
@@ -199,9 +199,21 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 	bpjs_account = getattr(profile, "bpjs_payable_account", None)
 	bpjs_total = _get_gl_total(company, [bpjs_account], date_from, date_to) if bpjs_account else 0.0
 
+	# Calculate carry-forward: GL balance of VAT-IN account BEFORE current period
+	input_vat_account = getattr(profile, "ppn_input_account", None)
+	if input_vat_account and date_from:
+		day_before_period = str(add_days(getdate(date_from), -1))
+		input_vat_carry_forward = _get_vat_in_gl_balance(company, input_vat_account, day_before_period)
+	else:
+		input_vat_carry_forward = 0.0
+
+	effective_input_vat = input_total + input_vat_carry_forward
+
 	# Build comprehensive snapshot
 	snapshot = {
 		"input_vat_total": input_total,
+		"input_vat_carry_forward": input_vat_carry_forward,
+		"effective_input_vat": effective_input_vat,
 		"output_vat_total": output_total,
 		"vat_net": vat_net,
 		"pph_total": pph_total,

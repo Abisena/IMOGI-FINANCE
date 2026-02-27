@@ -294,6 +294,8 @@ class TaxPeriodClosing(Document):
             data = {}
 
         self.input_vat_total = flt(data.get("input_vat_total"))
+        self.input_vat_carry_forward = flt(data.get("input_vat_carry_forward"))
+        self.effective_input_vat = flt(data.get("effective_input_vat"))
         self.output_vat_total = flt(data.get("output_vat_total"))
         self.vat_net = flt(data.get("vat_net"))
         self.pph_total = flt(data.get("pph_total"))
