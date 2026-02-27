@@ -209,13 +209,16 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 
 	effective_input_vat = input_total + input_vat_carry_forward
 
+	# VAT Net uses effective input (includes carry-forward) for accurate tax position
+	effective_vat_net = output_total - effective_input_vat
+
 	# Build comprehensive snapshot
 	snapshot = {
 		"input_vat_total": input_total,
 		"input_vat_carry_forward": input_vat_carry_forward,
 		"effective_input_vat": effective_input_vat,
 		"output_vat_total": output_total,
-		"vat_net": vat_net,
+		"vat_net": effective_vat_net,
 		"pph_total": pph_total,
 		"pb1_total": pb1_total,
 		"bpjs_total": bpjs_total,
