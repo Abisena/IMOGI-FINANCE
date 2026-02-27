@@ -133,7 +133,10 @@ def build_register_snapshot(company: str, date_from: date | str | None, date_to:
 			withholding_accounts=pph_accounts if pph_accounts else None
 		)
 	except RegisterIntegrationError as e:
-		frappe.log_error(f"Register integration failed: {str(e)}", "Tax Period Closing")
+		frappe.log_error(
+			title="Register Integration Failed",
+			message=f"Register integration failed: {str(e)}"
+		)
 		# Fallback to empty data with error flag
 		register_data = {
 			"summary": {

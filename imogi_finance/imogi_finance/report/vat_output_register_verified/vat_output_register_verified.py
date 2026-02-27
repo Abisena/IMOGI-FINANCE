@@ -25,15 +25,15 @@ from imogi_finance.imogi_finance.utils.tax_report_utils import (
 def execute(filters: Optional[Dict[str, Any]] = None) -> tuple[List[Dict], List[Dict]]:
 	"""
 	Execute VAT Output Register report.
-	
+
 	Args:
 		filters: Report filters
-		
+
 	Returns:
 		Tuple of (columns, data)
 	"""
 	filters = filters or {}
-	
+
 	# Validate configuration first
 	validation = validate_vat_output_configuration(filters.get("company"))
 	if not validation.get("valid"):
@@ -43,11 +43,11 @@ def execute(filters: Optional[Dict[str, Any]] = None) -> tuple[List[Dict], List[
 			indicator=validation.get("indicator", "red"),
 			raise_exception=True
 		)
-	
+
 	ppn_output_account = validation.get("account")
 	columns = get_columns()
 	data = get_data(filters, ppn_output_account)
-	
+
 	return columns, data
 
 
@@ -124,7 +124,7 @@ def get_columns() -> List[Dict[str, Any]]:
 			"width": 150
 		},
 	]
-	
+
 	return get_columns_with_width(columns)
 
 
@@ -135,7 +135,7 @@ def get_data(filters: Dict[str, Any], ppn_output_account: str) -> List[Dict[str,
 	"""
 	SI = DocType("Sales Invoice")
 	GL = DocType("GL Entry")
-	
+
 	# Build base query - JOIN with GL Entry to ensure only posted invoices are shown
 	query = (
 		frappe.qb.from_(SI)
@@ -152,7 +152,6 @@ def get_data(filters: Dict[str, Any], ppn_output_account: str) -> List[Dict[str,
 			SI.customer,
 			SI.company,
 			SI.out_buyer_tax_id,
-			SI.out_fp_npwp,
 			SI.out_fp_no,
 			SI.out_fp_date,
 			SI.out_fp_dpp,
@@ -162,30 +161,30 @@ def get_data(filters: Dict[str, Any], ppn_output_account: str) -> List[Dict[str,
 		.where(SI.docstatus == 1)
 		.distinct()
 	)
-	
+
 	# Apply filters
 	if filters.get("company"):
 		query = query.where(SI.company == filters.get("company"))
-	
+
 	if filters.get("customer"):
 		query = query.where(SI.customer == filters.get("customer"))
-	
+
 	# Verification status filter - default to "Verified" if not specified
 	verification_status = filters.get("verification_status", "Verified")
 	if verification_status:
 		query = query.where(SI.out_fp_status == verification_status)
-	
+
 	# Date range conditions
 	date_condition = build_date_conditions(SI, filters, "posting_date")
 	if date_condition is not None:
 		query = query.where(date_condition)
-	
+
 	# Order by posting date
 	query = query.orderby(SI.posting_date).orderby(SI.name)
-	
+
 	# Execute query
 	invoices = query.run(as_dict=True)
-	
+
 	# Get GL-based tax amounts for each invoice
 	data = []
 	for invoice in invoices:
@@ -196,14 +195,14 @@ def get_data(filters: Dict[str, Any], ppn_output_account: str) -> List[Dict[str,
 			tax_account=ppn_output_account,
 			company=invoice.company
 		)
-		
-		# Use out_fp_customer_npwp or fallback to out_buyer_tax_id
-		npwp = invoice.get("out_fp_customer_npwp") or invoice.get("out_buyer_tax_id")
-		
+
+		# Use out_buyer_tax_id as the buyer NPWP field
+		npwp = invoice.get("out_buyer_tax_id")
+
 		data.append({
 			**invoice,
 			"out_fp_customer_npwp": npwp,
 			"tax_amount_gl": tax_amount_gl
 		})
-	
+
 	return data
